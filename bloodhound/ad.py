@@ -100,7 +100,7 @@ class ADUtils:
         try:
             answer = str(resolver.query(addr, 'PTR')[0])
             result = answer.rstrip('.')
-        except (dns.resolver.NXDOMAIN, dns.resolver.Timeout), e:
+        except (dns.resolver.NXDOMAIN, dns.resolver.Timeout) as e:
             pass
         except:
             logging.warning('DNS lookup failed: %s' % addr)
@@ -404,7 +404,7 @@ class ADAuthentication:
                 conn.kerberosLogin(self.username, self.password, self.domain,
                                    self.lm_hash, self.nt_hash, self.aes_key,
                                    self.kdc)
-            except KerberosError, e:
+            except KerberosError as e:
                 logging.warning('Kerberos login failed: %s' % e)
                 return None
         else:
@@ -412,7 +412,7 @@ class ADAuthentication:
             try:
                 conn.login(self.username, self.password, self.domain,
                            self.lm_hash, self.nt_hash)
-            except ldap.LDAPSessionError, e:
+            except ldap.LDAPSessionError as e:
                 if protocol == 'ldap' and 'strongerAuthRequired' in str(e):
                     logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
                                     'Trying to connect over LDAPS instead...')
@@ -467,7 +467,7 @@ class ADComputer:
         # Do exit properly on keyboardinterrupts
         except KeyboardInterrupt:
             raise
-        except Exception, e:
+        except Exception as e:
             logging.warning('Could not resolve: %s: %s' % (self.hostname, e))
             return False
 
@@ -505,13 +505,13 @@ class ADComputer:
 # Implement encryption?
 #            dce.set_auth_level(NTLM_AUTH_PKT_PRIVACY)
             dce.bind(uuid)
-        except DCERPCException, e:
+        except DCERPCException as e:
             logging.debug(traceback.format_exc())
             logging.warning('DCE/RPC connection failed: %s' % str(e))
             return None
         except KeyboardInterrupt:
             raise
-        except Exception, e:
+        except Exception as e:
             logging.debug(traceback.format_exc())
             logging.warning('DCE/RPC connection failed: %s' % e)
             return None
@@ -533,7 +533,7 @@ class ADComputer:
 
         try:
             resp = srvs.hNetrSessionEnum(dce, '\x00', NULL, 10)
-        except Exception, e:
+        except Exception as e:
             if str(e).find('Broken pipe') >= 0:
                 return
             else:
@@ -591,7 +591,7 @@ class ADComputer:
             resp = dce.request(req)
 
 #            resp.dump()
-        except Exception, e:
+        except Exception as e:
             raise e
 
         for domain in resp['Domains']['Domains']:
@@ -647,9 +647,9 @@ class ADComputer:
                 logging.debug('Found SID: %s' % sid_string)
 
                 self.sids.append(sid_string)
-        except DCERPCException, e:
+        except DCERPCException as e:
             logging.debug('Exception connecting to RPC: %s' % e)
-        except Exception, e:
+        except Exception as e:
             raise e
 
         dce.disconnect()
@@ -666,7 +666,7 @@ class ADComputer:
 
         try:
             resp = lsat.hLsarOpenPolicy2(dce, lsat.POLICY_LOOKUP_NAMES | MAXIMUM_ALLOWED)
-        except Exception, e:
+        except Exception as e:
             if str(e).find('Broken pipe') >= 0:
                 return
             else:
@@ -676,7 +676,7 @@ class ADComputer:
 
         try:
             resp = lsat.hLsarLookupSids(dce, policyHandle, self.sids, lsat.LSAP_LOOKUP_LEVEL.LsapLookupWksta)
-        except DCERPCException, e:
+        except DCERPCException as e:
             if str(e).find('STATUS_NONE_MAPPED') >= 0:
                 logging.warning('SID lookup failed, return status: STATUS_NONE_MAPPED')
                 raise
@@ -736,7 +736,7 @@ class ADDC(ADComputer):
         try:
             for attr in entry['attributes']:
                 res[str(attr['type'])] = ADDC.dictval(attr['vals'])
-        except Exception, e:
+        except Exception as e:
             pass
         return res
 
@@ -771,7 +771,7 @@ class ADDC(ADComputer):
                                              sizeLimit=0,
                                              searchControls=[sc],
                                              searchBase=searchBase)
-        except ldap.LDAPSearchError, e:
+        except ldap.LDAPSearchError as e:
             if 'sizeLimitExceeded' in e.getErrorString():
                 search_result = e.getAnswers()
             else:
@@ -798,7 +798,7 @@ class ADDC(ADComputer):
             result = self.search('(ncname=%s)' % context,
                                  [],
                                  searchBase="CN=Partitions,CN=Configuration,%s" % self.ad.forestDN)
-        except ldap.LDAPSearchError, e:
+        except ldap.LDAPSearchError as e:
             if 'noSuchObject' in str(e):
                 # Try to move up the root
                 # Todo: fix this properly by querying the RootDSE
