@@ -226,7 +226,6 @@ class AD:
             self.baseDN = ADUtils.domain2ldap(domain)
         else:
             self.baseDN = None
-        self.forestDN = self.baseDN
 
 
     def realm(self):
@@ -717,6 +716,7 @@ class ADDC(ADComputer):
         ADComputer.__init__(self, hostname)
         self.ad = ad
         self.ldap = None
+        self.rootobject = None
 
 
     @staticmethod
@@ -759,7 +759,7 @@ class ADDC(ADComputer):
                                                    baseDN=self.ad.baseDN, protocol=protocol)
         return (self.ldap is not None)
 
-    def search(self, searchFilter, attributes, searchBase=None):
+    def search(self, searchFilter='(objectClass=*)', attributes=[], searchBase=None, scope=None):
         if self.ldap is None:
             self.ldap_connect()
 
@@ -767,6 +767,7 @@ class ADDC(ADComputer):
 
         try:
             search_result = self.ldap.search(searchFilter=searchFilter,
+                                             scope=scope,
                                              attributes=attributes,
                                              sizeLimit=0,
                                              searchControls=[sc],
@@ -792,20 +793,12 @@ class ADDC(ADComputer):
 
 
     def get_netbios_name(self, context):
-
         try:
-            # todo: look into limiting search result to current domain
             result = self.search('(ncname=%s)' % context,
                                  [],
-                                 searchBase="CN=Partitions,CN=Configuration,%s" % self.ad.forestDN)
+                                 searchBase="CN=Partitions,CN=Configuration,%s" % self.rootobject['rootDomainNamingContext'])
         except ldap.LDAPSearchError as e:
-            if 'noSuchObject' in str(e):
-                # Try to move up the root
-                # Todo: fix this properly by querying the RootDSE
-                self.ad.forestDN = ','.join(self.ad.forestDN.split(',')[1:])
-                result = self.search('(ncname=%s)' % context,
-                     [],
-                     searchBase="CN=Partitions,CN=Configuration,%s" % self.ad.forestDN)
+            logging.warning('Could not determine NetBiosname of the domain: %s' % e)
         return result[0]
 
 
@@ -837,8 +830,12 @@ class ADDC(ADComputer):
         for entry in entries:
             self.ad.groups[entry['distinguishedName']] = entry
             # Also add a mapping from GID to DN
-            gid = int(ADUtils.formatSid(entry['objectSid']).split('-')[-1])
-            self.ad.groups_dnmap[gid] = entry['distinguishedName']
+            try:
+                gid = int(ADUtils.formatSid(entry['objectSid']).split('-')[-1])
+                self.ad.groups_dnmap[gid] = entry['distinguishedName']
+            except KeyError:
+                #Somehow we found a group without a sid?
+                logging.warning('Could not determine SID for group %s' % entry['distinguishedName'])
 
         return entries
 
@@ -916,6 +913,9 @@ class ADDC(ADComputer):
                                'memberof'])
         return entries
 
+    def get_rootobject(self):
+        entries = self.search(searchBase='', attributes=[], scope=ldapasn1.Scope('baseObject'))
+        self.rootobject = entries[0]
 
     def get_sessions(self):
         entries = self.search('(&(samAccountType=805306368)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(|(homedirectory=*)(scriptpath=*)(profilepath=*)))',
@@ -974,6 +974,7 @@ class ADDC(ADComputer):
 
 
     def fetch_all(self):
+        self.get_rootobject()
         self.get_domains()
         self.get_computers()
         self.get_groups()
