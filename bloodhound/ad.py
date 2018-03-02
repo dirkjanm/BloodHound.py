@@ -491,8 +491,9 @@ class ADComputer:
                                          lmhash=self.ad.auth.lm_hash,
                                          nthash=self.ad.auth.nt_hash,
                                          aesKey=self.ad.auth.aes_key)
-            if hasattr(self.rpc, 'set_kerberos'):
-                self.rpc.set_kerberos(True, self.ad.auth.kdc)
+            # TODO: check Kerberos support
+            # if hasattr(self.rpc, 'set_kerberos'):
+                # self.rpc.set_kerberos(True, self.ad.auth.kdc)
             # Yes we prefer SMB3, but it isn't supported by all OS
             # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_30)
 
