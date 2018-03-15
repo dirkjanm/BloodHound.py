@@ -336,24 +336,27 @@ class AD:
             c = ADComputer(hostname=hostname, ad=self)
             if c.try_connect() == True:
                 # Maybe try connection reuse?
-                sessions = c.rpc_get_sessions()
-                c.rpc_get_local_admins()
-                c.rpc_resolve_sids()
-                c.rpc_get_domain_trusts()
+                try:
+                    sessions = c.rpc_get_sessions()
+                    c.rpc_get_local_admins()
+                    c.rpc_resolve_sids()
+                    c.rpc_get_domain_trusts()
 
-                for admin in c.admins:
-                    self.admins.append(admin)
+                    for admin in c.admins:
+                        self.admins.append(admin)
 
-                if sessions is None:
-                    continue
+                    if sessions is None:
+                        continue
 
-                for ses in sessions:
-                    # Todo: properly resolve sAMAccounName in GC
-                    # currently only single-domain compatible
-                    domain = self.domain
-                    user = ('%s@%s' % (ses['user'], domain)).upper()
-                    target = str(ses['target']).upper()
-                    out.write('%s,%s,%u\n' % (user, target, 2))
+                    for ses in sessions:
+                        # Todo: properly resolve sAMAccounName in GC
+                        # currently only single-domain compatible
+                        domain = self.domain
+                        user = ('%s@%s' % (ses['user'], domain)).upper()
+                        target = str(ses['target']).upper()
+                        out.write('%s,%s,%u\n' % (user, target, 2))
+                except DCERPCException:
+                    logging.warning('Querying sessions failed: %s' % hostname)
         out.close()
 
 
