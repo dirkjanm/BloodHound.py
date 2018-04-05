@@ -29,10 +29,13 @@ import time
 import csv
 import dns
 import traceback
+import ldap3
 from struct import unpack
 from dns import resolver, reversename
 from impacket.ntlm import NTLM_AUTH_PKT_PRIVACY
-from impacket.ldap import ldap, ldapasn1
+from ldap3 import Server, Connection, SCHEMA, NTLM, ALL
+from ldap3.core.results import RESULT_SUCCESS, RESULT_STRONGER_AUTH_REQUIRED
+from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
 from impacket import smb3structs
 from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc
 from impacket.dcerpc.v5.rpcrt import DCERPCException
@@ -295,7 +298,7 @@ class AD:
     def get_domain_by_name(self, name):
         for domain, entry in self.domains.iteritems():
             if 'name' in entry:
-                if entry['name'].upper() == name.upper():
+                if entry['name'].value.upper() == name.upper():
                     return entry
         # Also try domains by NETBIOS definition
         for domain, entry in self.nbdomains.iteritems():
@@ -320,7 +323,7 @@ class AD:
             if 'dNSHostName' not in computer:
                 continue
 
-            hostname = computer['dNSHostName']
+            hostname = computer['dNSHostName'].value
             if hostname is None:
                 continue
 
@@ -398,29 +401,34 @@ class ADAuthentication:
 
 
     def getLDAPConnection(self, hostname='', baseDN='', protocol='ldaps'):
-        conn = ldap.LDAPConnection('%s://%s' % (protocol, hostname), baseDN)
+        server = Server("%s://%s" % (protocol, hostname), get_info=ALL)
+        # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
+        if self.nt_hash != '':
+            self.password = self.lm_hash + ':' + self.nt_hash
+        ldaplogin = '%s\%s' % (self.domain, self.username)
+        conn = Connection(server, user=ldaplogin, password=self.password, authentication=NTLM)
 
+        # TODO: Kerberos auth for ldap
         if self.kdc is not None:
-            try:
-                logging.debug('Authenticating to LDAP server using Kerberos')
-                conn.kerberosLogin(self.username, self.password, self.domain,
-                                   self.lm_hash, self.nt_hash, self.aes_key,
-                                   self.kdc)
-            except KerberosError as e:
-                logging.warning('Kerberos login failed: %s' % e)
-                return None
+            logging.error('Kerberos login is not yet supported!')
+            # try:
+            #     logging.debug('Authenticating to LDAP server using Kerberos')
+            #     conn.kerberosLogin(self.username, self.password, self.domain,
+            #                        self.lm_hash, self.nt_hash, self.aes_key,
+            #                        self.kdc)
+            # except KerberosError as e:
+            #     logging.warning('Kerberos login failed: %s' % e)
+            #     return None
         else:
             logging.debug('Authenticating to LDAP server')
-            try:
-                conn.login(self.username, self.password, self.domain,
-                           self.lm_hash, self.nt_hash)
-            except ldap.LDAPSessionError as e:
-                if protocol == 'ldap' and 'strongerAuthRequired' in str(e):
+            if not conn.bind():
+                result = conn.result
+                if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
                     logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
                                     'Trying to connect over LDAPS instead...')
                     return self.getLDAPConnection(hostname, baseDN, 'ldaps')
                 else:
-                    logging.warning('Failure to authenticate with LDAP! Error %s' % e)
+                    logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
                     return None
         return conn
 
@@ -699,7 +707,7 @@ class ADComputer:
             domain = domains[entry['DomainIndex']]
             domainEntry = self.ad.get_domain_by_name(domain)
             if domainEntry is not None:
-                domain = ADUtils.ldap2domain(domainEntry['distinguishedName'])
+                domain = ADUtils.ldap2domain(domainEntry['distinguishedName'].value)
 
             logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
             self.admins.append({'computer': self.hostname,
@@ -720,41 +728,6 @@ class ADDC(ADComputer):
         ADComputer.__init__(self, hostname)
         self.ad = ad
         self.ldap = None
-        self.rootobject = None
-
-
-    @staticmethod
-    def dictval(vals):
-        if (len(vals) > 1):
-            r = []
-            for x in vals:
-                r.append(str(x))
-            return r
-        else:
-            return str(vals[0])
-
-
-    @staticmethod
-    def entry2dict(entry):
-        res = {}
-        try:
-            for attr in entry['attributes']:
-                res[str(attr['type'])] = ADDC.dictval(attr['vals'])
-        except Exception as e:
-            pass
-        return res
-
-
-    @staticmethod
-    def dictionize(search_result):
-        result_list = []
-
-        for entry in search_result:
-            if isinstance(entry, ldapasn1.SearchResultEntry) is True:
-                result_list.append(ADDC.entry2dict(entry))
-
-        return result_list
-
 
     def ldap_connect(self, protocol='ldap'):
         logging.info('Connecting to LDAP server: %s' % self.hostname)
@@ -763,27 +736,24 @@ class ADDC(ADComputer):
                                                    baseDN=self.ad.baseDN, protocol=protocol)
         return (self.ldap is not None)
 
-    def search(self, searchFilter='(objectClass=*)', attributes=[], searchBase=None, scope=None):
+    def search(self, searchFilter='(objectClass=*)', attributes=[], searchBase=None, generator=False):
         if self.ldap is None:
             self.ldap_connect()
-
-        sc = ldap.SimplePagedResultsControl()
-
-        try:
-            search_result = self.ldap.search(searchFilter=searchFilter,
-                                             scope=scope,
-                                             attributes=attributes,
-                                             sizeLimit=0,
-                                             searchControls=[sc],
-                                             searchBase=searchBase)
-        except ldap.LDAPSearchError as e:
-            if 'sizeLimitExceeded' in e.getErrorString():
-                search_result = e.getAnswers()
-            else:
-                logging.warning('LDAP search error: %s' % e)
-                raise
-
-        return self.dictionize(search_result)
+        if searchBase is None:
+            searchBase = self.ad.baseDN
+        if attributes == []:
+            attributes = ldap3.ALL_ATTRIBUTES
+        result = self.ldap.extend.standard.paged_search(searchBase,
+                                               searchFilter,
+                                               attributes=attributes,
+                                               paged_size=100,
+                                               generator=generator)
+        # If we use a generator, the generator is returned by the search
+        # otherwise the results are stored in the entries property of the connection
+        if generator:
+            return result
+        else:
+            return self.ldap.entries
 
 
     def get_domain_controllers(self):
@@ -799,11 +769,11 @@ class ADDC(ADComputer):
     def get_netbios_name(self, context):
         try:
             result = self.search('(ncname=%s)' % context,
-                                 [],
-                                 searchBase="CN=Partitions,CN=Configuration,%s" % self.rootobject['rootDomainNamingContext'])
-        except ldap.LDAPSearchError as e:
+                                 ['nETBIOSName'],
+                                 searchBase="CN=Partitions,CN=Configuration,%s" % self.ldap.server.info.other['rootDomainNamingContext'][0])
+        except (LDAPAttributeError, LDAPCursorError):
             logging.warning('Could not determine NetBiosname of the domain: %s' % e)
-        return result[0]
+        return self.ldap.entries[0]
 
 
     def get_domains(self):
@@ -815,11 +785,11 @@ class ADDC(ADComputer):
         for entry in entries:
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions
-            d = ADDomain.fromLDAP(entry['distinguishedName'], entry['objectSid'])
-            self.ad.domains[entry['distinguishedName']] = entry
+            d = ADDomain.fromLDAP(entry['distinguishedName'].value, entry['objectSid'].value)
+            self.ad.domains[entry['distinguishedName'].value] = entry
             try:
-                nbentry = self.get_netbios_name(entry['distinguishedName'])
-                self.ad.nbdomains[nbentry['nETBIOSName']] = entry
+                nbentry = self.get_netbios_name(entry['distinguishedName'].value)
+                self.ad.nbdomains[nbentry['nETBIOSName'].value] = entry
             except IndexError:
                 pass
 
@@ -832,11 +802,11 @@ class ADDC(ADComputer):
         logging.debug('Found %u groups' % len(entries))
 
         for entry in entries:
-            self.ad.groups[entry['distinguishedName']] = entry
+            self.ad.groups[entry['distinguishedName'].value] = entry
             # Also add a mapping from GID to DN
             try:
-                gid = int(ADUtils.formatSid(entry['objectSid']).split('-')[-1])
-                self.ad.groups_dnmap[gid] = entry['distinguishedName']
+                gid = int(entry['objectSid'].value.split('-')[-1])
+                self.ad.groups_dnmap[gid] = entry['distinguishedName'].value
             except KeyError:
                 #Somehow we found a group without a sid?
                 logging.warning('Could not determine SID for group %s' % entry['distinguishedName'])
@@ -881,9 +851,9 @@ class ADDC(ADComputer):
         domain = ''
 
         if 'sAMAccountName' in entry:
-            account = entry['sAMAccountName']
+            account = entry['sAMAccountName'].value
         if 'distinguishedName' in entry:
-            dn = entry['distinguishedName']
+            dn = entry['distinguishedName'].value
             domain = ADUtils.ldap2domain(dn)
 
         resolved['principal'] = str('%s@%s' % (account, domain)).upper()
@@ -894,18 +864,20 @@ class ADDC(ADComputer):
                 resolved['type'] = 'foreignsecurityprincipal'
             else:
                 resolved['type'] = 'unknown'
-        elif entry['sAMAccountType'] in ['268435456', '268435457', '536870912', '536870913']:
-            resolved['type'] = 'group'
-        elif entry['sAMAccountType'] in ['805306369']:
-            resolved['type'] = 'computer'
-            short_name = account.rstrip('$')
-            resolved['principal'] = str('%s.%s' % (short_name, domain)).upper()
-        elif entry['sAMAccountType'] in ['805306368']:
-            resolved['type'] = 'user'
-        elif entry['sAMAccountType'] in ['805306370']:
-            resolved['type'] = 'trustaccount'
         else:
-            resolved['type'] = 'domain'
+            accountType = entry['sAMAccountType'].value
+            if accountType in ['268435456', '268435457', '536870912', '536870913']:
+                resolved['type'] = 'group'
+            elif accountType in ['805306369']:
+                resolved['type'] = 'computer'
+                short_name = account.rstrip('$')
+                resolved['principal'] = str('%s.%s' % (short_name, domain)).upper()
+            elif accountType in ['805306368']:
+                resolved['type'] = 'user'
+            elif accountType in ['805306370']:
+                resolved['type'] = 'trustaccount'
+            else:
+                resolved['type'] = 'domain'
 
         return resolved
 
@@ -914,12 +886,9 @@ class ADDC(ADComputer):
         entries = self.search('(|(memberof=*)(primarygroupid=*))',
                               ['samaccountname', 'distinguishedname',
                                'dnshostname', 'samaccounttype', 'primarygroupid',
-                               'memberof'])
+                               'memberof'],
+                               generator=True)
         return entries
-
-    def get_rootobject(self):
-        entries = self.search(searchBase='', attributes=[], scope=ldapasn1.Scope('baseObject'))
-        self.rootobject = entries[0]
 
     def get_sessions(self):
         entries = self.search('(&(samAccountType=805306368)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(|(homedirectory=*)(scriptpath=*)(profilepath=*)))',
@@ -934,11 +903,13 @@ class ADDC(ADComputer):
             pr = self.resolve_ad_entry(parent)
 
             out.write('%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
+        else:
+            logging.warning('Warning: Unknown group %d' % membership)
 
     def write_primary_membership(self, resolved_entry, entry, out):
         try:
-            primarygroupid = int(entry['primaryGroupID'])
-        except KeyError:
+            primarygroupid = int(entry['primaryGroupID'].value)
+        except (TypeError, KeyError):
             # Doesn't have a primarygroupid, means it is probably a Group instead of a user
             return
         try:
@@ -948,11 +919,9 @@ class ADDC(ADComputer):
         except KeyError:
             logging.warning('Warning: Unknown primarygroupid %d' % primarygroupid)
 
-
-
     def dump_memberships(self, filename='group_membership.csv'):
         entries = self.get_memberships()
-        logging.debug('Found %d memberships' % len(entries))
+
         try:
             logging.debug('Opening file for writing: %s' % filename)
             out = open(filename, 'w')
@@ -963,22 +932,20 @@ class ADDC(ADComputer):
         logging.debug('Writing group memberships to file: %s' % filename)
 
         out.write('GroupName,AccountName,AccountType\n')
-
+        entriesNum = 0
         for entry in entries:
+            entriesNum += 1
             resolved_entry = self.resolve_ad_entry(entry)
             if 'memberOf' in entry:
-                if isinstance(entry['memberOf'], basestring):
-                    self.write_membership(resolved_entry, entry['memberOf'], out)
-                else:
-                    for m in entry['memberOf']:
-                        self.write_membership(resolved_entry, m, out)
+                for m in entry['memberOf'].values:
+                    self.write_membership(resolved_entry, m, out)
             self.write_primary_membership(resolved_entry, entry, out)
 
+        logging.debug('Finished writing %d memberships' % entriesNum)
         out.close()
 
 
     def fetch_all(self):
-        self.get_rootobject()
         self.get_domains()
         self.get_computers()
         self.get_groups()
