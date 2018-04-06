@@ -936,7 +936,7 @@ class ADDC(ADComputer):
                               ['samaccountname', 'distinguishedname',
                                'dnshostname', 'samaccounttype', 'primarygroupid',
                                'memberof'],
-                              generator=True)
+                              generator=False)
         return entries
 
     def get_sessions(self):
@@ -989,9 +989,11 @@ class ADDC(ADComputer):
         for entry in entries:
             entriesNum += 1
             resolved_entry = self.resolve_ad_entry(entry)
-            if 'memberOf' in entry:
+            try:
                 for m in entry['memberOf'].values:
                     self.write_membership(resolved_entry, m, out)
+            except (KeyError, LDAPKeyError):
+                logging.debug(traceback.format_exc())
             self.write_primary_membership(resolved_entry, entry, out)
 
         logging.debug('Finished writing %d memberships' % entriesNum)
