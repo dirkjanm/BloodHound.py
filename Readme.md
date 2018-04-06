@@ -10,9 +10,9 @@ This tool is currently in Beta and should not be considered feature-complete or 
 ## Limitations
 BloodHound.py currently has the following limitations:
 - Currently only single domain compatible (this affects mostly user sessions). This includes logging in cross-domain.
-- Only supports default BloodHound (SharpHound) features, so only Groups, Admins and Sessions. (trusts still need to be added)
+- Only supports default BloodHound (SharpHound) features, so only Groups, Admins, Sessions and Trusts
 - Name, command line parameters and features may change in the future
-- Kerberos support is mostly untested
+- Kerberos support is not yet complete
 - The script is currently single-threaded
 
 ## Installation and usage

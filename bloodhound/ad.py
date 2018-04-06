@@ -449,6 +449,63 @@ class ADDomain:
         dns_name = ADUtils.ldap2domain(identifier)
         return ADDomain(name=dns_name, sid=sid, distinguishedname=identifier)
 
+"""
+Domain trust
+"""
+class ADDomainTrust(object):
+    # Flags copied from ldapdomaindump
+    # Domain trust flags
+    # From: https://msdn.microsoft.com/en-us/library/cc223779.aspx
+    trust_flags = {'NON_TRANSITIVE':0x00000001,
+                   'UPLEVEL_ONLY':0x00000002,
+                   'QUARANTINED_DOMAIN':0x00000004,
+                   'FOREST_TRANSITIVE':0x00000008,
+                   'CROSS_ORGANIZATION':0x00000010,
+                   'WITHIN_FOREST':0x00000020,
+                   'TREAT_AS_EXTERNAL':0x00000040,
+                   'USES_RC4_ENCRYPTION':0x00000080,
+                   'CROSS_ORGANIZATION_NO_TGT_DELEGATION':0x00000200,
+                   'PIM_TRUST':0x00000400}
+
+    # Domain trust direction
+    # From: https://msdn.microsoft.com/en-us/library/cc223768.aspx
+    trust_directions = {'INBOUND':0x01,
+                        'OUTBOUND':0x02,
+                        'BIDIRECTIONAL':0x03}
+
+    # Mapping used to generate output
+    direction_map = {flag:meaning.capitalize() for meaning, flag in trust_directions.items()}
+
+    # Domain trust types
+    trust_type = {'DOWNLEVEL':0x01,
+                  'UPLEVEL':0x02,
+                  'MIT':0x03}
+
+    def __init__(self, source, destination, direction, trustType, flags):
+        self.sourceDomain = source
+        self.destinationDomain = destination
+        self.direction = direction
+        self.type = trustType
+        self.flags = flags
+
+    def to_output(self):
+        if self.flags & self.trust_flags['WITHIN_FOREST']:
+            trustType = 'ParentChild'
+        else:
+            trustType = 'External'
+        if self.flags & self.trust_flags['NON_TRANSITIVE']:
+            isTransitive = False
+        else:
+            isTransitive = True
+
+        out = [
+            self.sourceDomain,
+            self.destinationDomain,
+            self.direction_map[self.direction],
+            trustType,
+            str(isTransitive)
+        ]
+        return ','.join(out)
 
 """
 Computer connected to Active Directory
@@ -582,7 +639,6 @@ class ADComputer:
         dce.disconnect()
 
         return sessions
-
 
     """
     """
@@ -809,7 +865,7 @@ class ADDC(ADComputer):
                 self.ad.groups_dnmap[gid] = entry['distinguishedName'].value
             except KeyError:
                 #Somehow we found a group without a sid?
-                logging.warning('Could not determine SID for group %s' % entry['distinguishedName'])
+                logging.warning('Could not determine SID for group %s' % entry['distinguishedName'].value)
 
         return entries
 
@@ -819,7 +875,7 @@ class ADDC(ADComputer):
         logging.debug('Found %u users' % len(entries))
 
         for entry in entries:
-            self.ad.users[entry['distinguishedName']] = entry
+            self.ad.users[entry['distinguishedName'].value] = entry
 
         return entries
 
@@ -895,6 +951,10 @@ class ADDC(ADComputer):
                               ['homedirectory', 'scriptpath', 'profilepath'])
         return entries
 
+    def get_trusts(self):
+        entries = self.search('(objectClass=trustedDomain)',
+                              attributes=['flatName', 'name', 'securityIdentifier', 'trustAttributes', 'trustDirection', 'trustType'])
+        return entries
 
     def write_membership(self, resolved_entry, membership, out):
         if membership in self.ad.groups:
@@ -944,11 +1004,33 @@ class ADDC(ADComputer):
         logging.debug('Finished writing %d memberships' % entriesNum)
         out.close()
 
+    def dump_trusts(self, filename='trusts.csv'):
+        entries = self.get_trusts()
+
+        try:
+            logging.debug('Opening file for writing: %s' % filename)
+            out = open(filename, 'w')
+        except:
+            logging.warning('Could not write file: %s' % filename)
+            return
+
+        logging.debug('Found %u trusts' % len(entries))
+
+        logging.debug('Writing trusts to file: %s' % filename)
+
+        out.write('SourceDomain,TargetDomain,TrustDirection,TrustType,Transitive\n')
+        for entry in entries:
+            # TODO: self.ad is currently only a single domain. In multi domain mode
+            # this will need to be updated
+            trust = ADDomainTrust(self.ad.domain, entry['name'].value, entry['trustDirection'].value, entry['trustType'].value, entry['trustAttributes'].value)
+            out.write(trust.to_output())
+
 
     def fetch_all(self):
         self.get_domains()
         self.get_computers()
         self.get_groups()
+        self.dump_trusts()
 #        self.get_users()
 #        self.get_domain_controllers()
         self.dump_memberships()
