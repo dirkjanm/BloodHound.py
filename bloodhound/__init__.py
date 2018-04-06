@@ -31,7 +31,7 @@ from bloodhound.ad import AD, ADDC, ADAuthentication
 BloodHound.py is a Python port of BloodHound, designed to run on Linux. It may very
 well work on other platforms, this is currently untested. Knock yourself out.
 """
-class BloodHound:
+class BloodHound(object):
     def __init__(self, ad):
         self.ad = ad
         self.ldap = None

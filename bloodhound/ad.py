@@ -25,50 +25,45 @@
 import logging
 import re
 import socket
-import time
-import csv
-import dns
 import traceback
-import ldap3
 from struct import unpack
+import dns
+import ldap3
 from dns import resolver, reversename
-from impacket.ntlm import NTLM_AUTH_PKT_PRIVACY
-from ldap3 import Server, Connection, SCHEMA, NTLM, ALL
-from ldap3.core.results import RESULT_SUCCESS, RESULT_STRONGER_AUTH_REQUIRED
+from ldap3 import Server, Connection, NTLM, ALL
+from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
-from impacket import smb3structs
 from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc
 from impacket.dcerpc.v5.rpcrt import DCERPCException
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
 from impacket.krb5.kerberosv5 import KerberosError
-from impacket.nt_errors import STATUS_MORE_ENTRIES
 from impacket.structure import Structure
 
 # LDAP SID structure - from impackets SAMR_RPC_SID, except the SubAuthority is LE here
 class LDAP_SID_IDENTIFIER_AUTHORITY(Structure):
     structure = (
-        ('Value','6s'),
+        ('Value', '6s'),
     )
 
 class LDAP_SID(Structure):
     structure = (
-        ('Revision','<B'),
-        ('SubAuthorityCount','<B'),
-        ('IdentifierAuthority',':',LDAP_SID_IDENTIFIER_AUTHORITY),
-        ('SubLen','_-SubAuthority','self["SubAuthorityCount"]*4'),
-        ('SubAuthority',':'),
+        ('Revision', '<B'),
+        ('SubAuthorityCount', '<B'),
+        ('IdentifierAuthority', ':', LDAP_SID_IDENTIFIER_AUTHORITY),
+        ('SubLen', '_-SubAuthority', 'self["SubAuthorityCount"]*4'),
+        ('SubAuthority', ':'),
     )
 
     def formatCanonical(self):
         ans = 'S-%d-%d' % (self['Revision'], ord(self['IdentifierAuthority']['Value'][5]))
         for i in range(self['SubAuthorityCount']):
-            ans += '-%d' % ( unpack('<L',self['SubAuthority'][i*4:i*4+4])[0])
+            ans += '-%d' % (unpack('<L', self['SubAuthority'][i*4:i*4+4])[0])
         return ans
 
 """
 """
-class ADUtils:
+class ADUtils(object):
     @staticmethod
     def domain2ldap(domain):
         return 'DC=' + ',DC='.join(str(domain).rstrip('.').split('.'))
@@ -135,7 +130,7 @@ class ADUtils:
 """
 Active Directory data and cache
 """
-class AD:
+class AD(object):
     SID = {
         'S-1-0': 'Null Authority',
         'S-1-0-0': 'Nobody',
@@ -343,7 +338,7 @@ class AD:
                     sessions = c.rpc_get_sessions()
                     c.rpc_get_local_admins()
                     c.rpc_resolve_sids()
-                    c.rpc_get_domain_trusts()
+                    # c.rpc_get_domain_trusts()
 
                     for admin in c.admins:
                         self.admins.append(admin)
@@ -388,7 +383,7 @@ class AD:
 """
 Active Directory authentication helper
 """
-class ADAuthentication:
+class ADAuthentication(object):
     def __init__(self, username='', password='', domain='',
                  lm_hash='', nt_hash='', aes_key='', kdc=None):
         self.username = username
@@ -436,7 +431,7 @@ class ADAuthentication:
 """
 Active Directory Domain
 """
-class ADDomain:
+class ADDomain(object):
     def __init__(self, name=None, netbios_name=None, sid=None, distinguishedname=None):
         self.name = name
         self.netbios_name = netbios_name
@@ -510,7 +505,7 @@ class ADDomainTrust(object):
 """
 Computer connected to Active Directory
 """
-class ADComputer:
+class ADComputer(object):
     def __init__(self, hostname=None, ad=None):
         self.hostname = hostname
         self.ad = ad
@@ -656,8 +651,6 @@ class ADComputer:
             req['ServerName'] = NULL
             req['Flags'] = 1
             resp = dce.request(req)
-
-#            resp.dump()
         except Exception as e:
             raise e
 
@@ -790,20 +783,20 @@ class ADDC(ADComputer):
 
         self.ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname,
                                                    baseDN=self.ad.baseDN, protocol=protocol)
-        return (self.ldap is not None)
+        return self.ldap is not None
 
-    def search(self, searchFilter='(objectClass=*)', attributes=[], searchBase=None, generator=False):
+    def search(self, searchFilter='(objectClass=*)', attributes=None, searchBase=None, generator=False):
         if self.ldap is None:
             self.ldap_connect()
         if searchBase is None:
             searchBase = self.ad.baseDN
-        if attributes == []:
+        if attributes is None or attributes == []:
             attributes = ldap3.ALL_ATTRIBUTES
         result = self.ldap.extend.standard.paged_search(searchBase,
-                                               searchFilter,
-                                               attributes=attributes,
-                                               paged_size=100,
-                                               generator=generator)
+                                                        searchFilter,
+                                                        attributes=attributes,
+                                                        paged_size=100,
+                                                        generator=generator)
         # If we use a generator, the generator is returned by the search
         # otherwise the results are stored in the entries property of the connection
         if generator:
@@ -827,7 +820,7 @@ class ADDC(ADComputer):
             result = self.search('(ncname=%s)' % context,
                                  ['nETBIOSName'],
                                  searchBase="CN=Partitions,CN=Configuration,%s" % self.ldap.server.info.other['rootDomainNamingContext'][0])
-        except (LDAPAttributeError, LDAPCursorError):
+        except (LDAPAttributeError, LDAPCursorError) as e:
             logging.warning('Could not determine NetBiosname of the domain: %s' % e)
         return self.ldap.entries[0]
 
@@ -943,7 +936,7 @@ class ADDC(ADComputer):
                               ['samaccountname', 'distinguishedname',
                                'dnshostname', 'samaccounttype', 'primarygroupid',
                                'memberof'],
-                               generator=True)
+                              generator=True)
         return entries
 
     def get_sessions(self):
@@ -1025,6 +1018,8 @@ class ADDC(ADComputer):
             trust = ADDomainTrust(self.ad.domain, entry['name'].value, entry['trustDirection'].value, entry['trustType'].value, entry['trustAttributes'].value)
             out.write(trust.to_output())
 
+        logging.debug('Finished writing trusts')
+        out.close()
 
     def fetch_all(self):
         self.get_domains()
