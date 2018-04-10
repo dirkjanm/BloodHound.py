@@ -754,19 +754,24 @@ class AD(object):
         return None
 
 
-    def fetch_sessions(self, filename='sessions.csv'):
-        try:
-            logging.debug('Opening file for writing: %s' % filename)
-            out = open(filename, 'w')
-        except:
-            logging.warning('Could not write file: %s' % filename)
-            return
+    def enumerate_computers(self, num_workers=10):
+        """
+            Enumerates the computers in the domain. Is threaded, you can specify the number of workers.
+            Will spawn threads to resolve computers and obtain sessions.
+        """
+        q = Queue.Queue()
 
-        logging.debug('Writing sessions to file: %s' % filename)
+        result_q = Queue.Queue()
+        results_worker = threading.Thread(target=self.write_worker, args=(result_q, 'admins.csv', 'sessions.csv'))
+        results_worker.daemon = True
+        results_worker.start()
 
-        out.write('UserName,ComputerName,Weight\n')
+        for _ in range(0, num_workers):
+            t = threading.Thread(target=self.work, args=(q,result_q))
+            t.daemon = True
+            t.start()
 
-        for k, computer in self.computers.iteritems():
+        for _, computer in self.computers.iteritems():
             if 'dNSHostName' not in computer:
                 continue
 
@@ -781,55 +786,97 @@ class AD(object):
                 logging.info('Skipping computer: %s (not whitelisted)' % hostname)
                 continue
 
-            logging.debug('Querying computer: %s' % hostname)
+            logging.debug('Putting %s on queue', hostname)
+            q.put(hostname)
 
-            c = ADComputer(hostname=hostname, ad=self)
-            if c.try_connect() == True:
-                # Maybe try connection reuse?
-                try:
-                    sessions = c.rpc_get_sessions()
-                    c.rpc_get_local_admins()
-                    c.rpc_resolve_sids()
-                    # c.rpc_get_domain_trusts()
-
-                    for admin in c.admins:
-                        self.admins.append(admin)
-
-                    if sessions is None:
-                        continue
-
-                    for ses in sessions:
-                        # Todo: properly resolve sAMAccounName in GC
-                        # currently only single-domain compatible
-                        domain = self.domain
-                        user = ('%s@%s' % (ses['user'], domain)).upper()
-                        target = str(ses['target']).upper()
-                        out.write('%s,%s,%u\n' % (user, target, 2))
-                except DCERPCException:
-                    logging.warning('Querying sessions failed: %s' % hostname)
-        out.close()
+        q.join()
+        result_q.put(None)
+        result_q.join()
 
 
-    def dump_admins(self, filename='admins.csv'):
-        try:
-            logging.debug('Opening file for writing: %s' % filename)
-            out = open(filename, 'w')
-        except:
-            logging.warning('Could not write file: %s' % filename)
-            return
+    def process_computer(self, hostname, results_q):
+        """
+            Processes a single computer, pushes the results of the computer to the given Queue.
+        """
+        logging.debug('Querying computer: %s' % hostname)
+        c = ADComputer(hostname=hostname, ad=self)
+        if c.try_connect() == True:
+            # Maybe try connection reuse?
+            try:
+                sessions = c.rpc_get_sessions()
+                c.rpc_get_local_admins()
+                c.rpc_resolve_sids()
+                # c.rpc_get_domain_trusts()
 
-        logging.debug('Writing local admins to file: %s' % filename)
+                for admin in c.admins:
+                    # Put the result on the results queue.
+                    results_q.put(('admin','%s,%s@%s,%s\n' % (str(admin['computer']).upper(),
+                                 str(admin['name']).upper(),
+                                 admin['domain'].upper(),
+                                 str(admin['use']).lower())))
 
-        out.write('ComputerName,AccountName,AccountType\n')
+                if sessions is None:
+                    sessions = []
 
-        for admin in self.admins:
-            out.write('%s,%s@%s,%s\n' % (str(admin['computer']).upper(),
-                                         str(admin['name']).upper(),
-                                         admin['domain'].upper(),
-                                         str(admin['use']).lower()))
+                for ses in sessions:
+                    # Todo: properly resolve sAMAccounName in GC
+                    # currently only single-domain compatible
+                    domain = self.domain
+                    user = ('%s@%s' % (ses['user'], domain)).upper()
+                    target = str(ses['target']).upper()
+                    # Put the result on the results queue.
+                    results_q.put(('session', '%s,%s,%u\n' % (user, target, 2)))
 
-        out.close()
+            except DCERPCException:
+                logging.warning('Querying sessions failed: %s' % hostname)
 
+
+    def work(self, q, results_q):
+        """
+            Work function, will obtain work from the given queue and will push results on the results_q.
+        """
+        logging.debug('Start working')
+
+        while True:
+            hostname = q.get()
+            logging.info('Querying computer: %s' % hostname)
+            self.process_computer(hostname, results_q)
+            q.task_done()
+
+
+    def write_worker(self, result_q, admin_filename, session_filename):
+        """
+            Worker to write the results from the results_q to the given files.
+        """
+        admin_out = open(admin_filename, 'w')
+        session_out = open(session_filename, 'w')
+
+        admin_out.write('ComputerName,AccountName,AccountType\n')
+        session_out.write('UserName,ComputerName,Weight\n')
+        while True:
+            obj = result_q.get()
+
+            if obj is None:
+                logging.debug('Obtained a None value, exiting')
+                result_q.task_done()
+                break
+
+            t = obj[0]
+            data = obj[1]
+            if t == 'session':
+                session_out.write(data)
+                logging.debug('Writing session data to file')
+            elif t == 'admin':
+                admin_out.write(data)
+                logging.debug('Writing admin data to file')
+            else:
+                logging.warning("Type is %s this should not happen", t)
+
+            result_q.task_done()
+
+        logging.debug('Write worker is done, closing files')
+        admin_out.close()
+        session_out.close()
 
 
 

@@ -66,8 +66,7 @@ class BloodHound(object):
             self.dc.get_computers()
 
         if not skip_computers:
-            self.ad.fetch_sessions()
-            self.ad.dump_admins()
+            self.ad.enumerate_computers()
 
         logging.info('Done')
 
