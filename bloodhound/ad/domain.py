@@ -40,7 +40,7 @@ from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
 from impacket.krb5.kerberosv5 import KerberosError
 from impacket.structure import Structure
-from utils import ADUtils
+from utils import ADUtils, DNSCache
 from trusts import ADDomainTrust
 import Queue
 import threading
@@ -63,25 +63,33 @@ class ADComputer(object):
 
     def try_connect(self):
         addr = None
-
         try:
-            q = self.ad.resolver.query(self.hostname, 'A')
-            for r in q:
-                addr = r.address
+            addr = self.ad.dnscache.get(self.hostname)
+        except KeyError:
+            try:
+                q = self.ad.resolver.query(self.hostname, 'A')
+                for r in q:
+                    addr = r.address
 
-            if addr == None:
+                if addr == None:
+                    return False
+            # Do exit properly on keyboardinterrupts
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                logging.warning('Could not resolve: %s: %s' % (self.hostname, e))
                 return False
-        # Do exit properly on keyboardinterrupts
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            logging.warning('Could not resolve: %s: %s' % (self.hostname, e))
-            return False
 
-        logging.debug('Trying connecting to computer: %s' % self.hostname)
-        logging.debug('Resolved: %s' % addr)
+            logging.debug('Resolved: %s' % addr)
+
+            self.ad.dnscache.put(self.hostname, addr)
 
         self.addr = addr
+
+        logging.debug('Trying connecting to computer: %s' % self.hostname)
+        # We ping the host here, this adds a small overhead for setting up an extra socket
+        # but saves us from constructing RPC Objects for non-existing hosts. Also RPC over
+        # SMB does not support setting a connection timeout, so we catch this here.
         if ADUtils.tcp_ping(addr, 445) is False:
             return False
         return True
@@ -683,6 +691,9 @@ class AD(object):
         # Default timeout after 3 seconds if the DNS servers
         # do not come up with an answer
         self.resolver.lifetime = 3.0
+        # Also create a custom cache for both forward and backward lookups
+        # this cache is thread-safe
+        self.dnscache = DNSCache()
 
         if domain is not None:
             self.baseDN = ADUtils.domain2ldap(domain)
@@ -800,11 +811,9 @@ class AD(object):
 
             logging.debug('Putting %s on queue', hostname)
             q.put(hostname)
-
         q.join()
         result_q.put(None)
         result_q.join()
-
 
     def process_computer(self, hostname, results_q):
         """
@@ -836,7 +845,15 @@ class AD(object):
                     # currently only single-domain compatible
                     domain = self.domain
                     user = ('%s@%s' % (ses['user'], domain)).upper()
-                    target = str(ses['target']).upper()
+                    # Resolve the IP to obtain the host the session is from
+                    try:
+                        target = self.dnscache.get(ses['source'])
+                    except KeyError:
+                        target = ADUtils.ip2host(ses['source'], self.resolver)
+                        # Even if the result is the IP (aka could not resolve PTR) we still cache
+                        # it since this result is unlikely to change
+                        self.dnscache.put_single(ses['source'], target)
+
                     # Put the result on the results queue.
                     results_q.put(('session', '%s,%s,%u\n' % (user, target, 2)))
 

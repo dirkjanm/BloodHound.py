@@ -24,6 +24,7 @@
 
 import logging
 import socket
+import threading
 import re
 import dns
 from dns import resolver, reversename
@@ -57,7 +58,7 @@ class ADUtils(object):
             return False
 
     @staticmethod
-    def ip2domain(ip, resolver=resolver):
+    def ip2host(ip, resolver=resolver):
         result = ip
         try:
             addr = reversename.from_address(ip)
@@ -93,3 +94,30 @@ class ADUtils(object):
             return 'wellknown'
         # Can be a (by BloudHound) unsupported type
         return ''
+
+"""
+A cache used for caching forward and backward DNS at the same time.
+This cache is used to avoid PTR queries when forward lookups are already done
+"""
+class DNSCache(object):
+    def __init__(self):
+        self.lock = threading.Lock()
+        self._cache = {}
+
+    # Get an entry from the cache
+    def get(self, entry):
+        with self.lock:
+            return self._cache[entry]
+
+    # Put a forward lookup in the cache, this also
+    # puts the reverse lookup in the cache
+    def put(self, entry, value):
+        with self.lock:
+            self._cache[entry] = value
+            self._cache[value] = entry
+
+    # Put a reverse lookup in the cache. Forward lookup
+    # is not added since reverse is considered less reliable
+    def put_single(self, entry, value):
+        with self.lock:
+            self._cache[entry] = value
