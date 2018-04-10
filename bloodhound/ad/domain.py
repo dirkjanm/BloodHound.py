@@ -858,7 +858,6 @@ class AD(object):
 
             if obj is None:
                 logging.debug('Obtained a None value, exiting')
-                result_q.task_done()
                 break
 
             t = obj[0]
@@ -877,6 +876,7 @@ class AD(object):
         logging.debug('Write worker is done, closing files')
         admin_out.close()
         session_out.close()
+        result_q.task_done()
 
 
 
