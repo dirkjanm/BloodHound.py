@@ -57,6 +57,8 @@ class ADComputer(object):
         self.sids = []
         self.admins = []
         self.trusts = []
+        self.addr = None
+        self.smbconnection = None
 
 
     def try_connect(self):
@@ -79,9 +81,9 @@ class ADComputer(object):
         logging.debug('Trying connecting to computer: %s' % self.hostname)
         logging.debug('Resolved: %s' % addr)
 
+        self.addr = addr
         if ADUtils.tcp_ping(addr, 445) is False:
             return False
-
         return True
 
 
@@ -97,17 +99,24 @@ class ADComputer(object):
                                          lmhash=self.ad.auth.lm_hash,
                                          nthash=self.ad.auth.nt_hash,
                                          aesKey=self.ad.auth.aes_key)
+
             # TODO: check Kerberos support
             # if hasattr(self.rpc, 'set_kerberos'):
                 # self.rpc.set_kerberos(True, self.ad.auth.kdc)
             # Yes we prefer SMB3, but it isn't supported by all OS
             # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_30)
 
-# Implement connections reuse?
-#            rpc.setup_smb_connection()
+            # Re-use the SMB connection if possible
+            if self.smbconnection:
+                self.rpc.set_smb_connection(self.smbconnection)
             dce = self.rpc.get_dce_rpc()
-# Implement connection timeout?
             dce.connect()
+            if self.smbconnection is None:
+                self.smbconnection = self.rpc.get_smb_connection()
+                # We explicity set the smbconnection back to the rpc object
+                # this way it won't be closed when we call disconnect()
+                self.rpc.set_smb_connection(self.smbconnection)
+
 # Implement encryption?
 #            dce.set_auth_level(NTLM_AUTH_PKT_PRIVACY)
             dce.bind(uuid)
@@ -127,9 +136,12 @@ class ADComputer(object):
 
         return dce
 
+    def rpc_close(self):
+        if self.smbconnection:
+            self.smbconnection.logoff()
 
     def rpc_get_sessions(self):
-        binding = r'ncacn_np:%s[\PIPE\srvsvc]' % self.hostname
+        binding = r'ncacn_np:%s[\PIPE\srvsvc]' % self.addr
 
         dce = self.dce_rpc_connect(binding, srvs.MSRPC_UUID_SRVS)
 
@@ -181,7 +193,7 @@ class ADComputer(object):
     """
     """
     def rpc_get_domain_trusts(self):
-        binding = r'ncacn_np:%s[\PIPE\netlogon]' % self.hostname
+        binding = r'ncacn_np:%s[\PIPE\netlogon]' % self.addr
 
         dce = self.dce_rpc_connect(binding, nrpc.MSRPC_UUID_NRPC)
 
@@ -210,7 +222,7 @@ class ADComputer(object):
     This magic is mostly borrowed from impacket/examples/netview.py
     """
     def rpc_get_local_admins(self):
-        binding = r'ncacn_np:%s[\PIPE\samr]' % self.hostname
+        binding = r'ncacn_np:%s[\PIPE\samr]' % self.addr
 
         dce = self.dce_rpc_connect(binding, samr.MSRPC_UUID_SAMR)
 
@@ -259,7 +271,7 @@ class ADComputer(object):
 
 
     def rpc_resolve_sids(self):
-        binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.hostname
+        binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.addr
 
         dce = self.dce_rpc_connect(binding, lsat.MSRPC_UUID_LSAT)
 
@@ -806,6 +818,7 @@ class AD(object):
                 sessions = c.rpc_get_sessions()
                 c.rpc_get_local_admins()
                 c.rpc_resolve_sids()
+                c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
                 for admin in c.admins:
