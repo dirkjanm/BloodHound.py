@@ -758,13 +758,16 @@ class ADComputer(object):
             if domainEntry is not None:
                 domain = ADUtils.ldap2domain(domainEntry['distinguishedName'].value)
 
-            logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
-            self.admins.append({'computer': self.hostname,
-                                'name': str(entry['Name']),
-                                'use': ADUtils.translateSidType(entry['Use']),
-                                'domain': domain,
-                                'sid': self.sids[i]})
-            i = i + 1
+            if entry['Name'] != '':
+                logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
+                self.admins.append({'computer': self.hostname,
+                                    'name': str(entry['Name']),
+                                    'use': ADUtils.translateSidType(entry['Use']),
+                                    'domain': domain,
+                                    'sid': self.sids[i]})
+                i = i + 1
+            else:
+                logging.warning('Resolved name is empty [%s]', entry)
 
         dce.disconnect()
 
