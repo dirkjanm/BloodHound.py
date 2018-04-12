@@ -31,7 +31,6 @@ from struct import unpack
 import dns
 import ldap3
 from dns import resolver, reversename
-from ldap3 import Server, Connection, NTLM, ALL
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
 from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc
@@ -319,7 +318,7 @@ class ADComputer(object):
             domain = domains[entry['DomainIndex']]
             domainEntry = self.ad.get_domain_by_name(domain)
             if domainEntry is not None:
-                domain = ADUtils.ldap2domain(domainEntry['distinguishedName'].value)
+                domain = ADUtils.ldap2domain(domainEntry['attributes']['distinguishedName'])
 
             if entry['Name'] != '':
                 logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
@@ -365,10 +364,12 @@ class ADDC(ADComputer):
                                                         generator=generator)
         # If we use a generator, the generator is returned by the search
         # otherwise the results are stored in the entries property of the connection
-        if generator:
-            return result
-        else:
-            return self.ldap.entries
+
+        for e in result:
+            if e['type'] != 'searchResEntry':
+                continue
+            yield e
+
 
 
     def get_domain_controllers(self):
@@ -376,87 +377,101 @@ class ADDC(ADComputer):
                               ['dnshostname', 'samaccounttype', 'samaccountname',
                                'serviceprincipalname'])
 
-        logging.debug('Found %u domain controllers' % len(entries))
+        logging.info('Found %u domain controllers' % len(entries))
 
         return entries
 
 
     def get_netbios_name(self, context):
         try:
-            result = self.search('(ncname=%s)' % context,
+            entries = self.search('(ncname=%s)' % context,
                                  ['nETBIOSName'],
                                  searchBase="CN=Partitions,CN=Configuration,%s" % self.ldap.server.info.other['rootDomainNamingContext'][0])
         except (LDAPAttributeError, LDAPCursorError) as e:
             logging.warning('Could not determine NetBiosname of the domain: %s' % e)
-        return self.ldap.entries[0]
+        return entries.next()
 
 
     def get_domains(self):
         entries = self.search('(objectClass=domain)',
-                              [])
+                              [],
+                              generator=True)
 
-        logging.debug('Found %u domains' % len(entries))
-
+        entriesNum = 0
         for entry in entries:
+            entriesNum += 1
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions
-            d = ADDomain.fromLDAP(entry['distinguishedName'].value, entry['objectSid'].value)
-            self.ad.domains[entry['distinguishedName'].value] = entry
+            d = ADDomain.fromLDAP(entry['attributes']['distinguishedName'], entry['attributes']['objectSid'])
+            self.ad.domains[entry['attributes']['distinguishedName']] = entry
             try:
-                nbentry = self.get_netbios_name(entry['distinguishedName'].value)
-                self.ad.nbdomains[nbentry['nETBIOSName'].value] = entry
+                nbentry = self.get_netbios_name(entry['attributes']['distinguishedName'])
+                self.ad.nbdomains[nbentry['attributes']['nETBIOSName']] = entry
             except IndexError:
                 pass
+
+        logging.info('Found %u domains', entriesNum)
 
         return entries
 
 
     def get_groups(self):
-        entries = self.search('(objectClass=group)', ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid'])
+        entries = self.search('(objectClass=group)',
+                              ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid'],
+                              generator=True)
 
-        logging.debug('Found %u groups' % len(entries))
-
+        entriesNum = 0
         for entry in entries:
-            self.ad.groups[entry['distinguishedName'].value] = entry
+            entriesNum += 1
+            self.ad.groups[entry['attributes']['distinguishedName']] = entry
             # Also add a mapping from GID to DN
             try:
-                gid = int(entry['objectSid'].value.split('-')[-1])
-                self.ad.groups_dnmap[gid] = entry['distinguishedName'].value
+                gid = int(entry['attributes']['objectSid'].split('-')[-1])
+                self.ad.groups_dnmap[gid] = entry['attributes']['distinguishedName']
             except KeyError:
                 #Somehow we found a group without a sid?
-                logging.warning('Could not determine SID for group %s' % entry['distinguishedName'].value)
+                logging.warning('Could not determine SID for group %s' % entry['attributes']['distinguishedName'])
+
+        logging.info('Found %u groups', entriesNum)
 
         return entries
 
 
     def get_users(self):
-        entries = self.search('(objectClass=user)', [])
-        logging.debug('Found %u users' % len(entries))
+        entries = self.search('(objectClass=user)',
+                              [],
+                              generator=True)
 
+        entriesNum = 0
         for entry in entries:
-            self.ad.users[entry['distinguishedName'].value] = entry
+            entriesNum += 1
+            self.ad.users[entry['attributes']['distinguishedName']] = entry
 
+        logging.info('Found %u users', entriesNum)
         return entries
 
 
     def get_computers(self):
         entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',
                               ['samaccountname', 'distinguishedname',
-                               'dnshostname', 'samaccounttype'])
+                               'dnshostname', 'samaccounttype'],
+                              generator=True)
 
-        logging.debug('Found %u computers' % len(entries))
-
+        entriesNum = 0
         for entry in entries:
-            self.ad.computers[entry['distinguishedName']] = entry
+            entriesNum += 1
+            self.ad.computers[entry['attributes']['distinguishedName']] = entry
+
+        logging.info('Found %u computers', entriesNum)
 
         return entries
 
 
     @staticmethod
-    def get_object_type(entry):
-        if 'sAMAccountType' not in entry:
+    def get_object_type(resolvedEntry):
+        if 'sAMAccountType' not in resolvedEntry:
             return 'unknown'
-        return entry['sAMAccountType']
+        return resolvedEntry['sAMAccountType']
 
 
     def resolve_ad_entry(self, entry):
@@ -464,32 +479,30 @@ class ADDC(ADComputer):
         account = ''
         dn = ''
         domain = ''
-
-        if 'sAMAccountName' in entry:
-            account = entry['sAMAccountName'].value
-        if 'distinguishedName' in entry:
-            dn = entry['distinguishedName'].value
+        if entry['attributes']['sAMAccountName']:
+            account = entry['attributes']['sAMAccountName']
+        if entry['attributes']['distinguishedName']:
+            dn = entry['attributes']['distinguishedName']
             domain = ADUtils.ldap2domain(dn)
 
         resolved['principal'] = str('%s@%s' % (account, domain)).upper()
-
-        if 'sAMAccountType' not in entry:
+        if not entry['attributes']['sAMAccountName']:
             if 'ForeignSecurityPrincipals' in dn:
                 resolved['principal'] = domain.upper()
                 resolved['type'] = 'foreignsecurityprincipal'
             else:
                 resolved['type'] = 'unknown'
         else:
-            accountType = entry['sAMAccountType'].value
-            if accountType in ['268435456', '268435457', '536870912', '536870913']:
+            accountType = entry['attributes']['sAMAccountType']
+            if accountType in [268435456, 268435457, 536870912, 536870913]:
                 resolved['type'] = 'group'
-            elif accountType in ['805306369']:
+            elif accountType in [805306369]:
                 resolved['type'] = 'computer'
                 short_name = account.rstrip('$')
                 resolved['principal'] = str('%s.%s' % (short_name, domain)).upper()
-            elif accountType in ['805306368']:
+            elif accountType in [805306368]:
                 resolved['type'] = 'user'
-            elif accountType in ['805306370']:
+            elif accountType in [805306370]:
                 resolved['type'] = 'trustaccount'
             else:
                 resolved['type'] = 'domain'
@@ -512,7 +525,8 @@ class ADDC(ADComputer):
 
     def get_trusts(self):
         entries = self.search('(objectClass=trustedDomain)',
-                              attributes=['flatName', 'name', 'securityIdentifier', 'trustAttributes', 'trustDirection', 'trustType'])
+                              attributes=['flatName', 'name', 'securityIdentifier', 'trustAttributes', 'trustDirection', 'trustType'],
+                              generator=True)
         return entries
 
     def write_membership(self, resolved_entry, membership, out):
@@ -527,7 +541,7 @@ class ADDC(ADComputer):
 
     def write_primary_membership(self, resolved_entry, entry, out):
         try:
-            primarygroupid = int(entry['primaryGroupID'].value)
+            primarygroupid = int(entry['attributes']['primaryGroupID'])
         except (TypeError, KeyError):
             # Doesn't have a primarygroupid, means it is probably a Group instead of a user
             return
@@ -556,13 +570,14 @@ class ADDC(ADComputer):
             entriesNum += 1
             resolved_entry = self.resolve_ad_entry(entry)
             try:
-                for m in entry['memberOf'].values:
+                for m in entry['attributes']['memberOf']:
                     self.write_membership(resolved_entry, m, out)
             except (KeyError, LDAPKeyError):
                 logging.debug(traceback.format_exc())
             self.write_primary_membership(resolved_entry, entry, out)
 
-        logging.debug('Finished writing %d memberships' % entriesNum)
+        logging.info('Found %d memberships', entriesNum)
+        logging.debug('Finished writing membership')
         out.close()
 
     def dump_trusts(self, filename='trusts.csv'):
@@ -575,16 +590,18 @@ class ADDC(ADComputer):
             logging.warning('Could not write file: %s' % filename)
             return
 
-        logging.debug('Found %u trusts' % len(entries))
 
         logging.debug('Writing trusts to file: %s' % filename)
 
         out.write('SourceDomain,TargetDomain,TrustDirection,TrustType,Transitive\n')
+        entriesNum = 0
         for entry in entries:
+            entriesNum += 1
             # TODO: self.ad is currently only a single domain. In multi domain mode
             # this will need to be updated
-            trust = ADDomainTrust(self.ad.domain, entry['name'].value, entry['trustDirection'].value, entry['trustType'].value, entry['trustAttributes'].value)
+            trust = ADDomainTrust(self.ad.domain, entry['attributes']['name'], entry['attributes']['trustDirection'], entry['attributes']['trustType'], entry['attributes']['trustAttributes'])
             out.write(trust.to_output())
+        logging.info('Found %u trusts', entriesNum)
 
         logging.debug('Finished writing trusts')
         out.close()
@@ -767,8 +784,8 @@ class AD(object):
 
     def get_domain_by_name(self, name):
         for domain, entry in self.domains.iteritems():
-            if 'name' in entry:
-                if entry['name'].value.upper() == name.upper():
+            if 'name' in entry['attributes']:
+                if entry['attributes']['name'].upper() == name.upper():
                     return entry
         # Also try domains by NETBIOS definition
         for domain, entry in self.nbdomains.iteritems():
@@ -795,10 +812,10 @@ class AD(object):
             t.start()
 
         for _, computer in self.computers.iteritems():
-            if 'dNSHostName' not in computer:
+            if 'dNSHostName' not in computer['attributes']:
                 continue
 
-            hostname = computer['dNSHostName'].value
+            hostname = computer['attributes']['dNSHostName']
             if hostname is None:
                 continue
 
