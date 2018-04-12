@@ -819,7 +819,7 @@ class AD(object):
                 continue
 
             hostname = computer['attributes']['dNSHostName']
-            if hostname is None:
+            if not hostname:
                 continue
 
             if hostname in self.blacklist:

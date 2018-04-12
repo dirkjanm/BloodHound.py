@@ -33,8 +33,10 @@ class ADAuthentication(object):
     def __init__(self, username='', password='', domain='',
                  lm_hash='', nt_hash='', aes_key='', kdc=None):
         self.username = username
-        self.password = password
         self.domain = domain
+        if '@' in self.username:
+            self.username, self.domain = self.username.rsplit('@', 1)
+        self.password = password
         self.lm_hash = lm_hash
         self.nt_hash = nt_hash
         self.aes_key = aes_key
@@ -45,9 +47,11 @@ class ADAuthentication(object):
         server = Server("%s://%s" % (protocol, hostname), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
-            self.password = self.lm_hash + ':' + self.nt_hash
+            ldappass = self.lm_hash + ':' + self.nt_hash
+        else:
+            ldappass = self.password
         ldaplogin = '%s\%s' % (self.domain, self.username)
-        conn = Connection(server, user=ldaplogin, password=self.password, authentication=NTLM)
+        conn = Connection(server, user=ldaplogin, password=ldappass, authentication=NTLM)
 
         # TODO: Kerberos auth for ldap
         if self.kdc is not None:

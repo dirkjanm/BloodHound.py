@@ -105,7 +105,7 @@ def main():
     parser.add_argument('-u',
                         '--username',
                         action='store',
-                        help='Username')
+                        help='Username. Format: username[@domain]; If the domain is unspecified, the current domain is used.')
     parser.add_argument('-p',
                         '--password',
                         action='store',
@@ -117,9 +117,6 @@ def main():
     parser.add_argument('--hashes',
                         action='store',
                         help='NLTM hash')
-    parser.add_argument('-n',
-                        action='store_true',
-                        help='Do not resolve names')
     parser.add_argument('-ns',
                         '--nameserver',
                         action='store',
@@ -134,7 +131,7 @@ def main():
     parser.add_argument('-d',
                         '--domain',
                         action='store',
-                        help='Domain')
+                        help='Domain to query')
     parser.add_argument('-v',
                         action='store_true',
                         help='Enable verbose output')
@@ -167,9 +164,8 @@ def main():
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver)
 
-    if args.n is not True:
-        logging.debug('Using DNS to retrieve domain information')
-        ad.dns_resolve(kerberos=args.kerberos, domain=args.domain)
+    logging.debug('Using DNS to retrieve domain information')
+    ad.dns_resolve(kerberos=args.kerberos, domain=args.domain)
 
     bloodhound = BloodHound(ad)
     bloodhound.connect()
