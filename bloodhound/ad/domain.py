@@ -43,6 +43,7 @@ from utils import ADUtils, DNSCache
 from trusts import ADDomainTrust
 import Queue
 import threading
+import codecs
 
 """
 Computer connected to Active Directory
@@ -323,7 +324,7 @@ class ADComputer(object):
             if entry['Name'] != '':
                 logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
                 self.admins.append({'computer': self.hostname,
-                                    'name': str(entry['Name']),
+                                    'name': unicode(entry['Name']),
                                     'use': ADUtils.translateSidType(entry['Use']),
                                     'domain': domain,
                                     'sid': self.sids[i]})
@@ -350,7 +351,7 @@ class ADDC(ADComputer):
                                                    baseDN=self.ad.baseDN, protocol=protocol)
         return self.ldap is not None
 
-    def search(self, searchFilter='(objectClass=*)', attributes=None, searchBase=None, generator=False):
+    def search(self, searchFilter='(objectClass=*)', attributes=None, searchBase=None, generator=True):
         if self.ldap is None:
             self.ldap_connect()
         if searchBase is None:
@@ -360,11 +361,10 @@ class ADDC(ADComputer):
         result = self.ldap.extend.standard.paged_search(searchBase,
                                                         searchFilter,
                                                         attributes=attributes,
-                                                        paged_size=100,
+                                                        paged_size=10,
                                                         generator=generator)
-        # If we use a generator, the generator is returned by the search
-        # otherwise the results are stored in the entries property of the connection
 
+        # Use a generator for the result regardless of if the search function uses one
         for e in result:
             if e['type'] != 'searchResEntry':
                 continue
@@ -485,8 +485,10 @@ class ADDC(ADComputer):
             dn = entry['attributes']['distinguishedName']
             domain = ADUtils.ldap2domain(dn)
 
-        resolved['principal'] = str('%s@%s' % (account, domain)).upper()
+        resolved['principal'] = unicode('%s@%s' % (account, domain)).upper()
         if not entry['attributes']['sAMAccountName']:
+            # This doesn't make sense currently but neither does it in SharpHound.
+            # TODO: figure out what the intended result is
             if 'ForeignSecurityPrincipals' in dn:
                 resolved['principal'] = domain.upper()
                 resolved['type'] = 'foreignsecurityprincipal'
@@ -499,7 +501,7 @@ class ADDC(ADComputer):
             elif accountType in [805306369]:
                 resolved['type'] = 'computer'
                 short_name = account.rstrip('$')
-                resolved['principal'] = str('%s.%s' % (short_name, domain)).upper()
+                resolved['principal'] = unicode('%s.%s' % (short_name, domain)).upper()
             elif accountType in [805306368]:
                 resolved['type'] = 'user'
             elif accountType in [805306370]:
@@ -535,7 +537,7 @@ class ADDC(ADComputer):
             pd = ADUtils.ldap2domain(membership)
             pr = self.resolve_ad_entry(parent)
 
-            out.write('%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
+            out.write(u'%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
         else:
             logging.warning('Warning: Unknown group %d' % membership)
 
@@ -557,7 +559,7 @@ class ADDC(ADComputer):
 
         try:
             logging.debug('Opening file for writing: %s' % filename)
-            out = open(filename, 'w')
+            out = codecs.open(filename, 'w', 'utf-8')
         except:
             logging.warning('Could not write file: %s' % filename)
             return
@@ -585,7 +587,7 @@ class ADDC(ADComputer):
 
         try:
             logging.debug('Opening file for writing: %s' % filename)
-            out = open(filename, 'w')
+            out = codecs.open(filename, 'w', 'utf-8')
         except:
             logging.warning('Could not write file: %s' % filename)
             return
@@ -720,7 +722,7 @@ class AD(object):
 
     def realm(self):
         if self.domain is not None:
-            return str(self.domain).upper()
+            return unicode(self.domain).upper()
         else:
             return None
 
@@ -755,7 +757,8 @@ class AD(object):
                 logging.info('Found AD domain: %s' % ad_domain)
 
                 self.domain = ad_domain
-                self.auth.domain = ad_domain
+                if self.auth.domain is None:
+                    self.auth.domain = ad_domain
                 self.baseDN = ADUtils.domain2ldap(ad_domain)
 
             for r in q:
@@ -849,10 +852,10 @@ class AD(object):
 
                 for admin in c.admins:
                     # Put the result on the results queue.
-                    results_q.put(('admin','%s,%s@%s,%s\n' % (str(admin['computer']).upper(),
-                                 str(admin['name']).upper(),
+                    results_q.put(('admin',u'%s,%s@%s,%s\n' % (unicode(admin['computer']).upper(),
+                                 unicode(admin['name']).upper(),
                                  admin['domain'].upper(),
-                                 str(admin['use']).lower())))
+                                 unicode(admin['use']).lower())))
 
                 if sessions is None:
                     sessions = []
@@ -861,7 +864,7 @@ class AD(object):
                     # Todo: properly resolve sAMAccounName in GC
                     # currently only single-domain compatible
                     domain = self.domain
-                    user = ('%s@%s' % (ses['user'], domain)).upper()
+                    user = (u'%s@%s' % (ses['user'], domain)).upper()
                     # Resolve the IP to obtain the host the session is from
                     try:
                         target = self.dnscache.get(ses['source'])
@@ -872,7 +875,7 @@ class AD(object):
                         self.dnscache.put_single(ses['source'], target)
 
                     # Put the result on the results queue.
-                    results_q.put(('session', '%s,%s,%u\n' % (user, target, 2)))
+                    results_q.put(('session', u'%s,%s,%u\n' % (user, target, 2)))
 
             except DCERPCException:
                 logging.warning('Querying sessions failed: %s' % hostname)
@@ -895,8 +898,8 @@ class AD(object):
         """
             Worker to write the results from the results_q to the given files.
         """
-        admin_out = open(admin_filename, 'w')
-        session_out = open(session_filename, 'w')
+        admin_out = codecs.open(admin_filename, 'w', 'utf-8')
+        session_out = codecs.open(session_filename, 'w', 'utf-8')
 
         admin_out.write('ComputerName,AccountName,AccountType\n')
         session_out.write('UserName,ComputerName,Weight\n')
