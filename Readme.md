@@ -21,6 +21,6 @@ BloodHound.py requires `impacket`, `ldap3` and `dnspython` to function.
 The installation will add a command line tool `bloodhound-python` to your PATH.
 
 To use the ingestor, at a minimum you will need credentials of the domain you're logging in to.
-You will need to specify the `-u` option with a username of this domain. If you have your DNS set up properly and the AD domain is in your DNS search list, then BloodHound.py will automatically detect the domain for you. If not, you have to specify it manually with the `-d` option.
+You will need to specify the `-u` option with a username of this domain (or `username@domain` for a user in a trusted domain). If you have your DNS set up properly and the AD domain is in your DNS search list, then BloodHound.py will automatically detect the domain for you. If not, you have to specify it manually with the `-d` option.
 
 By default BloodHound.py will query LDAP and the individual computers of the domain to enumerate users, computers, groups, sessions and local admins. To disable some checks, see the options.
