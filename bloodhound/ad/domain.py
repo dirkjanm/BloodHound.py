@@ -539,7 +539,7 @@ class ADDC(ADComputer):
 
             out.write(u'%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
         else:
-            logging.warning('Warning: Unknown group %d' % membership)
+            logging.warning('Warning: Unknown group %s', membership)
 
     def write_primary_membership(self, resolved_entry, entry, out):
         try:
@@ -552,7 +552,7 @@ class ADDC(ADComputer):
             pr = self.resolve_ad_entry(group)
             out.write('%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
         except KeyError:
-            logging.warning('Warning: Unknown primarygroupid %d' % primarygroupid)
+            logging.warning('Warning: Unknown primarygroupid %d', primarygroupid)
 
     def dump_memberships(self, filename='group_membership.csv'):
         entries = self.get_memberships()
