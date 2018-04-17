@@ -58,15 +58,16 @@ class BloodHound(object):
 #        self.dc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, skip_groups=False, skip_computers=False):
+    def run(self, skip_groups=False, skip_computers=False, skip_trusts=False, num_workers=10):
         if not skip_groups:
             self.dc.fetch_all()
         elif not skip_computers:
             # We need to know which computers to query regardless
             self.dc.get_computers()
-
+        if not skip_trusts:
+            self.dc.dump_trusts()
         if not skip_computers:
-            self.ad.enumerate_computers()
+            self.ad.enumerate_computers(num_workers=num_workers)
 
         logging.info('Done')
 
@@ -128,10 +129,19 @@ def main():
     parser.add_argument('--skip-computers',
                         action='store_true',
                         help='Do not connect to individual computers')
+    parser.add_argument('--skip-trusts',
+                        action='store_true',
+                        help='Do not enumerate trusts')
     parser.add_argument('-d',
                         '--domain',
                         action='store',
                         help='Domain to query')
+    parser.add_argument('-w',
+                        '--workers',
+                        action='store',
+                        type=int,
+                        default=10,
+                        help='Number of workers for computer enumeration (default: 10)')
     parser.add_argument('-v',
                         action='store_true',
                         help='Enable verbose output')
@@ -169,7 +179,7 @@ def main():
 
     bloodhound = BloodHound(ad)
     bloodhound.connect()
-    bloodhound.run(skip_groups=args.skip_groups, skip_computers=args.skip_computers)
+    bloodhound.run(skip_groups=args.skip_groups, skip_computers=args.skip_computers, skip_trusts=args.skip_trusts, num_workers=args.workers)
 
 
 if __name__ == '__main__':

@@ -180,6 +180,9 @@ class ADComputer(object):
             # Skip our connection
             if userName == self.ad.auth.username:
                 continue
+            # Skip empty usernames
+            if len(userName) == 0:
+                continue
             # Skip machine accounts
             if userName[-1] == '$':
                 continue
@@ -271,9 +274,12 @@ class ADComputer(object):
 
                 self.sids.append(sid_string)
         except DCERPCException as e:
-            logging.debug('Exception connecting to RPC: %s' % e)
+            logging.debug('Exception connecting to RPC: %s', e)
         except Exception as e:
-            raise e
+            if 'connection reset' in str(e):
+                logging.debug('Connection was reset: %s', e)
+            else:
+                raise e
 
         dce.disconnect()
 
@@ -361,7 +367,7 @@ class ADDC(ADComputer):
         result = self.ldap.extend.standard.paged_search(searchBase,
                                                         searchFilter,
                                                         attributes=attributes,
-                                                        paged_size=10,
+                                                        paged_size=200,
                                                         generator=generator)
 
         # Use a generator for the result regardless of if the search function uses one
@@ -602,7 +608,7 @@ class ADDC(ADComputer):
             # TODO: self.ad is currently only a single domain. In multi domain mode
             # this will need to be updated
             trust = ADDomainTrust(self.ad.domain, entry['attributes']['name'], entry['attributes']['trustDirection'], entry['attributes']['trustType'], entry['attributes']['trustAttributes'])
-            out.write(trust.to_output())
+            out.write(trust.to_output()+'\n')
         logging.info('Found %u trusts', entriesNum)
 
         logging.debug('Finished writing trusts')
@@ -612,7 +618,6 @@ class ADDC(ADComputer):
         self.get_domains()
         self.get_computers()
         self.get_groups()
-        self.dump_trusts()
 #        self.get_users()
 #        self.get_domain_controllers()
         self.dump_memberships()
@@ -808,7 +813,9 @@ class AD(object):
         results_worker = threading.Thread(target=self.write_worker, args=(result_q, 'admins.csv', 'sessions.csv'))
         results_worker.daemon = True
         results_worker.start()
-
+        logging.info('Starting computer enumeration with %d workers', num_workers)
+        if len(self.computers) / num_workers > 500:
+            logging.info('The workload seems to be rather large. Consider increasing the number of workers.')
         for _ in range(0, num_workers):
             t = threading.Thread(target=self.work, args=(q,result_q))
             t.daemon = True
@@ -829,7 +836,6 @@ class AD(object):
                 logging.info('Skipping computer: %s (not whitelisted)' % hostname)
                 continue
 
-            logging.debug('Putting %s on queue', hostname)
             q.put(hostname)
         q.join()
         result_q.put(None)
@@ -873,12 +879,20 @@ class AD(object):
                         # Even if the result is the IP (aka could not resolve PTR) we still cache
                         # it since this result is unlikely to change
                         self.dnscache.put_single(ses['source'], target)
-
+                    if ':' in target:
+                        # IPv6 address, not very useful
+                        continue
+                    if not '.' in target:
+                        logging.debug('Resolved target does not look like an IP or domain. Assuming hostname: %s', target)
+                        target = '%s.%s' % (target, domain)
                     # Put the result on the results queue.
                     results_q.put(('session', u'%s,%s,%u\n' % (user, target, 2)))
 
             except DCERPCException:
                 logging.warning('Querying sessions failed: %s' % hostname)
+            except Exception as e:
+                logging.error('Unhandled exception in computer processing: %s', str(e))
+                logging.info(traceback.format_exc())
 
 
     def work(self, q, results_q):

@@ -64,6 +64,7 @@ class ADUtils(object):
             addr = reversename.from_address(ip)
         except dns.exception.SyntaxError:
             logging.warning('DNS: invalid address: %s' % ip)
+            return result
 
         try:
             answer = str(resolver.query(addr, 'PTR')[0])
@@ -93,7 +94,8 @@ class ADUtils(object):
         if sidType == 5:
             return 'wellknown'
         # Can be a (by BloudHound) unsupported type
-        return ''
+        # must not be an empty string since this breaks our CSV files
+        return 'unknown'
 
 """
 A cache used for caching forward and backward DNS at the same time.
