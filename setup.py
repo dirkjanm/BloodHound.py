@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='bloodhound',
-      version='0.3.0',
+      version='0.3.1',
       description='Python based ingestor for BloodHound',
       author='Edwin van Vliet, Dirk-jan Mollema, Matthijs Gielen',
       author_email='edwin.vanvliet@fox-it.com, dirkjan.mollema@fox-it.com, matthijs.gielen@fox-it.com',
@@ -9,7 +9,7 @@ setup(name='bloodhound',
       packages=['bloodhound',
                 'bloodhound.ad'],
       license='MIT',
-      install_requires=['dnspython', 'impacket', 'ldap3'],
+      install_requires=['dnspython', 'impacket', 'ldap3>=2.4.1', 'pyasn1>=0.4'],
       classifiers=[
         'Intended Audience :: Information Technology',
         'License :: OSI Approved :: MIT License',
