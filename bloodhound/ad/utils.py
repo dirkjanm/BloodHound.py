@@ -89,6 +89,9 @@ class ADUtils(object):
             return 'user'
         if sidType == 2:
             return 'group'
+        # sidType 4 means "alias", this is actually a Domain Local Group
+        if sidType == 4:
+            return 'group'
         if sidType == 9:
             return 'computer'
         if sidType == 5:
