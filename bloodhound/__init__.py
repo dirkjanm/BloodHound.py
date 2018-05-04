@@ -64,6 +64,8 @@ class BloodHound(object):
         elif not skip_computers:
             # We need to know which computers to query regardless
             self.dc.get_computers()
+            # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
+            self.dc.get_domains()
         if not skip_trusts:
             self.dc.dump_trusts()
         if not skip_computers:
