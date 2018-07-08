@@ -40,7 +40,7 @@ class ADComputer(object):
         self.samname = samname
         self.rpc = None
         self.dce = None
-        self.sids = []
+        self.admin_sids = []
         self.admins = []
         self.trusts = []
         self.addr = None
@@ -233,6 +233,7 @@ class ADComputer(object):
             try:
                 resp = samr.hSamrLookupDomainInSamServer(dce, serverHandle, self.samname[:-1])
                 self.sid = resp['DomainId'].formatCanonical()
+            # This doesn't always work (for example on DCs)
             except DCERPCException as e:
                 # Make it a string which is guaranteed not to match a SID
                 self.sid = 'UNKNOWN'
@@ -265,7 +266,17 @@ class ADComputer(object):
 
                 logging.debug('Found admin SID: %s', sid_string)
                 if not sid_string.startswith(self.sid):
-                    self.sids.append(sid_string)
+                    # If the sid is known, we can add the admin value directly
+                    try:
+                        siddata, domain = self.ad.sidcache.get(sid_string)
+                        logging.debug('Sid is cached: %s@%s', siddata['Name'], domain)
+                        self.admins.append({'computer': self.hostname,
+                                            'name': unicode(siddata['Name']),
+                                            'use': ADUtils.translateSidType(siddata['Use']),
+                                            'domain': domain})
+                    except KeyError:
+                        # Append it to the list of unresolved SIDs
+                        self.admin_sids.append(sid_string)
                 else:
                     logging.debug('Ignoring local group %s', sid_string)
         except DCERPCException as e:
@@ -280,6 +291,12 @@ class ADComputer(object):
 
 
     def rpc_resolve_sids(self):
+        """
+        Resolve any remaining unknown SIDs for local administrator accounts.
+        """
+        # If all sids were already cached, we can just return
+        if len(self.admin_sids) == 0:
+            return
         binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.addr
 
         dce = self.dce_rpc_connect(binding, lsat.MSRPC_UUID_LSAT)
@@ -298,39 +315,43 @@ class ADComputer(object):
 
         policyHandle = resp['PolicyHandle']
 
-        try:
-            resp = lsat.hLsarLookupSids(dce, policyHandle, self.sids, lsat.LSAP_LOOKUP_LEVEL.LsapLookupWksta)
-        except DCERPCException as e:
-            if str(e).find('STATUS_NONE_MAPPED') >= 0:
-                logging.warning('SID lookup failed, return status: STATUS_NONE_MAPPED')
-                raise
-            elif str(e).find('STATUS_SOME_NOT_MAPPED') >= 0:
-                # Not all could be resolved, work with the ones that could
-                resp = e.get_packet()
-            else:
-                raise
+        # We could look up the SIDs all at once, but if not all SIDs are mapped, we don't know which
+        # ones were resolved and which not, making it impossible to map them in the cache.
+        # Therefor we use more SAMR calls at the start, but after a while most SIDs will be reliable
+        # in our cache and this function doesn't even need to get called anymore.
+        for sid_string in self.admin_sids:
+            try:
+                resp = lsat.hLsarLookupSids(dce, policyHandle, [sid_string], lsat.LSAP_LOOKUP_LEVEL.LsapLookupWksta)
+            except DCERPCException as e:
+                if str(e).find('STATUS_NONE_MAPPED') >= 0:
+                    logging.warning('SID %s lookup failed, return status: STATUS_NONE_MAPPED', sid_string)
+                    # Try next SID
+                    continue
+                elif str(e).find('STATUS_SOME_NOT_MAPPED') >= 0:
+                    # Not all could be resolved, work with the ones that could
+                    resp = e.get_packet()
+                else:
+                    raise
 
-        domains = []
-        for entry in resp['ReferencedDomains']['Domains']:
-            logging.debug('Found referenced domain: %s' % entry['Name'])
-            domains.append(entry['Name'])
+            domains = []
+            for entry in resp['ReferencedDomains']['Domains']:
+                domains.append(entry['Name'])
 
-        i = 0
-        for entry in resp['TranslatedNames']['Names']:
-            domain = domains[entry['DomainIndex']]
-            domainEntry = self.ad.get_domain_by_name(domain)
-            if domainEntry is not None:
-                domain = ADUtils.ldap2domain(domainEntry['attributes']['distinguishedName'])
+            for entry in resp['TranslatedNames']['Names']:
+                domain = domains[entry['DomainIndex']]
+                domainEntry = self.ad.get_domain_by_name(domain)
+                if domainEntry is not None:
+                    domain = ADUtils.ldap2domain(domainEntry['attributes']['distinguishedName'])
 
-            if entry['Name'] != '':
-                logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
-                self.admins.append({'computer': self.hostname,
-                                    'name': unicode(entry['Name']),
-                                    'use': ADUtils.translateSidType(entry['Use']),
-                                    'domain': domain,
-                                    'sid': self.sids[i]})
-                i = i + 1
-            else:
-                logging.warning('Resolved name is empty [%s]', entry)
+                if entry['Name'] != '':
+                    logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
+                    self.admins.append({'computer': self.hostname,
+                                        'name': unicode(entry['Name']),
+                                        'use': ADUtils.translateSidType(entry['Use']),
+                                        'domain': domain})
+                    # Add it to our cache
+                    self.ad.sidcache.put(sid_string, (entry, domain))
+                else:
+                    logging.warning('Resolved name is empty [%s]', entry)
 
         dce.disconnect()

@@ -30,7 +30,7 @@ from dns import resolver
 from ldap3 import ALL_ATTRIBUTES
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
 # from impacket.krb5.kerberosv5 import KerberosError
-from bloodhound.ad.utils import ADUtils, DNSCache
+from bloodhound.ad.utils import ADUtils, DNSCache, SidCache
 from bloodhound.ad.trusts import ADDomainTrust
 from bloodhound.ad.computer import ADComputer
 
@@ -389,8 +389,13 @@ class AD(object):
     def __init__(self, domain=None, auth=None, nameserver=None):
         self.domain = domain
         self.auth = auth
+        # List of DCs for this domain. Contains just one DC since
+        # we query for the primary DC specifically
         self._dcs = []
+        # Kerberos servers
         self._kdcs = []
+        # Global catalog servers
+        self._gcs = []
 
         self.domains = {}
         self.nbdomains = {}
@@ -411,6 +416,8 @@ class AD(object):
         # Also create a custom cache for both forward and backward lookups
         # this cache is thread-safe
         self.dnscache = DNSCache()
+        # Create a thread-safe SID lookup cache
+        self.sidcache = SidCache()
 
         if domain is not None:
             self.baseDN = ADUtils.domain2ldap(domain)
@@ -428,10 +435,11 @@ class AD(object):
     def dcs(self):
         return self._dcs
 
+    def gcs(self):
+        return self._gcs
 
     def kdcs(self):
         return self._kdcs
-
 
     def dns_resolve(self, domain=None, kerberos=True):
         logging.debug('Querying domain controller information from DNS')
@@ -464,6 +472,17 @@ class AD(object):
                 logging.debug('Found primary DC: %s' % dc)
                 if dc not in self._dcs:
                     self._dcs.append(dc)
+
+        except resolver.NXDOMAIN:
+            pass
+
+        try:
+            q = self.resolver.query(query.replace('pdc','gc'), 'SRV')
+            for r in q:
+                gc = str(r.target).rstrip('.')
+                logging.debug('Found Global Catalog server: %s' % gc)
+                if gc not in self._gcs:
+                    self._gcs.append(gc)
 
         except resolver.NXDOMAIN:
             pass

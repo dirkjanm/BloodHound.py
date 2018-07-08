@@ -100,11 +100,11 @@ class ADUtils(object):
         # must not be an empty string since this breaks our CSV files
         return 'unknown'
 
-"""
-A cache used for caching forward and backward DNS at the same time.
-This cache is used to avoid PTR queries when forward lookups are already done
-"""
 class DNSCache(object):
+    """
+    A cache used for caching forward and backward DNS at the same time.
+    This cache is used to avoid PTR queries when forward lookups are already done
+    """
     def __init__(self):
         self.lock = threading.Lock()
         self._cache = {}
