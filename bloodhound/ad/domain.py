@@ -22,323 +22,19 @@
 #
 ####################
 
-
 import logging
-import re
-import socket
 import traceback
-from struct import unpack
-import dns
-import ldap3
-from dns import resolver, reversename
-from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
-from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
-from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc
-from impacket.dcerpc.v5.rpcrt import DCERPCException
-from impacket.dcerpc.v5.ndr import NULL
-from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
-from impacket.krb5.kerberosv5 import KerberosError
-from impacket.structure import Structure
-from utils import ADUtils, DNSCache
-from trusts import ADDomainTrust
 import Queue
 import threading
 import codecs
-
-"""
-Computer connected to Active Directory
-"""
-class ADComputer(object):
-    def __init__(self, hostname=None, ad=None):
-        self.hostname = hostname
-        self.ad = ad
-        self.rpc = None
-        self.dce = None
-        self.sids = []
-        self.admins = []
-        self.trusts = []
-        self.addr = None
-        self.smbconnection = None
-
-
-    def try_connect(self):
-        addr = None
-        try:
-            addr = self.ad.dnscache.get(self.hostname)
-        except KeyError:
-            try:
-                q = self.ad.resolver.query(self.hostname, 'A')
-                for r in q:
-                    addr = r.address
-
-                if addr == None:
-                    return False
-            # Do exit properly on keyboardinterrupts
-            except KeyboardInterrupt:
-                raise
-            except Exception as e:
-                logging.warning('Could not resolve: %s: %s' % (self.hostname, e))
-                return False
-
-            logging.debug('Resolved: %s' % addr)
-
-            self.ad.dnscache.put(self.hostname, addr)
-
-        self.addr = addr
-
-        logging.debug('Trying connecting to computer: %s' % self.hostname)
-        # We ping the host here, this adds a small overhead for setting up an extra socket
-        # but saves us from constructing RPC Objects for non-existing hosts. Also RPC over
-        # SMB does not support setting a connection timeout, so we catch this here.
-        if ADUtils.tcp_ping(addr, 445) is False:
-            return False
-        return True
-
-
-    def dce_rpc_connect(self, binding, uuid):
-        logging.debug('DCE/RPC binding: %s' % binding)
-
-        try:
-            self.rpc = transport.DCERPCTransportFactory(binding)
-            self.rpc.set_connect_timeout(1.0)
-            if hasattr(self.rpc, 'set_credentials'):
-                self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
-                                         domain=self.ad.auth.domain,
-                                         lmhash=self.ad.auth.lm_hash,
-                                         nthash=self.ad.auth.nt_hash,
-                                         aesKey=self.ad.auth.aes_key)
-
-            # TODO: check Kerberos support
-            # if hasattr(self.rpc, 'set_kerberos'):
-                # self.rpc.set_kerberos(True, self.ad.auth.kdc)
-            # Yes we prefer SMB3, but it isn't supported by all OS
-            # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_30)
-
-            # Re-use the SMB connection if possible
-            if self.smbconnection:
-                self.rpc.set_smb_connection(self.smbconnection)
-            dce = self.rpc.get_dce_rpc()
-            dce.connect()
-            if self.smbconnection is None:
-                self.smbconnection = self.rpc.get_smb_connection()
-                # We explicity set the smbconnection back to the rpc object
-                # this way it won't be closed when we call disconnect()
-                self.rpc.set_smb_connection(self.smbconnection)
-
-# Implement encryption?
-#            dce.set_auth_level(NTLM_AUTH_PKT_PRIVACY)
-            dce.bind(uuid)
-        except DCERPCException as e:
-            logging.debug(traceback.format_exc())
-            logging.warning('DCE/RPC connection failed: %s' % str(e))
-            return None
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            logging.debug(traceback.format_exc())
-            logging.warning('DCE/RPC connection failed: %s' % e)
-            return None
-        except:
-            logging.warning('DCE/RPC connection failed (unknown error)')
-            return None
-
-        return dce
-
-    def rpc_close(self):
-        if self.smbconnection:
-            self.smbconnection.logoff()
-
-    def rpc_get_sessions(self):
-        binding = r'ncacn_np:%s[\PIPE\srvsvc]' % self.addr
-
-        dce = self.dce_rpc_connect(binding, srvs.MSRPC_UUID_SRVS)
-
-        if dce is None:
-            logging.warning('Connection failed: %s' % binding)
-            return
-
-        try:
-            resp = srvs.hNetrSessionEnum(dce, '\x00', NULL, 10)
-        except Exception as e:
-            if str(e).find('Broken pipe') >= 0:
-                return
-            else:
-                raise
-
-        sessions = []
-
-        for session in resp['InfoStruct']['SessionInfo']['Level10']['Buffer']:
-            userName = session['sesi10_username'][:-1]
-            ip = session['sesi10_cname'][:-1]
-            logging.debug('IP %s' % repr(session['sesi10_cname']))
-            # Strip \\ from IPs
-            if ip[:2] == '\\\\':
-                ip=ip[2:]
-            # Skip empty IPs
-            if ip == '':
-                continue
-            # Skip our connection
-            if userName == self.ad.auth.username:
-                continue
-            # Skip empty usernames
-            if len(userName) == 0:
-                continue
-            # Skip machine accounts
-            if userName[-1] == '$':
-                continue
-            # Skip local connections
-            if ip in ['127.0.0.1','[::1]']:
-                continue
-            # IPv6 address
-            if ip[0] == '[' and ip[-1] == ']':
-                ip = ip[1:-1]
-
-            logging.info('User %s is logged in on %s from %s' % (userName, self.hostname, ip))
-
-            sessions.append({'user': userName, 'source': ip, 'target': self.hostname})
-
-        dce.disconnect()
-
-        return sessions
-
-    """
-    """
-    def rpc_get_domain_trusts(self):
-        binding = r'ncacn_np:%s[\PIPE\netlogon]' % self.addr
-
-        dce = self.dce_rpc_connect(binding, nrpc.MSRPC_UUID_NRPC)
-
-        if dce is None:
-            logging.warning('Connection failed: %s' % binding)
-            return
-
-        try:
-            req = nrpc.DsrEnumerateDomainTrusts()
-            req['ServerName'] = NULL
-            req['Flags'] = 1
-            resp = dce.request(req)
-        except Exception as e:
-            raise e
-
-        for domain in resp['Domains']['Domains']:
-            logging.info('Found domain trust from %s to %s' % (self.hostname, domain['NetbiosDomainName']))
-            self.trusts.append({'domain': domain['DnsDomainName'],
-                                'type': domain['TrustType'],
-                                'flags': domain['Flags']})
-
-        dce.disconnect()
-
-
-    """
-    This magic is mostly borrowed from impacket/examples/netview.py
-    """
-    def rpc_get_local_admins(self):
-        binding = r'ncacn_np:%s[\PIPE\samr]' % self.addr
-
-        dce = self.dce_rpc_connect(binding, samr.MSRPC_UUID_SAMR)
-
-        if dce is None:
-            logging.warning('Connection failed: %s' % binding)
-            return
-
-        try:
-            resp = samr.hSamrConnect(dce)
-            serverHandle = resp['ServerHandle']
-
-            resp = samr.hSamrEnumerateDomainsInSamServer(dce, serverHandle)
-            domains = resp['Buffer']['Buffer']
-
-            sid = RPC_SID()
-            sid.fromCanonical('S-1-5-32')
-
-            logging.debug('Opening domain handle')
-
-            resp = samr.hSamrOpenDomain(dce,
-                                        serverHandle=serverHandle,
-                                        desiredAccess=samr.DOMAIN_LOOKUP | MAXIMUM_ALLOWED,
-                                        domainId=sid)
-            domainHandle = resp['DomainHandle']
-
-            resp = samr.hSamrOpenAlias(dce,
-                                       domainHandle,
-                                       desiredAccess=samr.ALIAS_LIST_MEMBERS | MAXIMUM_ALLOWED,
-                                       aliasId=544)
-
-            resp = samr.hSamrGetMembersInAlias(dce,
-                                               aliasHandle=resp['AliasHandle'])
-
-            for member in resp['Members']['Sids']:
-                sid_string = member['SidPointer'].formatCanonical()
-
-                logging.debug('Found SID: %s' % sid_string)
-
-                self.sids.append(sid_string)
-        except DCERPCException as e:
-            logging.debug('Exception connecting to RPC: %s', e)
-        except Exception as e:
-            if 'connection reset' in str(e):
-                logging.debug('Connection was reset: %s', e)
-            else:
-                raise e
-
-        dce.disconnect()
-
-
-    def rpc_resolve_sids(self):
-        binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.addr
-
-        dce = self.dce_rpc_connect(binding, lsat.MSRPC_UUID_LSAT)
-
-        if dce is None:
-            logging.warning('Connection failed')
-            return
-
-        try:
-            resp = lsat.hLsarOpenPolicy2(dce, lsat.POLICY_LOOKUP_NAMES | MAXIMUM_ALLOWED)
-        except Exception as e:
-            if str(e).find('Broken pipe') >= 0:
-                return
-            else:
-                raise
-
-        policyHandle = resp['PolicyHandle']
-
-        try:
-            resp = lsat.hLsarLookupSids(dce, policyHandle, self.sids, lsat.LSAP_LOOKUP_LEVEL.LsapLookupWksta)
-        except DCERPCException as e:
-            if str(e).find('STATUS_NONE_MAPPED') >= 0:
-                logging.warning('SID lookup failed, return status: STATUS_NONE_MAPPED')
-                raise
-            elif str(e).find('STATUS_SOME_NOT_MAPPED') >= 0:
-                # Not all could be resolved, work with the ones that could
-                resp = e.get_packet()
-            else:
-                raise
-
-        domains = []
-        for entry in resp['ReferencedDomains']['Domains']:
-            logging.debug('Found referenced domain: %s' % entry['Name'])
-            domains.append(entry['Name'])
-
-        i = 0
-        for entry in resp['TranslatedNames']['Names']:
-            domain = domains[entry['DomainIndex']]
-            domainEntry = self.ad.get_domain_by_name(domain)
-            if domainEntry is not None:
-                domain = ADUtils.ldap2domain(domainEntry['attributes']['distinguishedName'])
-
-            if entry['Name'] != '':
-                logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
-                self.admins.append({'computer': self.hostname,
-                                    'name': unicode(entry['Name']),
-                                    'use': ADUtils.translateSidType(entry['Use']),
-                                    'domain': domain,
-                                    'sid': self.sids[i]})
-                i = i + 1
-            else:
-                logging.warning('Resolved name is empty [%s]', entry)
-
-        dce.disconnect()
+from dns import resolver
+from ldap3 import ALL_ATTRIBUTES
+from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
+from impacket.dcerpc.v5.rpcrt import DCERPCException
+# from impacket.krb5.kerberosv5 import KerberosError
+from bloodhound.ad.utils import ADUtils, DNSCache
+from bloodhound.ad.trusts import ADDomainTrust
+from bloodhound.ad.computer import ADComputer
 
 
 """
@@ -363,7 +59,7 @@ class ADDC(ADComputer):
         if searchBase is None:
             searchBase = self.ad.baseDN
         if attributes is None or attributes == []:
-            attributes = ldap3.ALL_ATTRIBUTES
+            attributes = ALL_ATTRIBUTES
         result = self.ldap.extend.standard.paged_search(searchBase,
                                                         searchFilter,
                                                         attributes=attributes,
@@ -707,11 +403,11 @@ class AD(object):
         self.users = {}
         self.admins = []
         # Create a resolver object
-        self.resolver = dns.resolver.Resolver()
+        self.resolver = resolver.Resolver()
         if nameserver:
             self.resolver.nameservers = [nameserver]
         # Give it a cache to prevent duplicate lookups
-        self.resolver.cache = dns.resolver.Cache()
+        self.resolver.cache = resolver.Cache()
         # Default timeout after 3 seconds if the DNS servers
         # do not come up with an answer
         self.resolver.lifetime = 3.0
@@ -845,7 +541,7 @@ class AD(object):
         """
             Processes a single computer, pushes the results of the computer to the given Queue.
         """
-        logging.debug('Querying computer: %s' % hostname)
+        logging.debug('Querying computer: %s', hostname)
         c = ADComputer(hostname=hostname, ad=self)
         if c.try_connect() == True:
             # Maybe try connection reuse?
