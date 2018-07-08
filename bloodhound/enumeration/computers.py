@@ -73,7 +73,7 @@ class ComputerEnumerator(object):
             hostname = computer['attributes']['dNSHostName']
             if not hostname:
                 continue
-
+            samname = computer['attributes']['sAMAccountName']
             # For debugging purposes only
             if hostname in self.blacklist:
                 logging.info('Skipping computer: %s (blacklisted)', hostname)
@@ -82,17 +82,17 @@ class ComputerEnumerator(object):
                 logging.info('Skipping computer: %s (not whitelisted)', hostname)
                 continue
 
-            q.put(hostname)
+            q.put((hostname, samname))
         q.join()
         result_q.put(None)
         result_q.join()
 
-    def process_computer(self, hostname, results_q):
+    def process_computer(self, hostname, samname, results_q):
         """
             Processes a single computer, pushes the results of the computer to the given Queue.
         """
         logging.debug('Querying computer: %s', hostname)
-        c = ADComputer(hostname=hostname, ad=self.addomain)
+        c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain)
         if c.try_connect() == True:
             # Maybe try connection reuse?
             try:
@@ -114,7 +114,7 @@ class ComputerEnumerator(object):
                     sessions = []
 
                 for ses in sessions:
-                    # Todo: properly resolve sAMAccounName in GC
+                    # Todo: properly resolve sAMAccountName in GC
                     # currently only single-domain compatible
                     domain = self.addomain.domain
                     user = (u'%s@%s' % (ses['user'], domain)).upper()
@@ -124,7 +124,7 @@ class ComputerEnumerator(object):
                     except KeyError:
                         target = ADUtils.ip2host(ses['source'], self.addomain.resolver)
                         # Even if the result is the IP (aka could not resolve PTR) we still cache
-                        # it since this result is unlikely to change
+                        # it since this result is unlikely to change during this run
                         self.addomain.dnscache.put_single(ses['source'], target)
                     if ':' in target:
                         # IPv6 address, not very useful
@@ -149,7 +149,7 @@ class ComputerEnumerator(object):
         logging.debug('Start working')
 
         while True:
-            hostname = q.get()
+            hostname, samname = q.get()
             logging.info('Querying computer: %s', hostname)
-            self.process_computer(hostname, results_q)
+            self.process_computer(hostname, samname, results_q)
             q.task_done()

@@ -34,9 +34,10 @@ class ADComputer(object):
     """
     Computer connected to Active Directory
     """
-    def __init__(self, hostname=None, ad=None):
+    def __init__(self, hostname=None, samname=None, ad=None):
         self.hostname = hostname
         self.ad = ad
+        self.samname = samname
         self.rpc = None
         self.dce = None
         self.sids = []
@@ -228,15 +229,25 @@ class ADComputer(object):
         try:
             resp = samr.hSamrConnect(dce)
             serverHandle = resp['ServerHandle']
+            # Attempt to get the SID from this computer to filter local accounts later
+            try:
+                resp = samr.hSamrLookupDomainInSamServer(dce, serverHandle, self.samname[:-1])
+                self.sid = resp['DomainId'].formatCanonical()
+            except DCERPCException as e:
+                # Make it a string which is guaranteed not to match a SID
+                self.sid = 'UNKNOWN'
 
+
+            # Enumerate the domains known to this computer
             resp = samr.hSamrEnumerateDomainsInSamServer(dce, serverHandle)
             domains = resp['Buffer']['Buffer']
 
+            # Query the builtin domain (derived from this SID)
             sid = RPC_SID()
             sid.fromCanonical('S-1-5-32')
 
             logging.debug('Opening domain handle')
-
+            # Open a handle to this domain
             resp = samr.hSamrOpenDomain(dce,
                                         serverHandle=serverHandle,
                                         desiredAccess=samr.DOMAIN_LOOKUP | MAXIMUM_ALLOWED,
@@ -247,16 +258,16 @@ class ADComputer(object):
                                        domainHandle,
                                        desiredAccess=samr.ALIAS_LIST_MEMBERS | MAXIMUM_ALLOWED,
                                        aliasId=544)
-
             resp = samr.hSamrGetMembersInAlias(dce,
                                                aliasHandle=resp['AliasHandle'])
-
             for member in resp['Members']['Sids']:
                 sid_string = member['SidPointer'].formatCanonical()
 
-                logging.debug('Found SID: %s', sid_string)
-
-                self.sids.append(sid_string)
+                logging.debug('Found admin SID: %s', sid_string)
+                if not sid_string.startswith(self.sid):
+                    self.sids.append(sid_string)
+                else:
+                    logging.debug('Ignoring local group %s', sid_string)
         except DCERPCException as e:
             logging.debug('Exception connecting to RPC: %s', e)
         except Exception as e:
