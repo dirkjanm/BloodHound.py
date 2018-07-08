@@ -26,7 +26,7 @@ import os, sys, logging, argparse, getpass
 from impacket.ldap import ldapasn1
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
-
+from bloodhound.enumeration.computers import ComputerEnumerator
 
 """
 BloodHound.py is a Python port of BloodHound, designed to run on Linux. It may very
@@ -69,7 +69,8 @@ class BloodHound(object):
         if not skip_trusts:
             self.dc.dump_trusts()
         if not skip_computers:
-            self.ad.enumerate_computers(num_workers=num_workers)
+            computer_enum = ComputerEnumerator(self.ad)
+            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)
 
         logging.info('Done')
 

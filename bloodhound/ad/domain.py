@@ -24,13 +24,11 @@
 
 import logging
 import traceback
-import Queue
-import threading
+
 import codecs
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
-from impacket.dcerpc.v5.rpcrt import DCERPCException
 # from impacket.krb5.kerberosv5 import KerberosError
 from bloodhound.ad.utils import ADUtils, DNSCache
 from bloodhound.ad.trusts import ADDomainTrust
@@ -393,15 +391,14 @@ class AD(object):
         self.auth = auth
         self._dcs = []
         self._kdcs = []
-        self.blacklist = []
-        self.whitelist = []
+
         self.domains = {}
         self.nbdomains = {}
         self.groups = {} # Groups by DN
         self.groups_dnmap = {} # Group mapping from gid to DN
         self.computers = {}
         self.users = {}
-        self.admins = []
+
         # Create a resolver object
         self.resolver = resolver.Resolver()
         if nameserver:
@@ -496,150 +493,6 @@ class AD(object):
             if domain.upper() == name.upper():
                 return entry
         return None
-
-
-    def enumerate_computers(self, num_workers=10):
-        """
-            Enumerates the computers in the domain. Is threaded, you can specify the number of workers.
-            Will spawn threads to resolve computers and obtain sessions.
-        """
-        q = Queue.Queue()
-
-        result_q = Queue.Queue()
-        results_worker = threading.Thread(target=self.write_worker, args=(result_q, 'admins.csv', 'sessions.csv'))
-        results_worker.daemon = True
-        results_worker.start()
-        logging.info('Starting computer enumeration with %d workers', num_workers)
-        if len(self.computers) / num_workers > 500:
-            logging.info('The workload seems to be rather large. Consider increasing the number of workers.')
-        for _ in range(0, num_workers):
-            t = threading.Thread(target=self.work, args=(q,result_q))
-            t.daemon = True
-            t.start()
-
-        for _, computer in self.computers.iteritems():
-            if 'dNSHostName' not in computer['attributes']:
-                continue
-
-            hostname = computer['attributes']['dNSHostName']
-            if not hostname:
-                continue
-
-            if hostname in self.blacklist:
-                logging.info('Skipping computer: %s (blacklisted)' % hostname)
-                continue
-            if len(self.whitelist) > 0 and hostname not in self.whitelist:
-                logging.info('Skipping computer: %s (not whitelisted)' % hostname)
-                continue
-
-            q.put(hostname)
-        q.join()
-        result_q.put(None)
-        result_q.join()
-
-    def process_computer(self, hostname, results_q):
-        """
-            Processes a single computer, pushes the results of the computer to the given Queue.
-        """
-        logging.debug('Querying computer: %s', hostname)
-        c = ADComputer(hostname=hostname, ad=self)
-        if c.try_connect() == True:
-            # Maybe try connection reuse?
-            try:
-                sessions = c.rpc_get_sessions()
-                c.rpc_get_local_admins()
-                c.rpc_resolve_sids()
-                c.rpc_close()
-                # c.rpc_get_domain_trusts()
-
-                for admin in c.admins:
-                    # Put the result on the results queue.
-                    results_q.put(('admin',u'%s,%s@%s,%s\n' % (unicode(admin['computer']).upper(),
-                                 unicode(admin['name']).upper(),
-                                 admin['domain'].upper(),
-                                 unicode(admin['use']).lower())))
-
-                if sessions is None:
-                    sessions = []
-
-                for ses in sessions:
-                    # Todo: properly resolve sAMAccounName in GC
-                    # currently only single-domain compatible
-                    domain = self.domain
-                    user = (u'%s@%s' % (ses['user'], domain)).upper()
-                    # Resolve the IP to obtain the host the session is from
-                    try:
-                        target = self.dnscache.get(ses['source'])
-                    except KeyError:
-                        target = ADUtils.ip2host(ses['source'], self.resolver)
-                        # Even if the result is the IP (aka could not resolve PTR) we still cache
-                        # it since this result is unlikely to change
-                        self.dnscache.put_single(ses['source'], target)
-                    if ':' in target:
-                        # IPv6 address, not very useful
-                        continue
-                    if not '.' in target:
-                        logging.debug('Resolved target does not look like an IP or domain. Assuming hostname: %s', target)
-                        target = '%s.%s' % (target, domain)
-                    # Put the result on the results queue.
-                    results_q.put(('session', u'%s,%s,%u\n' % (user, target, 2)))
-
-            except DCERPCException:
-                logging.warning('Querying sessions failed: %s' % hostname)
-            except Exception as e:
-                logging.error('Unhandled exception in computer processing: %s', str(e))
-                logging.info(traceback.format_exc())
-
-
-    def work(self, q, results_q):
-        """
-            Work function, will obtain work from the given queue and will push results on the results_q.
-        """
-        logging.debug('Start working')
-
-        while True:
-            hostname = q.get()
-            logging.info('Querying computer: %s' % hostname)
-            self.process_computer(hostname, results_q)
-            q.task_done()
-
-
-    def write_worker(self, result_q, admin_filename, session_filename):
-        """
-            Worker to write the results from the results_q to the given files.
-        """
-        admin_out = codecs.open(admin_filename, 'w', 'utf-8')
-        session_out = codecs.open(session_filename, 'w', 'utf-8')
-
-        admin_out.write('ComputerName,AccountName,AccountType\n')
-        session_out.write('UserName,ComputerName,Weight\n')
-        while True:
-            obj = result_q.get()
-
-            if obj is None:
-                logging.debug('Obtained a None value, exiting')
-                break
-
-            t = obj[0]
-            data = obj[1]
-            if t == 'session':
-                session_out.write(data)
-                logging.debug('Writing session data to file')
-            elif t == 'admin':
-                admin_out.write(data)
-                logging.debug('Writing admin data to file')
-            else:
-                logging.warning("Type is %s this should not happen", t)
-
-            result_q.task_done()
-
-        logging.debug('Write worker is done, closing files')
-        admin_out.close()
-        session_out.close()
-        result_q.task_done()
-
-
-
 
 """
 Active Directory Domain

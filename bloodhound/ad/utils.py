@@ -126,3 +126,29 @@ class DNSCache(object):
     def put_single(self, entry, value):
         with self.lock:
             self._cache[entry] = value
+
+class SidCache(object):
+    """
+    Generic cache for caching SID lookups
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self._cache = {}
+
+    # Get an entry from the cache
+    def get(self, entry):
+        with self.lock:
+            return self._cache[entry]
+
+    # Put a forward lookup in the cache, this also
+    # puts the reverse lookup in the cache
+    def put(self, entry, value):
+        with self.lock:
+            self._cache[entry] = value
+
+class SamCache(SidCache):
+    """
+    Cache for mapping SAM names to principals.
+    Identical to the SidCache in behaviour
+    """
+    pass
