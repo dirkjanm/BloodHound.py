@@ -122,7 +122,7 @@ class ComputerEnumerator(object):
                     try:
                         target = self.addomain.dnscache.get(ses['source'])
                     except KeyError:
-                        target = ADUtils.ip2host(ses['source'], self.addomain.resolver)
+                        target = ADUtils.ip2host(ses['source'], self.addomain.dnsresolver)
                         # Even if the result is the IP (aka could not resolve PTR) we still cache
                         # it since this result is unlikely to change during this run
                         self.addomain.dnscache.put_single(ses['source'], target)

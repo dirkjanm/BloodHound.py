@@ -53,7 +53,7 @@ class ADComputer(object):
             addr = self.ad.dnscache.get(self.hostname)
         except KeyError:
             try:
-                q = self.ad.resolver.query(self.hostname, 'A')
+                q = self.ad.dnsresolver.query(self.hostname, 'A')
                 for r in q:
                     addr = r.address
 

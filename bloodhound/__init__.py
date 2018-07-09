@@ -36,7 +36,7 @@ class BloodHound(object):
     def __init__(self, ad):
         self.ad = ad
         self.ldap = None
-        self.dc = None
+        self.pdc = None
         self.sessions = []
 
 
@@ -45,8 +45,8 @@ class BloodHound(object):
             logging.error('I have no information about the domain')
             sys.exit(1)
 
-        dc = self.ad.dcs()[0]
-        logging.debug('Using LDAP server: %s' % dc)
+        pdc = self.ad.dcs()[0]
+        logging.debug('Using LDAP server: %s' % pdc)
         logging.debug('Using base DN: %s' % self.ad.baseDN)
 
         if len(self.ad.kdcs()) > 0:
@@ -54,20 +54,23 @@ class BloodHound(object):
             logging.debug('Using kerberos KDC: %s' % kdc)
             logging.debug('Using kerberos realm: %s' % self.ad.realm())
 
-        self.dc = ADDC(dc, self.ad)
-#        self.dc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
+        # Create a domain controller object
+        self.pdc = ADDC(pdc, self.ad)
+        # Create an object resolver
+        self.ad.create_objectresolver(self.pdc)
+#        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
     def run(self, skip_groups=False, skip_computers=False, skip_trusts=False, num_workers=10):
         if not skip_groups:
-            self.dc.fetch_all()
+            self.pdc.fetch_all()
         elif not skip_computers:
             # We need to know which computers to query regardless
-            self.dc.get_computers()
+            self.pdc.get_computers()
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
-            self.dc.get_domains()
+            self.pdc.get_domains()
         if not skip_trusts:
-            self.dc.dump_trusts()
+            self.pdc.dump_trusts()
         if not skip_computers:
             computer_enum = ComputerEnumerator(self.ad)
             computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)

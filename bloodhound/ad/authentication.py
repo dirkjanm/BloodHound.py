@@ -43,14 +43,23 @@ class ADAuthentication(object):
         self.kdc = kdc
 
 
-    def getLDAPConnection(self, hostname='', baseDN='', protocol='ldaps'):
-        server = Server("%s://%s" % (protocol, hostname), get_info=ALL)
+    def getLDAPConnection(self, hostname='', baseDN='', protocol='ldaps', gc=False):
+        if gc:
+            # Global Catalog connection
+            if protocol == 'ldaps':
+                # Ldap SSL
+                server = Server("%s://%s:3269" % (protocol, hostname), get_info=ALL)
+            else:
+                # Plain LDAP
+                server = Server("%s://%s:3268" % (protocol, hostname), get_info=ALL)
+        else:
+            server = Server("%s://%s" % (protocol, hostname), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
             ldappass = self.lm_hash + ':' + self.nt_hash
         else:
             ldappass = self.password
-        ldaplogin = '%s\%s' % (self.domain, self.username)
+        ldaplogin = '%s\\%s' % (self.domain, self.username)
         conn = Connection(server, user=ldaplogin, password=ldappass, authentication=NTLM)
 
         # TODO: Kerberos auth for ldap
