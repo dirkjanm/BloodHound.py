@@ -23,6 +23,8 @@
 ####################
 import logging
 import threading
+from ldap3.utils.conv import escape_filter_chars
+from bloodhound.ad.utils import ADUtils
 
 class ObjectResolver(object):
     """
@@ -38,12 +40,108 @@ class ObjectResolver(object):
     def resolve_group(self, group):
         """
         Resolve a group DN in LDAP. This will use the GC
+        Returns a single LDAP entry
         """
         with self.lock:
             if not self.addc.gcldap:
                 if not self.addc.gc_connect():
                     # Error connecting, bail
                     return None
-            logging.debug('Querying GC for %s', group)
-            group = self.addc.ldap_get_single(group)
+            logging.debug('Querying GC for DN %s', group)
+            group = self.addc.ldap_get_single(group, use_gc=True)
             return group
+
+    def resolve_samname(self, samname):
+        """
+        Resolve a SAM name in the GC. This can give multiple results.
+        Returns a list of LDAP entries
+        """
+        out = []
+        safename = escape_filter_chars(samname)
+        with self.lock:
+            if not self.addc.gcldap:
+                if not self.addc.gc_connect():
+                    # Error connecting, bail
+                    return None
+            logging.debug('Querying GC for SAM Name %s', samname)
+            entries = self.addc.search(searchBase="",
+                                       searchFilter='(sAMAccountName=%s)' % safename,
+                                       use_gc=True,
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
+            # This uses a generator, however we return a list
+            for entry in entries:
+                out.append(entry)
+
+        return out
+
+    def resolve_upn(self, upn):
+        """
+        Resolve a UserPrincipalName in the GC.
+        Returns a single LDAP entry
+        """
+        safename = escape_filter_chars(upn)
+        with self.lock:
+            if not self.addc.gcldap:
+                if not self.addc.gc_connect():
+                    # Error connecting, bail
+                    return None
+            logging.debug('Querying GC for UPN %s', upn)
+            entries = self.addc.search(searchBase="",
+                                       searchFilter='&((objectClass=user)(userPrincipalName=%s))' % safename,
+                                       use_gc=True,
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
+            for entry in entries:
+                # By definition this can be only one entry
+                return entry
+
+    def resolve_sid(self, sid):
+        """
+        Resolve a SID in the GC.
+        Returns a single LDAP entry
+        """
+        with self.lock:
+            if not self.addc.gcldap:
+                if not self.addc.gc_connect():
+                    # Error connecting, bail
+                    return None
+            logging.debug('Querying GC for SID %s', sid)
+            entries = self.addc.search(searchBase="",
+                                       searchFilter='(objectSid=%s)' % sid,
+                                       use_gc=True,
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
+            for entry in entries:
+                # By definition this can be only one entry
+                return entry
+
+    def gc_sam_lookup(self, samname):
+        """
+        This function attempts to resolve the SAM name returned in session enumeration to
+        a user/domain combination by querying the Global Catalog.
+        SharpHound calls this GC Deconflictation.
+        """
+        output = []
+        entries = self.resolve_samname(samname)
+        if len(entries) > 1:
+            # Awww multiple matches, unsure which is the valid one, add them with different weights
+            for entry in entries:
+                domain = ADUtils.ldap2domain(entry['dn'])
+                principal = (u'%s@%s' % (entry['attributes']['sAMAccountName'], domain)).upper()
+                # This is consistent with SharpHound
+                if domain.lower() == self.addomain.domain.lower():
+                    weight = 1
+                else:
+                    weight = 2
+                output.append((principal, weight))
+        else:
+            if len(entries) == 0:
+                # This shouldn't even happen, but let's default to the current domain
+                principal = (u'%s@%s' % (samname, self.addomain.domain)).upper()
+                output.append((principal, 2))
+            else:
+                # One match, best case
+                entry = entries[0]
+                domain = ADUtils.ldap2domain(entry['dn'])
+                principal = (u'%s@%s' % (entry['attributes']['sAMAccountName'], domain)).upper()
+                output.append((principal, 2))
+
+        return output

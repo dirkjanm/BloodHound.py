@@ -36,7 +36,7 @@ class ComputerEnumerator(object):
     Contains the threading logic and workers which will call the collection
     methods from the bloodhound.ad module.
     """
-    def __init__(self, addomain):
+    def __init__(self, addomain, do_gc_lookup=True):
         """
         Computer enumeration. Enumerates all computers in the given domain.
         Every domain enumerated will get its own instance of this class.
@@ -45,6 +45,7 @@ class ComputerEnumerator(object):
         # Blacklist and whitelist are only used for debugging purposes
         self.blacklist = []
         self.whitelist = []
+        self.do_gc_lookup = do_gc_lookup
 
 
     def enumerate_computers(self, computers, num_workers=10):
@@ -114,10 +115,18 @@ class ComputerEnumerator(object):
                     sessions = []
 
                 for ses in sessions:
-                    # Todo: properly resolve sAMAccountName in GC
-                    # currently only single-domain compatible
+                    # For every session, resolve the SAM name in the GC if needed
                     domain = self.addomain.domain
-                    user = (u'%s@%s' % (ses['user'], domain)).upper()
+                    if self.addomain.num_domains > 1 and self.do_gc_lookup:
+                        try:
+                            users = self.addomain.samcache.get(samname)
+                        except KeyError:
+                            # Look up the SAM name in the GC
+                            users = self.addomain.objectresolver.gc_sam_lookup(ses['user'])
+                            self.addomain.samcache.put(samname, users)
+                    else:
+                        users = [((u'%s@%s' % (ses['user'], domain)).upper(), 2)]
+
                     # Resolve the IP to obtain the host the session is from
                     try:
                         target = self.addomain.dnscache.get(ses['source'])
@@ -133,7 +142,8 @@ class ComputerEnumerator(object):
                         logging.debug('Resolved target does not look like an IP or domain. Assuming hostname: %s', target)
                         target = '%s.%s' % (target, domain)
                     # Put the result on the results queue.
-                    results_q.put(('session', u'%s,%s,%u\n' % (user, target, 2)))
+                    for user in users:
+                        results_q.put(('session', u'%s,%s,%u\n' % (user[0], target, user[1])))
 
             except DCERPCException:
                 logging.warning('Querying sessions failed: %s' % hostname)

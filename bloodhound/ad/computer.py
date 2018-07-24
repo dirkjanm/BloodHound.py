@@ -45,7 +45,7 @@ class ADComputer(object):
         self.trusts = []
         self.addr = None
         self.smbconnection = None
-
+        self.sid = None
 
     def try_connect(self):
         addr = None

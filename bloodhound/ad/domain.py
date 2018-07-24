@@ -30,7 +30,7 @@ from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
 # from impacket.krb5.kerberosv5 import KerberosError
-from bloodhound.ad.utils import ADUtils, DNSCache, SidCache
+from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
 from bloodhound.ad.trusts import ADDomainTrust
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
@@ -67,6 +67,7 @@ class ADDC(ADComputer):
             try:
                 server = self.ad.gcs()[0]
             except IndexError:
+                # TODO: implement fallback options for GC detection?
                 logging.error('Could not find a Global Catalog in this domain!'\
                               ' Resolving will be unreliable in forests with multiple domains')
                 return False
@@ -141,7 +142,6 @@ class ADDC(ADComputer):
         try:
             entries = self.search('(ncname=%s)' % context,
                                   ['nETBIOSName'],
-                                  # This is actually the configurationNamingContext
                                   searchBase="CN=Partitions,%s" % self.ldap.server.info.other['configurationNamingContext'][0])
         except (LDAPAttributeError, LDAPCursorError) as e:
             logging.warning('Could not determine NetBiosname of the domain: %s' % e)
@@ -196,7 +196,9 @@ class ADDC(ADComputer):
             self.ad.domains[entry['attributes']['nCName']] = entry
             self.ad.nbdomains[entry['attributes']['nETBIOSName']] = entry
 
-
+        # Store this number so we can easily determine if we are in a multi-domain
+        # forest later on.
+        self.ad.num_domains = entriesNum
         logging.info('Found %u domains in the forest', entriesNum)
 
     def get_groups(self):
@@ -512,8 +514,12 @@ class AD(object):
         self.dnscache = DNSCache()
         # Create a thread-safe SID lookup cache
         self.sidcache = SidCache()
+        # Create a thread-safe SAM lookup cache
+        self.samcache = SamCache()
         # Object Resolver, initialized later
         self.objectresolver = None
+        # Number of domains within the forest
+        self.num_domains = 1
 
         if domain is not None:
             self.baseDN = ADUtils.domain2ldap(domain)
