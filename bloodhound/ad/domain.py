@@ -252,52 +252,6 @@ class ADDC(ADComputer):
 
         return entries
 
-
-    @staticmethod
-    def get_object_type(resolvedEntry):
-        if 'sAMAccountType' not in resolvedEntry:
-            return 'unknown'
-        return resolvedEntry['sAMAccountType']
-
-
-    def resolve_ad_entry(self, entry):
-        resolved = {}
-        account = ''
-        dn = ''
-        domain = ''
-        if entry['attributes']['sAMAccountName']:
-            account = entry['attributes']['sAMAccountName']
-        if entry['attributes']['distinguishedName']:
-            dn = entry['attributes']['distinguishedName']
-            domain = ADUtils.ldap2domain(dn)
-
-        resolved['principal'] = unicode('%s@%s' % (account, domain)).upper()
-        if not entry['attributes']['sAMAccountName']:
-            # This doesn't make sense currently but neither does it in SharpHound.
-            # TODO: figure out what the intended result is
-            if 'ForeignSecurityPrincipals' in dn:
-                resolved['principal'] = domain.upper()
-                resolved['type'] = 'foreignsecurityprincipal'
-            else:
-                resolved['type'] = 'unknown'
-        else:
-            accountType = entry['attributes']['sAMAccountType']
-            if accountType in [268435456, 268435457, 536870912, 536870913]:
-                resolved['type'] = 'group'
-            elif accountType in [805306369]:
-                resolved['type'] = 'computer'
-                short_name = account.rstrip('$')
-                resolved['principal'] = unicode('%s.%s' % (short_name, domain)).upper()
-            elif accountType in [805306368]:
-                resolved['type'] = 'user'
-            elif accountType in [805306370]:
-                resolved['type'] = 'trustaccount'
-            else:
-                resolved['type'] = 'domain'
-
-        return resolved
-
-
     def get_memberships(self):
         entries = self.search('(|(memberof=*)(primarygroupid=*))',
                               ['samaccountname', 'distinguishedname',
@@ -316,66 +270,6 @@ class ADDC(ADComputer):
                               attributes=['flatName', 'name', 'securityIdentifier', 'trustAttributes', 'trustDirection', 'trustType'],
                               generator=True)
         return entries
-
-    def write_membership(self, resolved_entry, membership, out):
-        if membership in self.ad.groups:
-            parent = self.ad.groups[membership]
-            pd = ADUtils.ldap2domain(membership)
-            pr = self.resolve_ad_entry(parent)
-
-            out.write(u'%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
-        else:
-            # This could be a group in a different domain
-            parent = self.ad.objectresolver.resolve_group(membership)
-            if not parent:
-                logging.warning('Warning: Unknown group %s', membership)
-                return
-            self.ad.groups[membership] = parent
-            pd = ADUtils.ldap2domain(membership)
-            pr = self.resolve_ad_entry(parent)
-
-            out.write(u'%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
-
-    def write_primary_membership(self, resolved_entry, entry, out):
-        try:
-            primarygroupid = int(entry['attributes']['primaryGroupID'])
-        except (TypeError, KeyError):
-            # Doesn't have a primarygroupid, means it is probably a Group instead of a user
-            return
-        try:
-            group = self.ad.groups[self.ad.groups_dnmap[primarygroupid]]
-            pr = self.resolve_ad_entry(group)
-            out.write('%s,%s,%s\n' % (pr['principal'], resolved_entry['principal'], resolved_entry['type']))
-        except KeyError:
-            logging.warning('Warning: Unknown primarygroupid %d', primarygroupid)
-
-    def dump_memberships(self, filename='group_membership.csv'):
-        entries = self.get_memberships()
-
-        try:
-            logging.debug('Opening file for writing: %s' % filename)
-            out = codecs.open(filename, 'w', 'utf-8')
-        except:
-            logging.warning('Could not write file: %s' % filename)
-            return
-
-        logging.debug('Writing group memberships to file: %s' % filename)
-
-        out.write('GroupName,AccountName,AccountType\n')
-        entriesNum = 0
-        for entry in entries:
-            entriesNum += 1
-            resolved_entry = self.resolve_ad_entry(entry)
-            try:
-                for m in entry['attributes']['memberOf']:
-                    self.write_membership(resolved_entry, m, out)
-            except (KeyError, LDAPKeyError):
-                logging.debug(traceback.format_exc())
-            self.write_primary_membership(resolved_entry, entry, out)
-
-        logging.info('Found %d memberships', entriesNum)
-        logging.debug('Finished writing membership')
-        out.close()
 
     def dump_trusts(self, filename='trusts.csv'):
         entries = self.get_trusts()
@@ -410,7 +304,6 @@ class ADDC(ADComputer):
         self.get_groups()
 #        self.get_users()
 #        self.get_domain_controllers()
-        self.dump_memberships()
 
 
 """

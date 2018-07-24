@@ -27,6 +27,7 @@ from impacket.ldap import ldapasn1
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
+from bloodhound.enumeration.memberships import MembershipEnumerator
 
 """
 BloodHound.py is a Python port of BloodHound, designed to run on Linux. It may very
@@ -64,6 +65,8 @@ class BloodHound(object):
     def run(self, skip_groups=False, skip_computers=False, skip_trusts=False, num_workers=10):
         if not skip_groups:
             self.pdc.fetch_all()
+            membership_enum = MembershipEnumerator(self.ad, self.pdc)
+            membership_enum.enumerate_memberships()
         elif not skip_computers:
             # We need to know which computers to query regardless
             self.pdc.get_computers()

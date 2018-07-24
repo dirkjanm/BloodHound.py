@@ -100,6 +100,48 @@ class ADUtils(object):
         # must not be an empty string since this breaks our CSV files
         return 'unknown'
 
+    @staticmethod
+    def resolve_ad_entry(entry):
+        """
+        Translate an LDAP entry into a dictionary containing the
+        information used by BloodHound
+        """
+        resolved = {}
+        account = ''
+        dn = ''
+        domain = ''
+        if entry['attributes']['sAMAccountName']:
+            account = entry['attributes']['sAMAccountName']
+        if entry['attributes']['distinguishedName']:
+            dn = entry['attributes']['distinguishedName']
+            domain = ADUtils.ldap2domain(dn)
+
+        resolved['principal'] = unicode('%s@%s' % (account, domain)).upper()
+        if not entry['attributes']['sAMAccountName']:
+            # TODO: Fix foreign users
+            # requires cross-forest resolving
+            if 'ForeignSecurityPrincipals' in dn:
+                resolved['principal'] = domain.upper()
+                resolved['type'] = 'foreignsecurityprincipal'
+            else:
+                resolved['type'] = 'unknown'
+        else:
+            accountType = entry['attributes']['sAMAccountType']
+            if accountType in [268435456, 268435457, 536870912, 536870913]:
+                resolved['type'] = 'group'
+            elif accountType in [805306369]:
+                resolved['type'] = 'computer'
+                short_name = account.rstrip('$')
+                resolved['principal'] = unicode('%s.%s' % (short_name, domain)).upper()
+            elif accountType in [805306368]:
+                resolved['type'] = 'user'
+            elif accountType in [805306370]:
+                resolved['type'] = 'trustaccount'
+            else:
+                resolved['type'] = 'domain'
+
+        return resolved
+
 class DNSCache(object):
     """
     A cache used for caching forward and backward DNS at the same time.

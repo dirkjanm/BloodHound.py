@@ -138,7 +138,7 @@ class ComputerEnumerator(object):
                     if ':' in target:
                         # IPv6 address, not very useful
                         continue
-                    if not '.' in target:
+                    if '.' not in target:
                         logging.debug('Resolved target does not look like an IP or domain. Assuming hostname: %s', target)
                         target = '%s.%s' % (target, domain)
                     # Put the result on the results queue.
