@@ -72,6 +72,7 @@ class BloodHound(object):
             self.pdc.get_computers()
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
             self.pdc.get_domains()
+            self.pdc.get_forest_domains()
         if not skip_trusts:
             self.pdc.dump_trusts()
         if not skip_computers:
@@ -110,7 +111,7 @@ def main():
     stream.setFormatter(formatter)
     logger.addHandler(stream)
 
-    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound\nThis tool is in BETA!\nFor help or reporting issues, visit https://github.com/Fox-IT/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound\nFor help or reporting issues, visit https://github.com/Fox-IT/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument('-u',
                         '--username',

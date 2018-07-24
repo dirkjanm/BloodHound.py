@@ -63,7 +63,11 @@ class ADComputer(object):
             except KeyboardInterrupt:
                 raise
             except Exception as e:
-                logging.warning('Could not resolve: %s: %s' % (self.hostname, e))
+                # Doesn't exist
+                if "None of DNS query names exist" in str(e):
+                    logging.info('Skipping enumeration for %s since it could not be resolved.', self.hostname)
+                else:
+                    logging.warning('Could not resolve: %s: %s', self.hostname, e)
                 return False
 
             logging.debug('Resolved: %s' % addr)
@@ -72,7 +76,7 @@ class ADComputer(object):
 
         self.addr = addr
 
-        logging.debug('Trying connecting to computer: %s' % self.hostname)
+        logging.debug('Trying connecting to computer: %s', self.hostname)
         # We ping the host here, this adds a small overhead for setting up an extra socket
         # but saves us from constructing RPC Objects for non-existing hosts. Also RPC over
         # SMB does not support setting a connection timeout, so we catch this here.

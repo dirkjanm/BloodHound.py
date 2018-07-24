@@ -5,14 +5,12 @@
 
 BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/BloodHoundAD/BloodHound), based on [Impacket](https://github.com/CoreSecurity/impacket/).
 
-This tool is currently in Beta and should not be considered feature-complete or fully stable.
-
 ## Limitations
 BloodHound.py currently has the following limitations:
-- Currently only single domain compatible (this affects mostly user sessions).
 - Only supports default BloodHound (SharpHound) features, so only Groups, Admins, Sessions and Trusts
 - Name, command line parameters and features may change in the future
 - Kerberos support is not yet complete
+- Cross-forest membership resolving is not implemented yet
 
 ## Installation and usage
 You can install the ingestor via pip with `pip install bloodhound`, or by cloning this repository and running `python setup.py install`, or with `pip install .`.
