@@ -30,8 +30,7 @@ from bloodhound.enumeration.computers import ComputerEnumerator
 from bloodhound.enumeration.memberships import MembershipEnumerator
 
 """
-BloodHound.py is a Python port of BloodHound, designed to run on Linux. It may very
-well work on other platforms, this is currently untested. Knock yourself out.
+BloodHound.py is a Python port of BloodHound, designed to run on Linux and Windows.
 """
 class BloodHound(object):
     def __init__(self, ad):
@@ -43,17 +42,17 @@ class BloodHound(object):
 
     def connect(self):
         if len(self.ad.dcs()) == 0:
-            logging.error('I have no information about the domain')
+            logging.error('Could not find a domain controller. Consider specifying a domain and/or DNS server.')
             sys.exit(1)
 
         pdc = self.ad.dcs()[0]
-        logging.debug('Using LDAP server: %s' % pdc)
-        logging.debug('Using base DN: %s' % self.ad.baseDN)
+        logging.debug('Using LDAP server: %s', pdc)
+        logging.debug('Using base DN: %s', self.ad.baseDN)
 
         if len(self.ad.kdcs()) > 0:
             kdc = self.ad.kdcs()[0]
-            logging.debug('Using kerberos KDC: %s' % kdc)
-            logging.debug('Using kerberos realm: %s' % self.ad.realm())
+            logging.debug('Using kerberos KDC: %s', kdc)
+            logging.debug('Using kerberos realm: %s', self.ad.realm())
 
         # Create a domain controller object
         self.pdc = ADDC(pdc, self.ad)
@@ -91,7 +90,7 @@ def kerberize():
         krb5cc = '/tmp/krb5cc_%u' % os.getuid()
 
     if os.path.isfile(krb5cc):
-        logging.debug('Using kerberos credential cache: %s' % krb5cc)
+        logging.debug('Using kerberos credential cache: %s', krb5cc)
         if os.getenv('KRB5CCNAME') is None:
             os.environ['KRB5CCNAME'] = krb5cc
     else:
@@ -189,7 +188,10 @@ def main():
 
     bloodhound = BloodHound(ad)
     bloodhound.connect()
-    bloodhound.run(skip_groups=args.skip_groups, skip_computers=args.skip_computers, skip_trusts=args.skip_trusts, num_workers=args.workers)
+    bloodhound.run(skip_groups=args.skip_groups,
+                   skip_computers=args.skip_computers,
+                   skip_trusts=args.skip_trusts,
+                   num_workers=args.workers)
 
 
 if __name__ == '__main__':
