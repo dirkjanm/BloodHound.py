@@ -34,6 +34,10 @@ from structures import LDAP_SID
 """
 """
 class ADUtils(object):
+
+    xml_sid_rex = re.compile('<UserId>(S-[0-9\-]+)</UserId>')
+    xml_logontype_rex = re.compile('<LogonType>([A-Za-z0-9]+)</LogonType>')
+
     @staticmethod
     def domain2ldap(domain):
         return 'DC=' + ',DC='.join(str(domain).rstrip('.').split('.'))
@@ -141,6 +145,23 @@ class ADUtils(object):
                 resolved['type'] = 'domain'
 
         return resolved
+
+    @staticmethod
+    def parse_task_xml(xml):
+        """
+        Parse scheduled task XML and extract the user and logon type with
+        regex. Is not a good way to parse XMLs but saves us the whole parsing
+        overhead.
+        """
+        res = ADUtils.xml_sid_rex.search(xml)
+        if not res:
+            return None
+        sid = res.group(1)
+        res = ADUtils.xml_logontype_rex.search(xml)
+        if not res:
+            return None
+        logon_type = res.group(1)
+        return (sid, logon_type)
 
 class DNSCache(object):
     """

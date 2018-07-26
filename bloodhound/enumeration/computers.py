@@ -44,7 +44,7 @@ class ComputerEnumerator(object):
         self.addomain = addomain
         # Blacklist and whitelist are only used for debugging purposes
         self.blacklist = []
-        self.whitelist = []
+        self.whitelist = ['W10-OUTLOOK.testsegment.local']
         self.do_gc_lookup = do_gc_lookup
 
 
@@ -100,6 +100,8 @@ class ComputerEnumerator(object):
                 sessions = c.rpc_get_sessions()
                 c.rpc_get_local_admins()
                 c.rpc_resolve_sids()
+                services = c.rpc_get_services()
+                tasks = c.rpc_get_schtasks()
                 c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
@@ -114,6 +116,7 @@ class ComputerEnumerator(object):
                 if sessions is None:
                     sessions = []
 
+                # Process found sessions
                 for ses in sessions:
                     # For every session, resolve the SAM name in the GC if needed
                     domain = self.addomain.domain
@@ -144,6 +147,31 @@ class ComputerEnumerator(object):
                     # Put the result on the results queue.
                     for user in users:
                         results_q.put(('session', u'%s,%s,%u\n' % (user[0], target, user[1])))
+
+                # Process Tasks
+                for taskuser in tasks:
+                    try:
+                        user = self.addomain.sidcache.get(taskuser)
+                    except KeyError:
+                        # Resolve SID in GC
+                        user = self.addomain.objectresolver.resolve_sid(taskuser)
+                        self.addomain.sidcache.put(taskuser, user)
+                    logging.debug('Resolved TASK SID to username: %s', user)
+                    # Use sessions for now
+                    results_q.put(('session', u'%s,%s,%u\n' % (user, hostname, 2)))
+
+                # Process Services
+                for serviceuser in services:
+                    # Todo: use own cache
+                    try:
+                        user = self.addomain.sidcache.get(serviceuser)
+                    except KeyError:
+                        # Resolve UPN in GC
+                        user = self.addomain.objectresolver.resolve_upn(serviceuser)
+                        self.addomain.sidcache.put(serviceuser, user)
+                    logging.debug('Resolved Service UPN to username: %s', user)
+                    # Use sessions for now
+                    results_q.put(('session', u'%s,%s,%u\n' % (user, hostname, 2)))
 
             except DCERPCException:
                 logging.warning('Querying sessions failed: %s' % hostname)

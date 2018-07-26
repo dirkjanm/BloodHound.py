@@ -24,8 +24,9 @@
 
 import logging
 import traceback
-from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc
-from impacket.dcerpc.v5.rpcrt import DCERPCException
+from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, scmr, tsch
+from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY, RPC_C_AUTHN_LEVEL_PKT_PRIVACY
+
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
 from bloodhound.ad.utils import ADUtils
@@ -43,6 +44,7 @@ class ADComputer(object):
         self.admin_sids = []
         self.admins = []
         self.trusts = []
+        self.services = []
         self.addr = None
         self.smbconnection = None
         self.sid = None
@@ -85,7 +87,7 @@ class ADComputer(object):
         return True
 
 
-    def dce_rpc_connect(self, binding, uuid):
+    def dce_rpc_connect(self, binding, uuid, integrity=False):
         logging.debug('DCE/RPC binding: %s', binding)
 
         try:
@@ -108,6 +110,10 @@ class ADComputer(object):
             if self.smbconnection:
                 self.rpc.set_smb_connection(self.smbconnection)
             dce = self.rpc.get_dce_rpc()
+            # Some interfaces require integrity (such as scheduled tasks)
+            # others don't support it at all and error out.
+            if integrity:
+                dce.set_auth_level(RPC_C_AUTHN_LEVEL_PKT_INTEGRITY)
             dce.connect()
             if self.smbconnection is None:
                 self.smbconnection = self.rpc.get_smb_connection()
@@ -216,6 +222,110 @@ class ADComputer(object):
                                 'flags': domain['Flags']})
 
         dce.disconnect()
+
+
+    def rpc_get_services(self):
+        """
+        Query services with stored credentials via RPC.
+        These credentials can be dumped with mimikatz via lsadump::secrets or via secretsdump.py
+        """
+        binding = r'ncacn_np:%s[\PIPE\svcctl]' % self.addr
+        serviceusers = []
+        dce = self.dce_rpc_connect(binding, scmr.MSRPC_UUID_SCMR)
+        if dce is None:
+            logging.warning('Connection failed: %s', binding)
+            return
+        try:
+            resp = scmr.hROpenSCManagerW(dce)
+            scManagerHandle = resp['lpScHandle']
+            # TODO: Figure out if filtering out service types makes sense
+            resp = scmr.hREnumServicesStatusW(dce,
+                                              scManagerHandle,
+                                              dwServiceType=scmr.SERVICE_WIN32_OWN_PROCESS,
+                                              dwServiceState=scmr.SERVICE_STATE_ALL)
+            # TODO: Skip well-known services to save on traffic
+            for i in range(len(resp)):
+                try:
+                    ans = scmr.hROpenServiceW(dce, scManagerHandle, resp[i]['lpServiceName'][:-1])
+                    serviceHandle = ans['lpServiceHandle']
+                    svcresp = scmr.hRQueryServiceConfigW(dce, serviceHandle)
+                    svc_user = svcresp['lpServiceConfig']['lpServiceStartName'][:-1]
+                    if '@' in svc_user:
+                        logging.info("Found user service: %s running as %s on %s",
+                                     resp[i]['lpServiceName'][:-1],
+                                     svc_user,
+                                     self.hostname)
+                        serviceusers.append(svc_user)
+                except DCERPCException as e:
+                    if 'rpc_s_access_denied' not in str(e):
+                        logging.debug('Exception querying service %s via RPC: %s', resp[i]['lpServiceName'][:-1], e)
+        except DCERPCException as e:
+            logging.debug('Exception connecting to RPC: %s', e)
+        except Exception as e:
+            if 'connection reset' in str(e):
+                logging.debug('Connection was reset: %s', e)
+            else:
+                raise e
+
+        dce.disconnect()
+        return serviceusers
+
+
+    def rpc_get_schtasks(self):
+        """
+        Query the scheduled tasks via RPC. Requires admin privileges.
+        These credentials can be dumped with mimikatz via vault::cred
+        """
+        # Blacklisted folders (Default ones)
+        blacklist = [u'Microsoft\x00']
+        # Start with the root folder
+        folders = ['\\']
+        tasks = []
+        schtaskusers = []
+        binding = r'ncacn_np:%s[\PIPE\atsvc]' % self.addr
+        try:
+            dce = self.dce_rpc_connect(binding, tsch.MSRPC_UUID_TSCHS, True)
+            # Get root folder
+            resp = tsch.hSchRpcEnumFolders(dce, '\\')
+            for item in resp['pNames']:
+                data = item['Data']
+                if data not in blacklist:
+                    folders.append('\\'+data)
+
+            # Enumerate the folders we found
+            # subfolders not supported yet
+            for folder in folders:
+                try:
+                    resp = tsch.hSchRpcEnumTasks(dce, folder)
+                    for item in resp['pNames']:
+                        data = item['Data']
+                        if folder != '\\':
+                            # Make sure to strip the null byte
+                            tasks.append(folder[:-1]+'\\'+data)
+                        else:
+                            tasks.append(folder+data)
+                except DCERPCException as e:
+                    logging.debug('Error enumerating task folder %s: %s', folder, e)
+            for task in tasks:
+                try:
+                    resp = tsch.hSchRpcRetrieveTask(dce, task)
+                    # This returns a tuple (sid, logontype) or None
+                    userinfo = ADUtils.parse_task_xml(resp['pXml'])
+                    if userinfo:
+                        if userinfo[1] == u'Password':
+                            # Convert to byte string because our cache format is in bytes
+                            schtaskusers.append(str(userinfo[0]))
+                            logging.info('Found scheduled task %s on %s with stored credentials for SID %s',
+                                         task,
+                                         self.hostname,
+                                         userinfo[0])
+                except DCERPCException as e:
+                    logging.debug('Error querying task %s: %s', task, e)
+        except DCERPCException as e:
+            logging.debug('Exception enumerating scheduled tasks: %s', e)
+
+        dce.disconnect()
+        return schtaskusers
 
 
     """
