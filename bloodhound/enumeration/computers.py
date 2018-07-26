@@ -123,6 +123,9 @@ class ComputerEnumerator(object):
                         except KeyError:
                             # Look up the SAM name in the GC
                             users = self.addomain.objectresolver.gc_sam_lookup(ses['user'])
+                            if users is None:
+                                # Unknown user
+                                continue
                             self.addomain.samcache.put(samname, users)
                     else:
                         users = [((u'%s@%s' % (ses['user'], domain)).upper(), 2)]

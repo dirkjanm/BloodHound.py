@@ -48,10 +48,8 @@ class OutputWorker(object):
             data = obj[1]
             if t == 'session':
                 session_out.write(data)
-                logging.debug('Writing session data to file')
             elif t == 'admin':
                 admin_out.write(data)
-                logging.debug('Writing admin data to file')
             else:
                 logging.warning("Type is %s this should not happen", t)
 

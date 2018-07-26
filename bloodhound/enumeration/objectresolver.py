@@ -121,6 +121,9 @@ class ObjectResolver(object):
         """
         output = []
         entries = self.resolve_samname(samname)
+        # If an error occurs, return
+        if entries is None:
+            return
         if len(entries) > 1:
             # Awww multiple matches, unsure which is the valid one, add them with different weights
             for entry in entries:
