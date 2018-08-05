@@ -51,7 +51,13 @@ class ADDC(ADComputer):
         """
         logging.info('Connecting to LDAP server: %s' % self.hostname)
 
-        self.ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname,
+        # Convert the hostname to an IP, this prevents ldap3 from doing it
+        # which doesn't use our custom nameservers
+        q = self.ad.dnsresolver.query(self.hostname)
+        for r in q:
+            ip = r.address
+
+        self.ldap = self.ad.auth.getLDAPConnection(hostname=ip,
                                                    baseDN=self.ad.baseDN, protocol=protocol)
         return self.ldap is not None
 
@@ -73,7 +79,13 @@ class ADDC(ADComputer):
                 return False
         logging.info('Connecting to GC LDAP server: %s' % server)
 
-        self.gcldap = self.ad.auth.getLDAPConnection(hostname=server, gc=True,
+        # Convert the hostname to an IP, this prevents ldap3 from doing it
+        # which doesn't use our custom nameservers
+        q = self.ad.dnsresolver.query(server)
+        for r in q:
+            ip = r.address
+
+        self.gcldap = self.ad.auth.getLDAPConnection(hostname=ip, gc=True,
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
