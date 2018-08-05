@@ -28,7 +28,7 @@ import traceback
 import codecs
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE
-from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError
+from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult
 # from impacket.krb5.kerberosv5 import KerberosError
 from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
 from bloodhound.ad.trusts import ADDomainTrust
@@ -116,13 +116,17 @@ class ADDC(ADComputer):
             searcher = self.ldap
         if attributes is None or attributes == []:
             attributes = ALL_ATTRIBUTES
-        sresult = searcher.extend.standard.paged_search(qobject,
-                                                        '(objectClass=*)',
-                                                        search_scope=BASE,
-                                                        attributes=attributes,
-                                                        paged_size=10,
-                                                        generator=False)
-
+        try:
+            sresult = searcher.extend.standard.paged_search(qobject,
+                                                            '(objectClass=*)',
+                                                            search_scope=BASE,
+                                                            attributes=attributes,
+                                                            paged_size=10,
+                                                            generator=False)
+        except LDAPNoSuchObjectResult:
+            # This may indicate the object doesn't exist or access is denied
+            logging.warning('LDAP Server reported that the object %s does not exist.', qobject)
+            return None
         for e in sresult:
             if e['type'] != 'searchResEntry':
                 continue
