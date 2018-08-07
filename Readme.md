@@ -7,6 +7,7 @@ BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/Blo
 
 ## Limitations
 BloodHound.py currently has the following limitations:
+- **Not yet compatible with the new input format for BloodHound 2.0**. Use 1.5.2 for now.
 - Only supports default BloodHound (SharpHound) features, so only Groups, Admins, Sessions and Trusts
 - Name, command line parameters and features may change in the future
 - Kerberos support is not yet complete
