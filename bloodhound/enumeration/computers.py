@@ -56,7 +56,7 @@ class ComputerEnumerator(object):
         q = Queue.Queue()
 
         result_q = Queue.Queue()
-        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'admins.csv', 'sessions.csv'))
+        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'admins.json', 'sessions.json'))
         results_worker.daemon = True
         results_worker.start()
         logging.info('Starting computer enumeration with %d workers', num_workers)
@@ -83,17 +83,17 @@ class ComputerEnumerator(object):
                 logging.info('Skipping computer: %s (not whitelisted)', hostname)
                 continue
 
-            q.put((hostname, samname))
+            q.put((hostname, samname, computer['attributes']['objectSid']))
         q.join()
         result_q.put(None)
         result_q.join()
 
-    def process_computer(self, hostname, samname, results_q):
+    def process_computer(self, hostname, samname, objectsid, results_q):
         """
             Processes a single computer, pushes the results of the computer to the given Queue.
         """
         logging.debug('Querying computer: %s', hostname)
-        c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain)
+        c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, objectsid=objectsid)
         if c.try_connect() == True:
             # Maybe try connection reuse?
             try:
@@ -103,13 +103,7 @@ class ComputerEnumerator(object):
                 c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
-                for admin in c.admins:
-                    # Put the result on the results queue.
-                    results_q.put(('admin', u'%s,%s@%s,%s\n' %
-                                   (unicode(admin['computer']).upper(),
-                                    unicode(admin['name']).upper(),
-                                    admin['domain'].upper(),
-                                    unicode(admin['use']).lower())))
+                results_q.put(('computer', c.get_bloodhound_data()))
 
                 if sessions is None:
                     sessions = []
@@ -146,7 +140,9 @@ class ComputerEnumerator(object):
                         target = '%s.%s' % (target, domain)
                     # Put the result on the results queue.
                     for user in users:
-                        results_q.put(('session', u'%s,%s,%u\n' % (user[0], target, user[1])))
+                        results_q.put(('session', {'UserName': user[0].upper(),
+                                                   'ComputerName': target.upper(),
+                                                   'Weight': user[1]}))
 
             except DCERPCException:
                 logging.warning('Querying sessions failed: %s' % hostname)
@@ -162,7 +158,7 @@ class ComputerEnumerator(object):
         logging.debug('Start working')
 
         while True:
-            hostname, samname = q.get()
+            hostname, samname, objectsid = q.get()
             logging.info('Querying computer: %s', hostname)
-            self.process_computer(hostname, samname, results_q)
+            self.process_computer(hostname, samname, objectsid, results_q)
             q.task_done()

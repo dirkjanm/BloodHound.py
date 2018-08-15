@@ -34,7 +34,7 @@ class ADComputer(object):
     """
     Computer connected to Active Directory
     """
-    def __init__(self, hostname=None, samname=None, ad=None):
+    def __init__(self, hostname=None, samname=None, ad=None, objectsid=None):
         self.hostname = hostname
         self.ad = ad
         self.samname = samname
@@ -45,7 +45,23 @@ class ADComputer(object):
         self.trusts = []
         self.addr = None
         self.smbconnection = None
+        # The SID of the local domain
         self.sid = None
+        # The SID within the domain
+        self.objectsid = objectsid
+        self.primarygroup = None
+
+    def get_bloodhound_data(self):
+        data = {
+            'Name': self.hostname.upper(),
+            'LocalAdmins': self.admins,
+            'Properties': {
+                'objectsid': self.objectsid,
+                'domain': self.ad.domain,
+                'highvalue': False
+            }
+        }
+        return data
 
     def try_connect(self):
         addr = None
@@ -274,10 +290,8 @@ class ADComputer(object):
                     try:
                         siddata, domain = self.ad.sidcache.get(sid_string)
                         logging.debug('Sid is cached: %s@%s', siddata['Name'], domain)
-                        self.admins.append({'computer': self.hostname,
-                                            'name': unicode(siddata['Name']),
-                                            'use': ADUtils.translateSidType(siddata['Use']),
-                                            'domain': domain})
+                        self.admins.append({'Name': u'%s@%s' % (unicode(siddata['Name']).upper(), domain.upper()),
+                                            'Type': ADUtils.translateSidType(siddata['Use'])})
                     except KeyError:
                         # Append it to the list of unresolved SIDs
                         self.admin_sids.append(sid_string)
@@ -349,10 +363,8 @@ class ADComputer(object):
 
                 if entry['Name'] != '':
                     logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
-                    self.admins.append({'computer': self.hostname,
-                                        'name': unicode(entry['Name']),
-                                        'use': ADUtils.translateSidType(entry['Use']),
-                                        'domain': domain})
+                    self.admins.append({'Name': u'%s@%s' % (unicode(entry['Name']).upper(), domain.upper()),
+                                        'Type': ADUtils.translateSidType(entry['Use'])})
                     # Add it to our cache
                     self.ad.sidcache.put(sid_string, (entry, domain))
                 else:

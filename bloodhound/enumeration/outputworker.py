@@ -25,18 +25,28 @@
 import logging
 import traceback
 import codecs
+import json
 
 class OutputWorker(object):
     @staticmethod
-    def write_worker(result_q, admin_filename, session_filename):
+    def write_worker(result_q, computers_filename, session_filename):
         """
             Worker to write the results from the results_q to the given files.
         """
-        admin_out = codecs.open(admin_filename, 'w', 'utf-8')
-        session_out = codecs.open(session_filename, 'w', 'utf-8')
+        computers_out = codecs.open(computers_filename, 'w', 'utf-8')
+        sessions_out = codecs.open(session_filename, 'w', 'utf-8')
 
-        admin_out.write('ComputerName,AccountName,AccountType\n')
-        session_out.write('UserName,ComputerName,Weight\n')
+        # If the logging level is DEBUG, we ident the objects
+        if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+            indent_level = 1
+        else:
+            indent_level = 0
+
+        # Write start of the json file
+        computers_out.write('{"computers":[')
+        num_computers = 0
+        sessions_out.write('{"sessions":[')
+        num_sessions = 0
         while True:
             obj = result_q.get()
 
@@ -44,18 +54,25 @@ class OutputWorker(object):
                 logging.debug('Write worker obtained a None value, exiting')
                 break
 
-            t = obj[0]
-            data = obj[1]
-            if t == 'session':
-                session_out.write(data)
-            elif t == 'admin':
-                admin_out.write(data)
+            objtype, data = obj
+            if objtype == 'session':
+                if num_sessions != 0:
+                    sessions_out.write(',')
+                json.dump(data, sessions_out, indent=indent_level)
+                num_sessions += 1
+            elif objtype == 'computer':
+                if num_computers != 0:
+                    computers_out.write(',')
+                json.dump(data, computers_out, indent=indent_level)
+                num_computers += 1
             else:
-                logging.warning("Type is %s this should not happen", t)
+                logging.warning("Type is %s this should not happen", objtype)
 
             result_q.task_done()
 
         logging.debug('Write worker is done, closing files')
-        admin_out.close()
-        session_out.close()
+        computers_out.write('],"meta":{"type":"computers","count":%d}}' % num_computers)
+        computers_out.close()
+        sessions_out.write('],"meta":{"type":"sessions","count":%d}}' % num_sessions)
+        sessions_out.close()
         result_q.task_done()

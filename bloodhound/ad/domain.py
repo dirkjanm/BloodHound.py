@@ -256,7 +256,7 @@ class ADDC(ADComputer):
     def get_computers(self):
         entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',
                               ['samaccountname', 'distinguishedname',
-                               'dnshostname', 'samaccounttype'],
+                               'dnshostname', 'samaccounttype', 'objectSid'],
                               generator=True)
 
         entriesNum = 0
