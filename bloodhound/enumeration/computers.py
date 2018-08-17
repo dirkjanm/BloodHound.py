@@ -36,7 +36,7 @@ class ComputerEnumerator(object):
     Contains the threading logic and workers which will call the collection
     methods from the bloodhound.ad module.
     """
-    def __init__(self, addomain, do_gc_lookup=True):
+    def __init__(self, addomain, collect, do_gc_lookup=True):
         """
         Computer enumeration. Enumerates all computers in the given domain.
         Every domain enumerated will get its own instance of this class.
@@ -46,6 +46,8 @@ class ComputerEnumerator(object):
         self.blacklist = []
         self.whitelist = []
         self.do_gc_lookup = do_gc_lookup
+        # Store collection methods specified
+        self.collect = collect
 
 
     def enumerate_computers(self, computers, num_workers=10):
@@ -56,7 +58,7 @@ class ComputerEnumerator(object):
         q = Queue.Queue()
 
         result_q = Queue.Queue()
-        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'admins.json', 'sessions.json'))
+        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'computers.json', 'sessions.json'))
         results_worker.daemon = True
         results_worker.start()
         logging.info('Starting computer enumeration with %d workers', num_workers)
@@ -97,9 +99,13 @@ class ComputerEnumerator(object):
         if c.try_connect() == True:
             # Maybe try connection reuse?
             try:
-                sessions = c.rpc_get_sessions()
-                c.rpc_get_local_admins()
-                c.rpc_resolve_sids()
+                if 'session' in self.collect:
+                    sessions = c.rpc_get_sessions()
+                else:
+                    sessions = []
+                if 'localadmin' in self.collect:
+                    c.rpc_get_local_admins()
+                    c.rpc_resolve_sids()
                 c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
@@ -145,7 +151,7 @@ class ComputerEnumerator(object):
                                                    'Weight': user[1]}))
 
             except DCERPCException:
-                logging.warning('Querying sessions failed: %s' % hostname)
+                logging.warning('Querying computer failed: %s' % hostname)
             except Exception as e:
                 logging.error('Unhandled exception in computer processing: %s', str(e))
                 logging.info(traceback.format_exc())

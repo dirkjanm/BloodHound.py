@@ -61,21 +61,21 @@ class BloodHound(object):
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, skip_groups=False, skip_computers=False, skip_trusts=False, num_workers=10):
-        if not skip_groups:
+    def run(self, collect, num_workers=10):
+        if 'group' in collect:
             self.pdc.fetch_all()
             membership_enum = MembershipEnumerator(self.ad, self.pdc)
             membership_enum.enumerate_memberships()
-        elif not skip_computers:
+        elif 'localadmin' in collect or 'session' in collect:
             # We need to know which computers to query regardless
             self.pdc.get_computers()
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
             self.pdc.get_domains()
             self.pdc.get_forest_domains()
-        if not skip_trusts:
+        if 'trusts' in collect:
             self.pdc.dump_trusts()
-        if not skip_computers:
-            computer_enum = ComputerEnumerator(self.ad)
+        if 'localadmin' in collect or 'session' in collect:
+            computer_enum = ComputerEnumerator(self.ad, collect)
             computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)
 
         logging.info('Done')
@@ -97,6 +97,38 @@ def kerberize():
         logging.error('Could not find kerberos credential cache file')
         sys.exit(1)
 
+"""
+Convert methods (string) to list of validated methods to resolve
+"""
+def resolve_collection_methods(methods):
+    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default']
+    default_methods = ['group', 'localadmin', 'session', 'trusts']
+    if ',' in methods:
+        method_list = [method.lower() for method in methods.split(',')]
+        validated_methods = []
+        for method in method_list:
+            if method not in valid_methods:
+                logging.error('Invalid collection method specified: %s', method)
+                return False
+
+            if method == 'default':
+                validated_methods += default_methods
+            else:
+                validated_methods.append(method)
+        return set(validated_methods)
+    else:
+        validated_methods = []
+        # It is only one
+        method = methods.lower()
+        if method in valid_methods:
+            if method == 'default':
+                validated_methods += default_methods
+            else:
+                validated_methods.append(method)
+            return set(validated_methods)
+        else:
+            logging.error('Invalid collection method specified: %s', method)
+            return False
 
 def main():
 #    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -131,20 +163,16 @@ def main():
                         '--nameserver',
                         action='store',
                         help='Alternative name server to use for queries')
-    # Todo: match sharphound profiles
-    parser.add_argument('--skip-groups',
-                        action='store_true',
-                        help='Do not query Group memberships via LDAP')
-    parser.add_argument('--skip-computers',
-                        action='store_true',
-                        help='Do not connect to individual computers')
-    parser.add_argument('--skip-trusts',
-                        action='store_true',
-                        help='Do not enumerate trusts')
+    parser.add_argument('-c',
+                        '--collectionmethod',
+                        action='store',
+                        default='Default',
+                        help='Which information to collect. Supported: Group, LocalAdmin, Session, '
+                             'Trusts, Default (all the previous). (default: Default)')
     parser.add_argument('-d',
                         '--domain',
                         action='store',
-                        help='Domain to query')
+                        help='Domain to query.')
     parser.add_argument('-w',
                         '--workers',
                         action='store',
@@ -186,11 +214,15 @@ def main():
     logging.debug('Using DNS to retrieve domain information')
     ad.dns_resolve(kerberos=args.kerberos, domain=args.domain)
 
+    # Resolve collection methods
+    collect = resolve_collection_methods(args.collectionmethod)
+    if not collect:
+        return
+    logging.debug('Resolved collection methods: %s', ', '.join(list(collect)))
+
     bloodhound = BloodHound(ad)
     bloodhound.connect()
-    bloodhound.run(skip_groups=args.skip_groups,
-                   skip_computers=args.skip_computers,
-                   skip_trusts=args.skip_trusts,
+    bloodhound.run(collect=collect,
                    num_workers=args.workers)
 
 

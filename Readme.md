@@ -9,7 +9,6 @@ BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/Blo
 BloodHound.py currently has the following limitations:
 - **Not yet compatible with the new input format for BloodHound 2.0**. Use 1.5.2 for now.
 - Only supports default BloodHound (SharpHound) features, so only Groups, Admins, Sessions and Trusts
-- Name, command line parameters and features may change in the future
 - Kerberos support is not yet complete
 - Cross-forest membership resolving is not implemented yet
 
@@ -22,4 +21,10 @@ The installation will add a command line tool `bloodhound-python` to your PATH.
 To use the ingestor, at a minimum you will need credentials of the domain you're logging in to.
 You will need to specify the `-u` option with a username of this domain (or `username@domain` for a user in a trusted domain). If you have your DNS set up properly and the AD domain is in your DNS search list, then BloodHound.py will automatically detect the domain for you. If not, you have to specify it manually with the `-d` option.
 
-By default BloodHound.py will query LDAP and the individual computers of the domain to enumerate users, computers, groups, sessions and local admins. To disable some checks, see the options.
+By default BloodHound.py will query LDAP and the individual computers of the domain to enumerate users, computers, groups, sessions and local admins. 
+If you want to restrict collection, specify the `--collectionmethod` parameter, which supports the following options (similar to SharpHound):
+- *Default* - Performs group membership collection, domain trust collection, local admin collection, and session collection
+- *Group* - Performs group membership collection
+- *LocalAdmin* - Performs local admin collection
+- *Session* - Performs session collection
+- *Trusts* - Performs domain trust enumeration

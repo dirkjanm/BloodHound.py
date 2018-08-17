@@ -71,6 +71,7 @@ class OutputWorker(object):
             result_q.task_done()
 
         logging.debug('Write worker is done, closing files')
+        # Write metadata manually
         computers_out.write('],"meta":{"type":"computers","count":%d}}' % num_computers)
         computers_out.close()
         sessions_out.write('],"meta":{"type":"sessions","count":%d}}' % num_sessions)
