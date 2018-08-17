@@ -40,7 +40,7 @@ class OutputWorker(object):
         if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
             indent_level = 1
         else:
-            indent_level = 0
+            indent_level = None
 
         # Write start of the json file
         computers_out.write('{"computers":[')

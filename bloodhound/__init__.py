@@ -63,15 +63,15 @@ class BloodHound(object):
 
     def run(self, collect, num_workers=10):
         if 'group' in collect:
-            self.pdc.fetch_all()
+            # Fetch domains/computers for later
+            self.pdc.prefetch_info()
+            # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc)
             membership_enum.enumerate_memberships()
         elif 'localadmin' in collect or 'session' in collect:
             # We need to know which computers to query regardless
-            self.pdc.get_computers()
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
-            self.pdc.get_domains()
-            self.pdc.get_forest_domains()
+            self.pdc.prefetch_info()
         if 'trusts' in collect:
             self.pdc.dump_trusts()
         if 'localadmin' in collect or 'session' in collect:
@@ -211,14 +211,15 @@ def main():
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver)
 
-    logging.debug('Using DNS to retrieve domain information')
-    ad.dns_resolve(kerberos=args.kerberos, domain=args.domain)
-
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
     if not collect:
         return
     logging.debug('Resolved collection methods: %s', ', '.join(list(collect)))
+
+    logging.debug('Using DNS to retrieve domain information')
+    ad.dns_resolve(kerberos=args.kerberos, domain=args.domain)
+
 
     bloodhound = BloodHound(ad)
     bloodhound.connect()

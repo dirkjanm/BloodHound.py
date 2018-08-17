@@ -42,10 +42,14 @@ class ADDC(ADComputer):
     def __init__(self, hostname=None, ad=None):
         ADComputer.__init__(self, hostname)
         self.ad = ad
+        # Primary LDAP connection
         self.ldap = None
+        # Secondary LDAP connection
+        self.resolverldap = None
+        # GC LDAP connection
         self.gcldap = None
 
-    def ldap_connect(self, protocol='ldap'):
+    def ldap_connect(self, protocol='ldap', resolver=False):
         """
         Connect to the LDAP service
         """
@@ -57,9 +61,13 @@ class ADDC(ADComputer):
         for r in q:
             ip = r.address
 
-        self.ldap = self.ad.auth.getLDAPConnection(hostname=ip,
-                                                   baseDN=self.ad.baseDN, protocol=protocol)
-        return self.ldap is not None
+        ldap = self.ad.auth.getLDAPConnection(hostname=ip,
+                                              baseDN=self.ad.baseDN, protocol=protocol)
+        if resolver:
+            self.resolverldap = ldap
+        else:
+            self.ldap = ldap
+        return ldap is not None
 
     def gc_connect(self, protocol='ldap'):
         """
@@ -89,34 +97,42 @@ class ADDC(ADComputer):
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
-    def search(self, searchFilter='(objectClass=*)', attributes=None, searchBase=None, generator=True, use_gc=False):
+    def search(self, search_filter='(objectClass=*)', attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False):
         """
         Search for objects in LDAP or Global Catalog LDAP.
         """
         if self.ldap is None:
             self.ldap_connect()
-        if searchBase is None:
-            searchBase = self.ad.baseDN
+        if search_base is None:
+            search_base = self.ad.baseDN
         if attributes is None or attributes == []:
             attributes = ALL_ATTRIBUTES
         # Use the GC if this is requested
         if use_gc:
             searcher = self.gcldap
         else:
-            searcher = self.ldap
-        sresult = searcher.extend.standard.paged_search(searchBase,
-                                                        searchFilter,
+            # If this request comes from the resolver thread, use that
+            if use_resolver:
+                searcher = self.resolverldap
+            else:
+                searcher = self.ldap
+
+        sresult = searcher.extend.standard.paged_search(search_base,
+                                                        search_filter,
                                                         attributes=attributes,
                                                         paged_size=200,
                                                         generator=generator)
+        try:
+            # Use a generator for the result regardless of if the search function uses one
+            for e in sresult:
+                if e['type'] != 'searchResEntry':
+                    continue
+                yield e
+        except LDAPNoSuchObjectResult:
+            # This may indicate the object doesn't exist or access is denied
+            logging.warning('LDAP Server reported that the search in %s for %s does not exist.', search_base, search_filter)
 
-        # Use a generator for the result regardless of if the search function uses one
-        for e in sresult:
-            if e['type'] != 'searchResEntry':
-                continue
-            yield e
-
-    def ldap_get_single(self, qobject, attributes=None, use_gc=False):
+    def ldap_get_single(self, qobject, attributes=None, use_gc=False, use_resolver=False):
         """
         Get a single object, requires full DN to object.
         This function supports searching both in the local directory and the Global Catalog.
@@ -125,7 +141,11 @@ class ADDC(ADComputer):
         if use_gc:
             searcher = self.gcldap
         else:
-            searcher = self.ldap
+            # If this request comes from the resolver thread, use that
+            if use_resolver:
+                searcher = self.resolverldap
+            else:
+                searcher = self.ldap
         if attributes is None or attributes == []:
             attributes = ALL_ATTRIBUTES
         try:
@@ -158,7 +178,7 @@ class ADDC(ADComputer):
         try:
             entries = self.search('(ncname=%s)' % context,
                                   ['nETBIOSName'],
-                                  searchBase="CN=Partitions,%s" % self.ldap.server.info.other['configurationNamingContext'][0])
+                                  search_base="CN=Partitions,%s" % self.ldap.server.info.other['configurationNamingContext'][0])
         except (LDAPAttributeError, LDAPCursorError) as e:
             logging.warning('Could not determine NetBiosname of the domain: %s' % e)
         return entries.next()
@@ -196,7 +216,7 @@ class ADDC(ADComputer):
         """
         entries = self.search('(objectClass=crossRef)',
                               ['nETBIOSName', 'systemFlags', 'nCName', 'name'],
-                              searchBase="CN=Partitions,%s" % self.ldap.server.info.other['configurationNamingContext'][0],
+                              search_base="CN=Partitions,%s" % self.ldap.server.info.other['configurationNamingContext'][0],
                               generator=True)
 
         entriesNum = 0
@@ -219,37 +239,19 @@ class ADDC(ADComputer):
 
     def get_groups(self):
         entries = self.search('(objectClass=group)',
-                              ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid'],
+                              ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid', 'member'],
                               generator=True)
-
-        entriesNum = 0
-        for entry in entries:
-            entriesNum += 1
-            self.ad.groups[entry['attributes']['distinguishedName']] = entry
-            # Also add a mapping from GID to DN
-            try:
-                gid = int(entry['attributes']['objectSid'].split('-')[-1])
-                self.ad.groups_dnmap[gid] = entry['attributes']['distinguishedName']
-            except KeyError:
-                #Somehow we found a group without a sid?
-                logging.warning('Could not determine SID for group %s' % entry['attributes']['distinguishedName'])
-
-        logging.info('Found %u groups', entriesNum)
-
         return entries
 
 
-    def get_users(self):
+    def get_users(self, include_properties=False):
+        if include_properties:
+            properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'primaryGroupID']
+        else:
+            properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'primaryGroupID']
         entries = self.search('(objectClass=user)',
-                              [],
+                              properties,
                               generator=True)
-
-        entriesNum = 0
-        for entry in entries:
-            entriesNum += 1
-            self.ad.users[entry['attributes']['distinguishedName']] = entry
-
-        logging.info('Found %u users', entriesNum)
         return entries
 
 
@@ -313,83 +315,16 @@ class ADDC(ADComputer):
         logging.debug('Finished writing trusts')
         out.close()
 
-    def fetch_all(self):
+    def prefetch_info(self):
         self.get_domains()
         self.get_forest_domains()
         self.get_computers()
-        self.get_groups()
-#        self.get_users()
-#        self.get_domain_controllers()
 
 
 """
 Active Directory data and cache
 """
 class AD(object):
-    SID = {
-        'S-1-0': 'Null Authority',
-        'S-1-0-0': 'Nobody',
-        'S-1-1': 'World Authority',
-        'S-1-1-0': 'Everyone',
-        'S-1-2': 'Local Authority',
-        'S-1-2-0': 'Local',
-        'S-1-2-1': 'Console Logon',
-        'S-1-3': 'Creator Authority',
-        'S-1-3-0': 'Creator Owner',
-        'S-1-3-1': 'Creator Group',
-        'S-1-3-2': 'Creator Owner Server',
-        'S-1-3-3': 'Creator Group Server',
-        'S-1-3-4': 'Owner Rights',
-        'S-1-4': 'Non-unique Authority',
-        'S-1-5': 'NT Authority',
-        'S-1-5-1': 'Dialup',
-        'S-1-5-2': 'Network',
-        'S-1-5-3': 'Batch',
-        'S-1-5-4': 'Interactive',
-        'S-1-5-6': 'Service',
-        'S-1-5-7': 'Anonymous',
-        'S-1-5-8': 'Proxy',
-        'S-1-5-9': 'Enterprise Domain Controllers',
-        'S-1-5-10': 'Principal Self',
-        'S-1-5-11': 'Authenticated Users',
-        'S-1-5-12': 'Restricted Code',
-        'S-1-5-13': 'Terminal Server Users',
-        'S-1-5-14': 'Remote Interactive Logon',
-        'S-1-5-15': 'This Organization',
-        'S-1-5-17': 'This Organization',
-        'S-1-5-18': 'Local System',
-        'S-1-5-19': 'NT Authority',
-        'S-1-5-20': 'NT Authority',
-        'S-1-5-80-0': 'All Services',
-        'S-1-5-32-544': 'BUILTIN\\Administrators',
-        'S-1-5-32-545': 'BUILTIN\\Users',
-        'S-1-5-32-546': 'BUILTIN\\Guests',
-        'S-1-5-32-547': 'BUILTIN\\Power Users',
-        'S-1-5-32-548': 'BUILTIN\\Account Operators',
-        'S-1-5-32-549': 'BUILTIN\\Server Operators',
-        'S-1-5-32-550': 'BUILTIN\\Print Operators',
-        'S-1-5-32-551': 'BUILTIN\\Backup Operators',
-        'S-1-5-32-552': 'BUILTIN\\Replicators',
-        'S-1-5-32-554': 'BUILTIN\\Pre-Windows 2000 Compatible Access',
-        'S-1-5-32-555': 'BUILTIN\\Remote Desktop Users',
-        'S-1-5-32-556': 'BUILTIN\\Network Configuration Operators',
-        'S-1-5-32-557': 'BUILTIN\\Incoming Forest Trust Builders',
-        'S-1-5-32-558': 'BUILTIN\\Performance Monitor Users',
-        'S-1-5-32-559': 'BUILTIN\\Performance Log Users',
-        'S-1-5-32-560': 'BUILTIN\\Windows Authorization Access Group',
-        'S-1-5-32-561': 'BUILTIN\\Terminal Server License Servers',
-        'S-1-5-32-562': 'BUILTIN\\Distributed COM Users',
-        'S-1-5-32-569': 'BUILTIN\\Cryptographic Operators',
-        'S-1-5-32-573': 'BUILTIN\\Event Log Readers',
-        'S-1-5-32-574': 'BUILTIN\\Certificate Service DCOM Access',
-        'S-1-5-32-575': 'BUILTIN\\RDS Remote Access Servers',
-        'S-1-5-32-576': 'BUILTIN\\RDS Endpoint Servers',
-        'S-1-5-32-577': 'BUILTIN\\RDS Management Servers',
-        'S-1-5-32-578': 'BUILTIN\\Hyper-V Administrators',
-        'S-1-5-32-579': 'BUILTIN\\Access Control Assistance Operators',
-        'S-1-5-32-580': 'BUILTIN\\Access Control Assistance Operators',
-    }
-
 
     def __init__(self, domain=None, auth=None, nameserver=None):
         self.domain = domain
@@ -407,7 +342,7 @@ class AD(object):
         self.groups = {} # Groups by DN
         self.groups_dnmap = {} # Group mapping from gid to DN
         self.computers = {}
-        self.users = {}
+        self.users = {} # Users by DN
 
         # Create a resolver object
         self.dnsresolver = resolver.Resolver()

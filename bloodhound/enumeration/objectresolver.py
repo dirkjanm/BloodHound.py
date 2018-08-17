@@ -37,19 +37,26 @@ class ObjectResolver(object):
         self.addc = addc
         self.lock = threading.Lock()
 
-    def resolve_group(self, group):
+    def resolve_distinguishedname(self, distinguishedname, use_gc=True):
         """
-        Resolve a group DN in LDAP. This will use the GC
+        Resolve a DistinguishedName in LDAP. This will use the GC by default
         Returns a single LDAP entry
         """
         with self.lock:
-            if not self.addc.gcldap:
+            if use_gc and not self.addc.gcldap:
                 if not self.addc.gc_connect():
                     # Error connecting, bail
                     return None
-            logging.debug('Querying GC for DN %s', group)
-            group = self.addc.ldap_get_single(group, use_gc=True)
-            return group
+            if not use_gc and not self.addc.resolverldap:
+                if not self.addc.ldap_connect(resolver=True):
+                    # Error connecting, bail
+                    return None
+            if use_gc:
+                logging.debug('Querying GC for DN %s', distinguishedname)
+            else:
+                logging.debug('Querying resolver LDAP for DN %s', distinguishedname)
+            distinguishedname = self.addc.ldap_get_single(distinguishedname, use_gc=use_gc, use_resolver=True)
+            return distinguishedname
 
     def resolve_samname(self, samname):
         """
@@ -64,8 +71,8 @@ class ObjectResolver(object):
                     # Error connecting, bail
                     return None
             logging.debug('Querying GC for SAM Name %s', samname)
-            entries = self.addc.search(searchBase="",
-                                       searchFilter='(sAMAccountName=%s)' % safename,
+            entries = self.addc.search(search_base="",
+                                       search_filter='(sAMAccountName=%s)' % safename,
                                        use_gc=True,
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
             # This uses a generator, however we return a list
@@ -86,28 +93,38 @@ class ObjectResolver(object):
                     # Error connecting, bail
                     return None
             logging.debug('Querying GC for UPN %s', upn)
-            entries = self.addc.search(searchBase="",
-                                       searchFilter='&((objectClass=user)(userPrincipalName=%s))' % safename,
+            entries = self.addc.search(search_base="",
+                                       search_filter='&((objectClass=user)(userPrincipalName=%s))' % safename,
                                        use_gc=True,
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
             for entry in entries:
                 # By definition this can be only one entry
                 return entry
 
-    def resolve_sid(self, sid):
+    def resolve_sid(self, sid, use_gc=True):
         """
-        Resolve a SID in the GC.
+        Resolve a SID in LDAP. This will use the GC by default
         Returns a single LDAP entry
         """
         with self.lock:
-            if not self.addc.gcldap:
+            if use_gc and not self.addc.gcldap:
                 if not self.addc.gc_connect():
                     # Error connecting, bail
                     return None
-            logging.debug('Querying GC for SID %s', sid)
-            entries = self.addc.search(searchBase="",
-                                       searchFilter='(objectSid=%s)' % sid,
-                                       use_gc=True,
+            if not use_gc and not self.addc.resolverldap:
+                if not self.addc.ldap_connect(resolver=True):
+                    # Error connecting, bail
+                    return None
+            if use_gc:
+                base = ""
+                logging.debug('Querying GC for SID %s', sid)
+            else:
+                logging.debug('Querying resolver LDAP for SID %s', sid)
+                base = None
+            entries = self.addc.search(search_base=base,
+                                       search_filter='(objectSid=%s)' % sid,
+                                       use_gc=use_gc,
+                                       use_resolver=True,
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
             for entry in entries:
                 # By definition this can be only one entry

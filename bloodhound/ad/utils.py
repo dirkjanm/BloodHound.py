@@ -28,12 +28,77 @@ import threading
 import re
 import dns
 from dns import resolver, reversename
-from structures import LDAP_SID
-
+from bloodhound.ad.structures import LDAP_SID
 
 """
 """
 class ADUtils(object):
+    WELLKNOWN_SIDS = {
+        "S-1-0": ("Null Authority", "USER"),
+        "S-1-0-0": ("Nobody", "USER"),
+        "S-1-1": ("World Authority", "USER"),
+        "S-1-1-0": ("Everyone", "GROUP"),
+        "S-1-2": ("Local Authority", "USER"),
+        "S-1-2-0": ("Local", "GROUP"),
+        "S-1-2-1": ("Console Logon", "GROUP"),
+        "S-1-3": ("Creator Authority", "USER"),
+        "S-1-3-0": ("Creator Owner", "USER"),
+        "S-1-3-1": ("Creator Group", "GROUP"),
+        "S-1-3-2": ("Creator Owner Server", "COMPUTER"),
+        "S-1-3-3": ("Creator Group Server", "COMPUTER"),
+        "S-1-3-4": ("Owner Rights", "GROUP"),
+        "S-1-4": ("Non-unique Authority", "USER"),
+        "S-1-5": ("NT Authority", "USER"),
+        "S-1-5-1": ("Dialup", "GROUP"),
+        "S-1-5-2": ("Network", "GROUP"),
+        "S-1-5-3": ("Batch", "GROUP"),
+        "S-1-5-4": ("Interactive", "GROUP"),
+        "S-1-5-6": ("Service", "GROUP"),
+        "S-1-5-7": ("Anonymous", "GROUP"),
+        "S-1-5-8": ("Proxy", "GROUP"),
+        "S-1-5-9": ("Enterprise Domain Controllers", "GROUP"),
+        "S-1-5-10": ("Principal Self", "USER"),
+        "S-1-5-11": ("Authenticated Users", "GROUP"),
+        "S-1-5-12": ("Restricted Code", "GROUP"),
+        "S-1-5-13": ("Terminal Server Users", "GROUP"),
+        "S-1-5-14": ("Remote Interactive Logon", "GROUP"),
+        "S-1-5-15": ("This Organization ", "GROUP"),
+        "S-1-5-17": ("This Organization ", "GROUP"),
+        "S-1-5-18": ("Local System", "USER"),
+        "S-1-5-19": ("NT Authority", "USER"),
+        "S-1-5-20": ("NT Authority", "USER"),
+        "S-1-5-80-0": ("All Services ", "GROUP"),
+        "S-1-5-32-544": ("Administrators", "GROUP"),
+        "S-1-5-32-545": ("Users", "GROUP"),
+        "S-1-5-32-546": ("Guests", "GROUP"),
+        "S-1-5-32-547": ("Power Users", "GROUP"),
+        "S-1-5-32-548": ("Account Operators", "GROUP"),
+        "S-1-5-32-549": ("Server Operators", "GROUP"),
+        "S-1-5-32-550": ("Print Operators", "GROUP"),
+        "S-1-5-32-551": ("Backup Operators", "GROUP"),
+        "S-1-5-32-552": ("Replicators", "GROUP"),
+        "S-1-5-32-554": ("Pre-Windows 2000 Compatible Access", "GROUP"),
+        "S-1-5-32-555": ("Remote Desktop Users", "GROUP"),
+        "S-1-5-32-556": ("Network Configuration Operators", "GROUP"),
+        "S-1-5-32-557": ("Incoming Forest Trust Builders", "GROUP"),
+        "S-1-5-32-558": ("Performance Monitor Users", "GROUP"),
+        "S-1-5-32-559": ("Performance Log Users", "GROUP"),
+        "S-1-5-32-560": ("Windows Authorization Access Group", "GROUP"),
+        "S-1-5-32-561": ("Terminal Server License Servers", "GROUP"),
+        "S-1-5-32-562": ("Distributed COM Users", "GROUP"),
+        "S-1-5-32-568": ("IIS_IUSRS", "GROUP"),
+        "S-1-5-32-569": ("Cryptographic Operators", "GROUP"),
+        "S-1-5-32-573": ("Event Log Readers", "GROUP"),
+        "S-1-5-32-574": ("Certificate Service DCOM Access", "GROUP"),
+        "S-1-5-32-575": ("RDS Remote Access Servers", "GROUP"),
+        "S-1-5-32-576": ("RDS Endpoint Servers", "GROUP"),
+        "S-1-5-32-577": ("RDS Management Servers", "GROUP"),
+        "S-1-5-32-578": ("Hyper-V Administrators", "GROUP"),
+        "S-1-5-32-579": ("Access Control Assistance Operators", "GROUP"),
+        "S-1-5-32-580": ("Access Control Assistance Operators", "GROUP")
+    }
+
+
     @staticmethod
     def domain2ldap(domain):
         return 'DC=' + ',DC='.join(str(domain).rstrip('.').split('.'))
@@ -110,19 +175,26 @@ class ADUtils(object):
         account = ''
         dn = ''
         domain = ''
-        if entry['attributes']['sAMAccountName']:
+        if 'sAMAccountName' in entry['attributes']:
             account = entry['attributes']['sAMAccountName']
         if entry['attributes']['distinguishedName']:
             dn = entry['attributes']['distinguishedName']
             domain = ADUtils.ldap2domain(dn)
 
         resolved['principal'] = unicode('%s@%s' % (account, domain)).upper()
-        if not entry['attributes']['sAMAccountName']:
+        if not 'sAMAccountName' in entry['attributes']:
             # TODO: Fix foreign users
             # requires cross-forest resolving
             if 'ForeignSecurityPrincipals' in dn:
                 resolved['principal'] = domain.upper()
                 resolved['type'] = 'foreignsecurityprincipal'
+                if 'name' in entry['attributes']:
+                    # Fix wellknown entries
+                    ename = entry['attributes']['name']
+                    if ename in ADUtils.WELLKNOWN_SIDS:
+                        name, sidtype = ADUtils.WELLKNOWN_SIDS[ename]
+                        resolved['type'] = sidtype.lower()
+                        resolved['principal'] = unicode('%s@%s' % (name, domain)).upper()
             else:
                 resolved['type'] = 'unknown'
         else:
