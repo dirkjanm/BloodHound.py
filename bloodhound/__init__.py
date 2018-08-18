@@ -28,6 +28,7 @@ from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
 from bloodhound.enumeration.memberships import MembershipEnumerator
+from bloodhound.enumeration.trusts import TrustsEnumerator
 
 """
 BloodHound.py is a Python port of BloodHound, designed to run on Linux and Windows.
@@ -72,8 +73,12 @@ class BloodHound(object):
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
             self.pdc.prefetch_info()
+        elif 'trusts' in collect:
+            # Prefetch domains
+            self.pdc.get_domains()
         if 'trusts' in collect:
-            self.pdc.dump_trusts()
+            trusts_enum = TrustsEnumerator(self.ad, self.pdc)
+            trusts_enum.dump_trusts()
         if 'localadmin' in collect or 'session' in collect:
             computer_enum = ComputerEnumerator(self.ad, collect)
             computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)

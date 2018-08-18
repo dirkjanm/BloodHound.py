@@ -25,13 +25,11 @@
 import logging
 import traceback
 
-import codecs
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult
 # from impacket.krb5.kerberosv5 import KerberosError
 from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
-from bloodhound.ad.trusts import ADDomainTrust
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
 
@@ -229,8 +227,11 @@ class ADDC(ADComputer):
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions
             d = ADDomain.fromLDAP(entry['attributes']['nCName'])
-            self.ad.domains[entry['attributes']['nCName']] = entry
-            self.ad.nbdomains[entry['attributes']['nETBIOSName']] = entry
+            # We don't want to add our own domain since this entry doesn't contain the sid
+            # which we need later on
+            if entry['attributes']['nCName'] not in self.ad.domains:
+                self.ad.domains[entry['attributes']['nCName']] = entry
+                self.ad.nbdomains[entry['attributes']['nETBIOSName']] = entry
 
         # Store this number so we can easily determine if we are in a multi-domain
         # forest later on.
@@ -288,32 +289,6 @@ class ADDC(ADComputer):
                               attributes=['flatName', 'name', 'securityIdentifier', 'trustAttributes', 'trustDirection', 'trustType'],
                               generator=True)
         return entries
-
-    def dump_trusts(self, filename='trusts.csv'):
-        entries = self.get_trusts()
-
-        try:
-            logging.debug('Opening file for writing: %s' % filename)
-            out = codecs.open(filename, 'w', 'utf-8')
-        except:
-            logging.warning('Could not write file: %s' % filename)
-            return
-
-
-        logging.debug('Writing trusts to file: %s' % filename)
-
-        out.write('SourceDomain,TargetDomain,TrustDirection,TrustType,Transitive\n')
-        entriesNum = 0
-        for entry in entries:
-            entriesNum += 1
-            # TODO: self.ad is currently only a single domain. In multi domain mode
-            # this will need to be updated
-            trust = ADDomainTrust(self.ad.domain, entry['attributes']['name'], entry['attributes']['trustDirection'], entry['attributes']['trustType'], entry['attributes']['trustAttributes'])
-            out.write(trust.to_output()+'\n')
-        logging.info('Found %u trusts', entriesNum)
-
-        logging.debug('Finished writing trusts')
-        out.close()
 
     def prefetch_info(self):
         self.get_domains()

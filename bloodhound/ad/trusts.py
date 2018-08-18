@@ -54,28 +54,30 @@ class ADDomainTrust(object):
                   'UPLEVEL':0x02,
                   'MIT':0x03}
 
-    def __init__(self, source, destination, direction, trustType, flags):
+    def __init__(self, source, destination, direction, trust_type, flags):
         self.sourceDomain = source
-        self.destinationDomain = destination
+        self.destination_domain = destination
         self.direction = direction
-        self.type = trustType
+        self.type = trust_type
         self.flags = flags
 
     def to_output(self):
         if self.flags & self.trust_flags['WITHIN_FOREST']:
-            trustType = 'ParentChild'
+            trust_type = 'ParentChild'
         else:
-            trustType = 'External'
+            trust_type = 'External'
         if self.flags & self.trust_flags['NON_TRANSITIVE']:
-            isTransitive = False
+            is_transitive = False
         else:
-            isTransitive = True
+            is_transitive = True
 
-        out = [
-            self.sourceDomain,
-            self.destinationDomain,
-            self.direction_map[self.direction],
-            trustType,
-            str(isTransitive)
-        ]
-        return ','.join(out)
+        # SharpHound's enum is just one index off the actual MS flag
+        trust_direction = self.direction - 1
+
+        out = {
+            "TargetName": self.destination_domain,
+            "IsTransitive": is_transitive,
+            "TrustDirection": trust_direction,
+            "TrustType": trust_type
+        }
+        return out

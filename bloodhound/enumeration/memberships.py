@@ -137,6 +137,8 @@ class MembershipEnumerator(object):
 
 
         logging.info('Found %d users', num_entries)
+        out.write('],"meta":{"type":"users","count":%d}}' % num_entries)
+
         logging.debug('Finished writing users')
         out.close()
 
@@ -203,6 +205,7 @@ class MembershipEnumerator(object):
 
 
         logging.info('Found %d groups', num_entries)
+        out.write('],"meta":{"type":"groups","count":%d}}' % num_entries)
         logging.debug('Finished writing groups')
         out.close()
 
