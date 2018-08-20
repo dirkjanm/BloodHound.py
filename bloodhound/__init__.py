@@ -178,6 +178,16 @@ def main():
                         '--domain',
                         action='store',
                         help='Domain to query.')
+    parser.add_argument('-dc',
+                        '--domain-controller',
+                        metavar='HOST',
+                        action='store',
+                        help='Override which DC to query')
+    parser.add_argument('-gc',
+                        '--global-catalog',
+                        metavar='HOST',
+                        action='store',
+                        help='Override which GC to query')
     parser.add_argument('-w',
                         '--workers',
                         action='store',
@@ -225,6 +235,11 @@ def main():
     logging.debug('Using DNS to retrieve domain information')
     ad.dns_resolve(kerberos=args.kerberos, domain=args.domain)
 
+    # Override the detected DC / GC if specified
+    if args.domain_controller:
+        ad.override_dc(args.domain_controller)
+    if args.global_catalog:
+        ad.override_gc(args.global_catalog)
 
     bloodhound = BloodHound(ad)
     bloodhound.connect()

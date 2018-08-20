@@ -352,6 +352,11 @@ class AD(object):
         else:
             return None
 
+    def override_dc(self, dcname):
+        self._dcs = [dcname]
+
+    def override_gc(self, gcname):
+        self._gcs = [gcname]
 
     def dcs(self):
         return self._dcs
