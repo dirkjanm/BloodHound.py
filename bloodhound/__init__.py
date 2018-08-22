@@ -106,7 +106,7 @@ def kerberize():
 Convert methods (string) to list of validated methods to resolve
 """
 def resolve_collection_methods(methods):
-    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default']
+    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
     if ',' in methods:
         method_list = [method.lower() for method in methods.split(',')]
@@ -118,6 +118,9 @@ def resolve_collection_methods(methods):
 
             if method == 'default':
                 validated_methods += default_methods
+            # For now these are equal
+            elif method == 'all':
+                validated_methods += default_methods
             else:
                 validated_methods.append(method)
         return set(validated_methods)
@@ -127,6 +130,9 @@ def resolve_collection_methods(methods):
         method = methods.lower()
         if method in valid_methods:
             if method == 'default':
+                validated_methods += default_methods
+            # For now these are equal
+            elif method == 'all':
                 validated_methods += default_methods
             else:
                 validated_methods.append(method)
@@ -173,7 +179,8 @@ def main():
                         action='store',
                         default='Default',
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
-                             'Trusts, Default (all the previous). (default: Default)')
+                             'Trusts, Default/All (all the previous). You can specify more than one by '
+                             'separating them with a comma. (default: Default)')
     parser.add_argument('-d',
                         '--domain',
                         action='store',
