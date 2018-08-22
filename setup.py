@@ -1,10 +1,12 @@
 from setuptools import setup
 
 setup(name='bloodhound',
-      version='0.4.1',
+      version='0.5.0',
       description='Python based ingestor for BloodHound',
-      author='Edwin van Vliet, Dirk-jan Mollema, Matthijs Gielen',
-      author_email='edwin.vanvliet@fox-it.com, dirkjan.mollema@fox-it.com, matthijs.gielen@fox-it.com',
+      author='Dirk-jan Mollema, Edwin van Vliet, Matthijs Gielen',
+      author_email='dirkjan.mollema@fox-it.com, edwin.vanvliet@fox-it.com, matthijs.gielen@fox-it.com',
+      maintainer='Dirk-jan Mollema',
+      maintainer_email='dirkjan.mollema@fox-it.com',
       url='https://github.com/fox-it/bloodhound.py',
       packages=['bloodhound',
                 'bloodhound.ad',
