@@ -123,7 +123,7 @@ class ADUtils(object):
             return False
 
     @staticmethod
-    def ip2host(ip, resolver=resolver):
+    def ip2host(ip, resolver=resolver, use_tcp=False):
         result = ip
         try:
             addr = reversename.from_address(ip)
@@ -132,7 +132,7 @@ class ADUtils(object):
             return result
 
         try:
-            answer = str(resolver.query(addr, 'PTR')[0])
+            answer = str(resolver.query(addr, 'PTR', tcp=use_tcp)[0])
             result = answer.rstrip('.')
         except (dns.resolver.NXDOMAIN, dns.resolver.Timeout) as e:
             pass

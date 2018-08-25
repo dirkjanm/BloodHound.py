@@ -155,6 +155,13 @@ def main():
 
     parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound\nFor help or reporting issues, visit https://github.com/Fox-IT/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
 
+    parser.add_argument('-c',
+                        '--collectionmethod',
+                        action='store',
+                        default='Default',
+                        help='Which information to collect. Supported: Group, LocalAdmin, Session, '
+                             'Trusts, Default/All (all the previous). You can specify more than one by '
+                             'separating them with a comma. (default: Default)')
     parser.add_argument('-u',
                         '--username',
                         action='store',
@@ -169,18 +176,14 @@ def main():
                         help='Use kerberos')
     parser.add_argument('--hashes',
                         action='store',
-                        help='NLTM hash')
+                        help='LM:NLTM hashes')
     parser.add_argument('-ns',
                         '--nameserver',
                         action='store',
                         help='Alternative name server to use for queries')
-    parser.add_argument('-c',
-                        '--collectionmethod',
-                        action='store',
-                        default='Default',
-                        help='Which information to collect. Supported: Group, LocalAdmin, Session, '
-                             'Trusts, Default/All (all the previous). You can specify more than one by '
-                             'separating them with a comma. (default: Default)')
+    parser.add_argument('--dns-tcp',
+                        action='store_true',
+                        help='Use TCP instead of UDP for DNS queries')
     parser.add_argument('-d',
                         '--domain',
                         action='store',
@@ -231,7 +234,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver)
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp)
 
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)

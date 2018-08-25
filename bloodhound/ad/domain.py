@@ -55,7 +55,7 @@ class ADDC(ADComputer):
 
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
-        q = self.ad.dnsresolver.query(self.hostname)
+        q = self.ad.dnsresolver.query(self.hostname, tcp=self.ad.dns_tcp)
         for r in q:
             ip = r.address
 
@@ -87,7 +87,7 @@ class ADDC(ADComputer):
 
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
-        q = self.ad.dnsresolver.query(server)
+        q = self.ad.dnsresolver.query(server, tcp=self.ad.dns_tcp)
         for r in q:
             ip = r.address
 
@@ -301,7 +301,7 @@ Active Directory data and cache
 """
 class AD(object):
 
-    def __init__(self, domain=None, auth=None, nameserver=None):
+    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False):
         self.domain = domain
         self.auth = auth
         # List of DCs for this domain. Contains just one DC since
@@ -323,6 +323,8 @@ class AD(object):
         self.dnsresolver = resolver.Resolver()
         if nameserver:
             self.dnsresolver.nameservers = [nameserver]
+        # Resolve DNS over TCP?
+        self.dns_tcp = dns_tcp
         # Give it a cache to prevent duplicate lookups
         self.dnsresolver.cache = resolver.Cache()
         # Default timeout after 3 seconds if the DNS servers
@@ -385,7 +387,7 @@ class AD(object):
 
         try:
 
-            q = self.dnsresolver.query(query, 'SRV')
+            q = self.dnsresolver.query(query, 'SRV', tcp=self.dns_tcp)
 
             if str(q.qname).lower().startswith('_ldap._tcp.pdc._msdcs'):
                 ad_domain = str(q.qname).lower()[len(basequery):].strip('.')
@@ -406,7 +408,7 @@ class AD(object):
             pass
 
         try:
-            q = self.dnsresolver.query(query.replace('pdc','gc'), 'SRV')
+            q = self.dnsresolver.query(query.replace('pdc','gc'), 'SRV', tcp=self.dns_tcp)
             for r in q:
                 gc = str(r.target).rstrip('.')
                 logging.debug('Found Global Catalog server: %s' % gc)
@@ -418,7 +420,7 @@ class AD(object):
 
         if kerberos is True:
             try:
-                q = self.dnsresolver.query('_kerberos._tcp.dc._msdcs', 'SRV')
+                q = self.dnsresolver.query('_kerberos._tcp.dc._msdcs', 'SRV', tcp=self.dns_tcp)
                 for r in q:
                     kdc = str(r.target).rstrip('.')
                     logging.debug('Found KDC: %s' % str(r.target).rstrip('.'))
