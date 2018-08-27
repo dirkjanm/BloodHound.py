@@ -65,7 +65,17 @@ class TrustsEnumerator(object):
 
         logging.debug('Writing trusts to file: %s' % filename)
 
-        domain_object = self.addomain.domains[ADUtils.domain2ldap(self.addomain.domain)]
+        # Todo: fix this properly. Current code is quick fix to work with domains
+        # that have custom casing in their DN
+        domain_object = None
+        for domain in self.addomain.domains.keys():
+            if domain.lower() == self.addomain.baseDN.lower():
+                domain_object = self.addomain.domains[domain]
+                break
+
+        if not domain_object:
+            logging.error('Could not find domain object. Abortint trust enumeration')
+            return
 
         # Initialize json structure
         datastruct = {
