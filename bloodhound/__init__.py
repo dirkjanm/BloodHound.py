@@ -23,7 +23,6 @@
 ####################
 
 import os, sys, logging, argparse, getpass
-from impacket.ldap import ldapasn1
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
