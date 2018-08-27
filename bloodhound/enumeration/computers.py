@@ -70,6 +70,9 @@ class ComputerEnumerator(object):
             t.start()
 
         for _, computer in computers.iteritems():
+            if not 'attributes' in computer:
+                continue
+
             if 'dNSHostName' not in computer['attributes']:
                 continue
 

@@ -79,7 +79,9 @@ class BloodHound(object):
             trusts_enum = TrustsEnumerator(self.ad, self.pdc)
             trusts_enum.dump_trusts()
         if 'localadmin' in collect or 'session' in collect:
-            computer_enum = ComputerEnumerator(self.ad, collect)
+            # If we don't have a GC server, don't use it for deconflictation
+            have_gc = len(self.ad.gcs()) > 0
+            computer_enum = ComputerEnumerator(self.ad, collect, do_gc_lookup=have_gc)
             computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)
 
         logging.info('Done')

@@ -416,7 +416,7 @@ class AD(object):
                     self._gcs.append(gc)
 
         except resolver.NXDOMAIN:
-            pass
+            logging.warning('Could not find a global catalog server. Please specify one with -gc')
 
         if kerberos is True:
             try:
