@@ -70,7 +70,7 @@ class MembershipEnumerator(object):
                         self.addomain.computers[member] = resolved_entry
         return {
             "MemberName": resolved_entry['principal'],
-            "MemberType": resolved_entry['type']
+            "MemberType": resolved_entry['type'].capitalize()
         }
 
     def get_primary_membership(self, entry):

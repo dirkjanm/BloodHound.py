@@ -151,19 +151,19 @@ class ADUtils(object):
     @staticmethod
     def translateSidType(sidType):
         if sidType == 1:
-            return 'user'
+            return 'User'
         if sidType == 2:
-            return 'group'
+            return 'Group'
         # sidType 4 means "alias", this is actually a Domain Local Group
         if sidType == 4:
-            return 'group'
+            return 'Group'
         if sidType == 9:
-            return 'computer'
+            return 'Computer'
         if sidType == 5:
-            return 'wellknown'
+            return 'Wellknown'
         # Can be a (by BloudHound) unsupported type
         # must not be an empty string since this breaks our CSV files
-        return 'unknown'
+        return 'Unknown'
 
     @staticmethod
     def resolve_ad_entry(entry):
