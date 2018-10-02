@@ -24,7 +24,7 @@
 
 import logging
 import traceback
-from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc
+from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst
 from impacket.dcerpc.v5.rpcrt import DCERPCException
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
@@ -149,6 +149,44 @@ class ADComputer(object):
             return None
 
         return dce
+
+    def rpc_get_loggedon(self):
+        """
+        Query logged on users via RPC.
+        Requires admin privs
+        """
+        binding = r'ncacn_np:%s[\PIPE\wkssvc]' % self.addr
+        loggedonusers = set()
+        dce = self.dce_rpc_connect(binding, wkst.MSRPC_UUID_WKST)
+        if dce is None:
+            logging.warning('Connection failed: %s', binding)
+            return
+        try:
+            # 1 means more detail, including the domain
+            resp = wkst.hNetrWkstaUserEnum(dce, 1)
+            for record in resp['UserInfo']['WkstaUserInfo']['Level1']['Buffer']:
+                # Skip computer accounts
+                if record['wkui1_username'][-2] == '$':
+                    continue
+                # Skip sessions for local accounts
+                if record['wkui1_logon_domain'][:-1].upper() == self.samname.upper():
+                    continue
+                domain = record['wkui1_logon_domain'][:-1].upper()
+                domain_entry = self.ad.get_domain_by_name(domain)
+                if domain_entry is not None:
+                    domain = ADUtils.ldap2domain(domain_entry['attributes']['distinguishedName'])
+                logging.debug('Found logged on user at %s: %s@%s' % (self.hostname, record['wkui1_username'][:-1], domain))
+                loggedonusers.add((record['wkui1_username'][:-1], domain))
+        except DCERPCException as e:
+            logging.debug('Exception connecting to RPC: %s', e)
+        except Exception as e:
+            if 'connection reset' in str(e):
+                logging.debug('Connection was reset: %s', e)
+            else:
+                raise e
+
+        dce.disconnect()
+        return list(loggedonusers)
 
     def rpc_close(self):
         if self.smbconnection:

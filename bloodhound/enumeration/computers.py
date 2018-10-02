@@ -100,8 +100,8 @@ class ComputerEnumerator(object):
         logging.debug('Querying computer: %s', hostname)
         c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, objectsid=objectsid)
         if c.try_connect() == True:
-            # Maybe try connection reuse?
             try:
+
                 if 'session' in self.collect:
                     sessions = c.rpc_get_sessions()
                 else:
@@ -109,6 +109,10 @@ class ComputerEnumerator(object):
                 if 'localadmin' in self.collect:
                     c.rpc_get_local_admins()
                     c.rpc_resolve_sids()
+                if 'loggedon' in self.collect:
+                    loggedon = c.rpc_get_loggedon()
+                else:
+                    loggedon = []
                 c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
@@ -153,6 +157,11 @@ class ComputerEnumerator(object):
                                                    'ComputerName': target.upper(),
                                                    'Weight': user[1]}))
 
+                # Put the logged on users on the queue too
+                for user in loggedon:
+                    results_q.put(('session', {'UserName': ('%s@%s' % user).upper(),
+                                               'ComputerName': hostname.upper(),
+                                               'Weight': 1}))
             except DCERPCException:
                 logging.warning('Querying computer failed: %s' % hostname)
             except Exception as e:

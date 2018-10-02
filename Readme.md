@@ -29,6 +29,8 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *LocalAdmin* - Performs local admin collection
 - *Session* - Performs session collection
 - *Trusts* - Performs domain trust enumeration
+- *LoggedOn* - Performs privileged Session enumeration (requires local admin on the target)
+
 Muliple collectionmethods should be separated by a comma, for example: `-c Group,LocalAdmin`
 
 You can override some of the automatic detection options, such as the host/IP of the primary Domain Controller if you want to use a different Domain Controller with `-dc`, or specify your own Global Catalog with `-gc`.

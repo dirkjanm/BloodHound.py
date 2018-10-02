@@ -68,7 +68,7 @@ class BloodHound(object):
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc)
             membership_enum.enumerate_memberships()
-        elif 'localadmin' in collect or 'session' in collect:
+        elif 'localadmin' in collect or 'session' in collect or 'loggedon' in collect:
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
             self.pdc.prefetch_info()
@@ -107,8 +107,9 @@ def kerberize():
 Convert methods (string) to list of validated methods to resolve
 """
 def resolve_collection_methods(methods):
-    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all']
+    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
+    all_methods = ['group', 'localadmin', 'session', 'trusts', 'loggedon']
     if ',' in methods:
         method_list = [method.lower() for method in methods.split(',')]
         validated_methods = []
@@ -132,9 +133,8 @@ def resolve_collection_methods(methods):
         if method in valid_methods:
             if method == 'default':
                 validated_methods += default_methods
-            # For now these are equal
             elif method == 'all':
-                validated_methods += default_methods
+                validated_methods += all_methods
             else:
                 validated_methods.append(method)
             return set(validated_methods)
@@ -161,8 +161,8 @@ def main():
                         action='store',
                         default='Default',
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
-                             'Trusts, Default/All (all the previous). You can specify more than one by '
-                             'separating them with a comma. (default: Default)')
+                             'Trusts, Default (all previous), LoggedOn, All (all methods). You can specify more '
+                             'than one by separating them with a comma. (default: Default)')
     parser.add_argument('-u',
                         '--username',
                         action='store',
