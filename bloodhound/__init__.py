@@ -62,16 +62,16 @@ class BloodHound(object):
 
 
     def run(self, collect, num_workers=10):
-        if 'group' in collect:
+        if 'group' in collect or 'objectprops' in collect:
             # Fetch domains/computers for later
-            self.pdc.prefetch_info()
+            self.pdc.prefetch_info('objectprops' in collect, 'acls' in collect)
             # Initialize enumerator
-            membership_enum = MembershipEnumerator(self.ad, self.pdc)
+            membership_enum = MembershipEnumerator(self.ad, self.pdc, collect)
             membership_enum.enumerate_memberships()
         elif 'localadmin' in collect or 'session' in collect or 'loggedon' in collect:
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
-            self.pdc.prefetch_info()
+            self.pdc.prefetch_info('objectprops' in collect, 'acls' in collect)
         elif 'trusts' in collect:
             # Prefetch domains
             self.pdc.get_domains()
@@ -103,13 +103,15 @@ def kerberize():
         logging.error('Could not find kerberos credential cache file')
         sys.exit(1)
 
-"""
-Convert methods (string) to list of validated methods to resolve
-"""
 def resolve_collection_methods(methods):
-    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon']
+    """
+    Convert methods (string) to list of validated methods to resolve
+    """
+    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon',
+                     'objectprops']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
-    all_methods = ['group', 'localadmin', 'session', 'trusts', 'loggedon']
+    # Similar to SharpHound, All is not really all, it excludes loggedon
+    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops']
     if ',' in methods:
         method_list = [method.lower() for method in methods.split(',')]
         validated_methods = []
@@ -120,9 +122,8 @@ def resolve_collection_methods(methods):
 
             if method == 'default':
                 validated_methods += default_methods
-            # For now these are equal
             elif method == 'all':
-                validated_methods += default_methods
+                validated_methods += all_methods
             else:
                 validated_methods.append(method)
         return set(validated_methods)
@@ -161,8 +162,8 @@ def main():
                         action='store',
                         default='Default',
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
-                             'Trusts, Default (all previous), LoggedOn, All (all methods). You can specify more '
-                             'than one by separating them with a comma. (default: Default)')
+                             'Trusts, Default (all previous), LoggedOn, ObjectProps, All (all except LoggedOn). '
+                             'You can specify more than one by separating them with a comma. (default: Default)')
     parser.add_argument('-u',
                         '--username',
                         action='store',

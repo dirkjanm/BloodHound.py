@@ -85,11 +85,20 @@ class TrustsEnumerator(object):
                 "count": 0
             }
         }
+        # Get functional level
+        level_id = ADUtils.get_entry_property(domain_object, 'msds-behavior-version')
+        try:
+            functional_level = ADUtils.FUNCTIONAL_LEVELS[int(level_id)]
+        except KeyError:
+            functional_level = 'Unknown'
+
         domain = {
             "Name": self.addomain.domain,
             "Properties": {
                 "highvalue": True,
-                "objectsid": domain_object['attributes']['objectSid']
+                "objectsid": domain_object['attributes']['objectSid'],
+                "description": ADUtils.get_entry_property(domain_object, 'description'),
+                "functionallevel": functional_level
             },
             "Trusts": [],
             # The below is all for GPO collection, unsupported as of now.

@@ -98,6 +98,16 @@ class ADUtils(object):
         "S-1-5-32-580": ("Access Control Assistance Operators", "GROUP")
     }
 
+    FUNCTIONAL_LEVELS = {
+        0: "2000 Mixed/Native",
+        1: "2003 Interim",
+        2: "2003",
+        3: "2008",
+        4: "2008 R2",
+        5: "2012",
+        6: "2012 R2",
+        7: "2016"
+    }
 
     @staticmethod
     def domain2ldap(domain):
@@ -213,6 +223,45 @@ class ADUtils(object):
                 resolved['type'] = 'domain'
 
         return resolved
+
+    @staticmethod
+    def get_entry_property(entry, prop, default=None, raw=False):
+        """
+        Simple wrapper that gets an attribute from ldap3 dictionary,
+        converting empty values to the default specified. This is primarily
+        for output to JSON
+        """
+        try:
+            if raw:
+                value = entry['raw_attributes'][prop]
+            else:
+                value = entry['attributes'][prop]
+        # Doesn't exist
+        except KeyError:
+            return default
+        # Empty -> return default
+        if value == []:
+            return default
+        try:
+            # One value and we don't expect a list -> return the first value
+            if len(value) == 1 and default != []:
+                return value[0]
+        except TypeError:
+            # Value doesn't have a len() attribute, so we skip this
+            pass
+        return value
+
+    @staticmethod
+    def win_timestamp_to_unix(seconds):
+        """
+        Convert Windows timestamp (100 ns since 1 Jan 1601) to
+        unix timestamp.
+        """
+        seconds = int(seconds)
+        if seconds == 0:
+            return 0
+        return (seconds - 116444736000000000) / 10000000
+
 
 class DNSCache(object):
     """

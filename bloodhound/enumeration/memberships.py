@@ -36,12 +36,14 @@ class MembershipEnumerator(object):
     Contains the dumping functions which
     methods from the bloodhound.ad module.
     """
-    def __init__(self, addomain, addc):
+    def __init__(self, addomain, addc, collect):
         """
         Membership enumeration. Enumerates all groups/users/other memberships.
         """
         self.addomain = addomain
         self.addc = addc
+        # Store collection methods specified
+        self.collect = collect
 
     def get_membership(self, member):
         # First assume it is a user
@@ -54,7 +56,9 @@ class MembershipEnumerator(object):
             except KeyError:
                 # Try if it is a computer
                 try:
-                    resolved_entry = self.addomain.computers[member]
+                    entry = self.addomain.computers[member]
+                    # Computers are stored as raw entries
+                    resolved_entry = ADUtils.resolve_ad_entry(entry)
                 except KeyError:
                     use_gc = ADUtils.ldap2domain(member) != self.addomain.domain
                     qobject = self.addomain.objectresolver.resolve_distinguishedname(member, use_gc=use_gc)
@@ -66,14 +70,18 @@ class MembershipEnumerator(object):
                         self.addomain.users[member] = resolved_entry
                     if resolved_entry['type'] == 'group':
                         self.addomain.groups[member] = resolved_entry
+                    # Computers are stored as raw entries
                     if resolved_entry['type'] == 'computer':
-                        self.addomain.computers[member] = resolved_entry
+                        self.addomain.computers[member] = qobject
         return {
             "MemberName": resolved_entry['principal'],
             "MemberType": resolved_entry['type'].capitalize()
         }
 
     def get_primary_membership(self, entry):
+        """
+        Looks up the primary membership based on RID. Resolves it if needed
+        """
         try:
             primarygroupid = int(entry['attributes']['primaryGroupID'])
         except (TypeError, KeyError):
@@ -95,10 +103,35 @@ class MembershipEnumerator(object):
             self.addomain.groups_dnmap[primarygroupid] = group['attributes']['distinguishedName']
             return resolved_entry['principal']
 
+    @staticmethod
+    def add_user_properties(user, entry):
+        props = user['Properties']
+        # print entry
+        # Is user enabled? Checked by seeing if the UAC flag 2 (ACCOUNT_DISABLED) is not set
+        props['enabled'] = entry['attributes']['userAccountControl'] & 2 == 0
+        props['lastlogon'] = ADUtils.win_timestamp_to_unix(
+            ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
+        )
+        props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
+            ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
+        )
+        props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
+        props['hasspn'] = len(props['serviceprincipalnames']) > 0
+        props['displayname'] = ADUtils.get_entry_property(entry, 'displayName')
+        props['email'] = ADUtils.get_entry_property(entry, 'mail')
+        props['title'] = ADUtils.get_entry_property(entry, 'title')
+        props['homedirectory'] = ADUtils.get_entry_property(entry, 'homeDirectory')
+        props['description'] = ADUtils.get_entry_property(entry, 'description')
+        props['userpassword'] = ADUtils.get_entry_property(entry, 'userPassword')
+        props['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', 0) == 1
 
     def enumerate_users(self):
         filename = 'users.json'
-        entries = self.addc.get_users()
+
+        # Should we include extra properties in the query?
+        with_properties = 'objectprops' in self.collect
+        acl = 'acl' in self.collect
+        entries = self.addc.get_users(include_properties=with_properties, acl=acl)
 
         # If the logging level is DEBUG, we ident the objects
         if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
@@ -129,6 +162,8 @@ class MembershipEnumerator(object):
                     "highvalue": False
                 }
             }
+            if with_properties:
+                MembershipEnumerator.add_user_properties(user, entry)
             self.addomain.users[entry['dn']] = resolved_entry
             if num_entries != 0:
                 out.write(',')
@@ -153,9 +188,12 @@ class MembershipEnumerator(object):
                 return True
             return False
 
+        # Should we include extra properties in the query?
+        with_properties = 'objectprops' in self.collect
+        acl = 'acl' in self.collect
 
         filename = 'groups.json'
-        entries = self.addc.get_groups()
+        entries = self.addc.get_groups(include_properties=with_properties, acl=acl)
 
         # If the logging level is DEBUG, we ident the objects
         if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
@@ -193,6 +231,10 @@ class MembershipEnumerator(object):
                 },
                 "Members": []
             }
+            if with_properties:
+                group['Properties']['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', default=0) == 1
+                group['Properties']['description'] = ADUtils.get_entry_property(entry, 'description')
+
             for member in entry['attributes']['member']:
                 resolved_member = self.get_membership(member)
                 if resolved_member:

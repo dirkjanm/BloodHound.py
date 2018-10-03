@@ -238,28 +238,44 @@ class ADDC(ADComputer):
         self.ad.num_domains = entriesNum
         logging.info('Found %u domains in the forest', entriesNum)
 
-    def get_groups(self):
-        entries = self.search('(objectClass=group)',
-                              ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid', 'member'],
-                              generator=True)
-        return entries
-
-
-    def get_users(self, include_properties=False):
+    def get_groups(self, include_properties=False, acl=False):
+        properties = ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid', 'member']
         if include_properties:
-            properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'primaryGroupID']
-        else:
-            properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'primaryGroupID']
-        entries = self.search('(objectClass=user)',
+            properties += ['adminCount', 'description']
+        if acl:
+            properties += ['nTSecurityDescriptor']
+        entries = self.search('(objectClass=group)',
                               properties,
                               generator=True)
         return entries
 
 
-    def get_computers(self):
+    def get_users(self, include_properties=False, acl=False):
+
+        properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType',
+                      'objectSid', 'primaryGroupID']
+        if include_properties:
+            properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
+                           'lastLogon', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
+                           'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo']
+        if acl:
+            properties.append('nTSecurityDescriptor')
+        entries = self.search('(&(objectCategory=person)(objectClass=user))',
+                              properties,
+                              generator=True)
+        return entries
+
+
+    def get_computers(self, include_properties=False, acl=False):
+        properties = ['samaccountname', 'distinguishedname',
+                      'dnshostname', 'samaccounttype', 'objectSid']
+        if include_properties:
+            properties += ['userAccountControl', 'servicePrincipalName', 'msDS-AllowedToDelegateTo',
+                           'lastLogon', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
+        if acl:
+            properties.append('nTSecurityDescriptor')
         entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',
-                              ['samaccountname', 'distinguishedname',
-                               'dnshostname', 'samaccounttype', 'objectSid'],
+                              properties,
                               generator=True)
 
         entriesNum = 0
@@ -290,10 +306,10 @@ class ADDC(ADComputer):
                               generator=True)
         return entries
 
-    def prefetch_info(self):
+    def prefetch_info(self, props=False, acls=False):
         self.get_domains()
         self.get_forest_domains()
-        self.get_computers()
+        self.get_computers(include_properties=props, acl=acls)
 
 
 """

@@ -51,16 +51,39 @@ class ADComputer(object):
         self.objectsid = objectsid
         self.primarygroup = None
 
-    def get_bloodhound_data(self):
+    def get_bloodhound_data(self, entry, collect):
         data = {
             'Name': self.hostname.upper(),
+            'PrimaryGroup': self.primarygroup,
             'LocalAdmins': self.admins,
             'Properties': {
                 'objectsid': self.objectsid,
                 'domain': self.ad.domain,
                 'highvalue': False
-            }
+            },
+            "RemoteDesktopUsers": [],
+            "DcomUsers": [],
+            "AllowedToDelegate": []
         }
+        if 'objectprops' in collect:
+            props = data['Properties']
+            props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
+            props['lastlogon'] = ADUtils.win_timestamp_to_unix(
+                ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
+            )
+            props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
+                ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
+            )
+            props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
+            props['description'] = ADUtils.get_entry_property(entry, 'description')
+            props['operatingsystem'] = ADUtils.get_entry_property(entry, 'operatingSystem')
+            # Add SP to OS if specified
+            servicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
+            if servicepack:
+                props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
+            # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
+            props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
+            # TODO: AllowedToDelegate
         return data
 
     def try_connect(self):
@@ -178,7 +201,10 @@ class ADComputer(object):
                 logging.debug('Found logged on user at %s: %s@%s' % (self.hostname, record['wkui1_username'][:-1], domain))
                 loggedonusers.add((record['wkui1_username'][:-1], domain))
         except DCERPCException as e:
-            logging.debug('Exception connecting to RPC: %s', e)
+            if 'rpc_s_access_denied' in str(e):
+                logging.debug('Access denied while enumerating LoggedOn on %s, probably no admin privs', self.hostname)
+            else:
+                logging.debug('Exception connecting to RPC: %s', e)
         except Exception as e:
             if 'connection reset' in str(e):
                 logging.debug('Connection was reset: %s', e)

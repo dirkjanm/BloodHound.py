@@ -27,14 +27,18 @@ import logging
 import traceback
 from impacket.dcerpc.v5.rpcrt import DCERPCException
 from bloodhound.enumeration.outputworker import OutputWorker
+from bloodhound.enumeration.memberships import MembershipEnumerator
 from bloodhound.ad.computer import ADComputer
 from bloodhound.ad.utils import ADUtils
 
-class ComputerEnumerator(object):
+class ComputerEnumerator(MembershipEnumerator):
     """
     Class to enumerate computers in the domain.
     Contains the threading logic and workers which will call the collection
     methods from the bloodhound.ad module.
+
+    This class extends the MembershipEnumerator class just to inherit the
+    membership lookup functions which are also needed for computers.
     """
     def __init__(self, addomain, collect, do_gc_lookup=True):
         """
@@ -48,7 +52,6 @@ class ComputerEnumerator(object):
         self.do_gc_lookup = do_gc_lookup
         # Store collection methods specified
         self.collect = collect
-
 
     def enumerate_computers(self, computers, num_workers=10):
         """
@@ -88,17 +91,18 @@ class ComputerEnumerator(object):
                 logging.info('Skipping computer: %s (not whitelisted)', hostname)
                 continue
 
-            q.put((hostname, samname, computer['attributes']['objectSid']))
+            q.put((hostname, samname, computer))
         q.join()
         result_q.put(None)
         result_q.join()
 
-    def process_computer(self, hostname, samname, objectsid, results_q):
+    def process_computer(self, hostname, samname, objectsid, entry, results_q):
         """
             Processes a single computer, pushes the results of the computer to the given Queue.
         """
         logging.debug('Querying computer: %s', hostname)
         c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, objectsid=objectsid)
+        c.primarygroup = self.get_primary_membership(entry)
         if c.try_connect() == True:
             try:
 
@@ -116,7 +120,7 @@ class ComputerEnumerator(object):
                 c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
-                results_q.put(('computer', c.get_bloodhound_data()))
+                results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
 
                 if sessions is None:
                     sessions = []
@@ -165,9 +169,15 @@ class ComputerEnumerator(object):
             except DCERPCException:
                 logging.warning('Querying computer failed: %s' % hostname)
             except Exception as e:
-                logging.error('Unhandled exception in computer processing: %s', str(e))
+                logging.error('Unhandled exception in computer %s processing: %s', hostname, str(e))
                 logging.info(traceback.format_exc())
-
+        else:
+            # Write the info we have to the file regardless
+            try:
+                results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
+            except Exception as e:
+                logging.error('Unhandled exception in computer %s processing: %s', hostname, str(e))
+                logging.info(traceback.format_exc())
 
     def work(self, q, results_q):
         """
@@ -176,7 +186,8 @@ class ComputerEnumerator(object):
         logging.debug('Start working')
 
         while True:
-            hostname, samname, objectsid = q.get()
+            hostname, samname, entry = q.get()
+            objectsid = entry['attributes']['objectSid']
             logging.info('Querying computer: %s', hostname)
-            self.process_computer(hostname, samname, objectsid, results_q)
+            self.process_computer(hostname, samname, objectsid, entry, results_q)
             q.task_done()

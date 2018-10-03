@@ -22,7 +22,7 @@ The installation will add a command line tool `bloodhound-python` to your PATH.
 To use the ingestor, at a minimum you will need credentials of the domain you're logging in to.
 You will need to specify the `-u` option with a username of this domain (or `username@domain` for a user in a trusted domain). If you have your DNS set up properly and the AD domain is in your DNS search list, then BloodHound.py will automatically detect the domain for you. If not, you have to specify it manually with the `-d` option.
 
-By default BloodHound.py will query LDAP and the individual computers of the domain to enumerate users, computers, groups, sessions and local admins. 
+By default BloodHound.py will query LDAP and the individual computers of the domain to enumerate users, computers, groups, trusts, sessions and local admins. 
 If you want to restrict collection, specify the `--collectionmethod` parameter, which supports the following options (similar to SharpHound):
 - *Default* - Performs group membership collection, domain trust collection, local admin collection, and session collection
 - *Group* - Performs group membership collection
@@ -30,6 +30,8 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *Session* - Performs session collection
 - *Trusts* - Performs domain trust enumeration
 - *LoggedOn* - Performs privileged Session enumeration (requires local admin on the target)
+- *ObjectProps* - Performs Object Properties collection for properties such as LastLogon or PwdLastSet
+- *All* - Runs all methods above, except LoggedOn
 
 Muliple collectionmethods should be separated by a comma, for example: `-c Group,LocalAdmin`
 
