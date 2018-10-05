@@ -28,6 +28,8 @@ from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst
 from impacket.dcerpc.v5.rpcrt import DCERPCException
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
+from impacket import smb
+from impacket.smb3structs import SMB2_DIALECT_21
 from bloodhound.ad.utils import ADUtils
 
 class ADComputer(object):
@@ -130,18 +132,30 @@ class ADComputer(object):
         try:
             self.rpc = transport.DCERPCTransportFactory(binding)
             self.rpc.set_connect_timeout(1.0)
-            if hasattr(self.rpc, 'set_credentials'):
+
+            # Set name/host explicitly
+            self.rpc.setRemoteName(self.hostname)
+            self.rpc.setRemoteHost(self.addr)
+
+            # Use Kerberos if we have a TGT
+            if hasattr(self.rpc, 'set_kerberos') and self.ad.auth.tgt:
+                self.rpc.set_kerberos(True, self.ad.auth.kdc)
+                if hasattr(self.rpc, 'set_credentials'):
+                    self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
+                                             domain=self.ad.auth.domain,
+                                             lmhash=self.ad.auth.lm_hash,
+                                             nthash=self.ad.auth.nt_hash,
+                                             aesKey=self.ad.auth.aeskey,
+                                             TGT=self.ad.auth.tgt)
+            # Else set the required stuff for NTLM
+            elif hasattr(self.rpc, 'set_credentials'):
                 self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
                                          domain=self.ad.auth.domain,
                                          lmhash=self.ad.auth.lm_hash,
                                          nthash=self.ad.auth.nt_hash,
-                                         aesKey=self.ad.auth.aes_key)
-
-            # TODO: check Kerberos support
-            # if hasattr(self.rpc, 'set_kerberos'):
-                # self.rpc.set_kerberos(True, self.ad.auth.kdc)
+                                         aesKey=self.ad.auth.aeskey)
             # Yes we prefer SMB3, but it isn't supported by all OS
-            # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_30)
+            # self.rpc.preferred_dialect(SMB2_DIALECT_21)
 
             # Re-use the SMB connection if possible
             if self.smbconnection:
