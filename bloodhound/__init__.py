@@ -78,7 +78,7 @@ class BloodHound(object):
         if 'trusts' in collect:
             trusts_enum = TrustsEnumerator(self.ad, self.pdc)
             trusts_enum.dump_trusts()
-        if 'localadmin' in collect or 'session' in collect:
+        if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
             computer_enum = ComputerEnumerator(self.ad, collect, do_gc_lookup=have_gc)
@@ -194,12 +194,12 @@ def main():
                         '--domain-controller',
                         metavar='HOST',
                         action='store',
-                        help='Override which DC to query')
+                        help='Override which DC to query (hostname)')
     parser.add_argument('-gc',
                         '--global-catalog',
                         metavar='HOST',
                         action='store',
-                        help='Override which GC to query')
+                        help='Override which GC to query (hostname)')
     parser.add_argument('-w',
                         '--workers',
                         action='store',
@@ -245,7 +245,7 @@ def main():
     logging.debug('Resolved collection methods: %s', ', '.join(list(collect)))
 
     logging.debug('Using DNS to retrieve domain information')
-    ad.dns_resolve(kerberos=args.kerberos, domain=args.domain)
+    ad.dns_resolve(kerberos=args.kerberos, domain=args.domain, options=args)
 
     # Override the detected DC / GC if specified
     if args.domain_controller:

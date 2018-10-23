@@ -267,10 +267,10 @@ class ADDC(ADComputer):
 
 
     def get_computers(self, include_properties=False, acl=False):
-        properties = ['samaccountname', 'distinguishedname',
+        properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
                       'dnshostname', 'samaccounttype', 'objectSid']
         if include_properties:
-            properties += ['userAccountControl', 'servicePrincipalName', 'msDS-AllowedToDelegateTo',
+            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo',
                            'lastLogon', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
         if acl:
             properties.append('nTSecurityDescriptor')
@@ -388,7 +388,7 @@ class AD(object):
     def create_objectresolver(self, addc):
         self.objectresolver = ObjectResolver(addomain=self, addc=addc)
 
-    def dns_resolve(self, domain=None, kerberos=True):
+    def dns_resolve(self, domain=None, kerberos=True, options=None):
         logging.debug('Querying domain controller information from DNS')
 
         basequery = '_ldap._tcp.pdc._msdcs'
@@ -432,7 +432,9 @@ class AD(object):
                     self._gcs.append(gc)
 
         except resolver.NXDOMAIN:
-            logging.warning('Could not find a global catalog server. Please specify one with -gc')
+            # Only show warning if we don't already have a GC specified manually
+            if options and not options.global_catalog:
+                logging.warning('Could not find a global catalog server. Please specify one with -gc')
 
         if kerberos is True:
             try:

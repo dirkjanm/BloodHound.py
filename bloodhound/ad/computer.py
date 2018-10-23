@@ -65,8 +65,10 @@ class ADComputer(object):
             "DcomUsers": [],
             "AllowedToDelegate": []
         }
+        props = data['Properties']
+        # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
+        props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
         if 'objectprops' in collect:
-            props = data['Properties']
             props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
             props['lastlogon'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
@@ -81,8 +83,6 @@ class ADComputer(object):
             servicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
             if servicepack:
                 props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
-            # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
-            props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
             # TODO: AllowedToDelegate
         return data
 

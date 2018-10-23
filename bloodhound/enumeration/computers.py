@@ -160,7 +160,8 @@ class ComputerEnumerator(MembershipEnumerator):
                         results_q.put(('session', {'UserName': user[0].upper(),
                                                    'ComputerName': target.upper(),
                                                    'Weight': user[1]}))
-
+                if loggedon is None:
+                    loggedon = []
                 # Put the logged on users on the queue too
                 for user in loggedon:
                     results_q.put(('session', {'UserName': ('%s@%s' % user).upper(),

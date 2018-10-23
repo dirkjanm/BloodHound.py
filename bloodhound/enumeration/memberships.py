@@ -108,7 +108,7 @@ class MembershipEnumerator(object):
         props = user['Properties']
         # print entry
         # Is user enabled? Checked by seeing if the UAC flag 2 (ACCOUNT_DISABLED) is not set
-        props['enabled'] = entry['attributes']['userAccountControl'] & 2 == 0
+        props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
         props['lastlogon'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
         )
