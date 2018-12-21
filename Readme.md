@@ -9,7 +9,7 @@ This version of BloodHound is **only compatiable with BloodHound 2.0 or newer**.
 
 ## Limitations
 BloodHound.py currently has the following limitations:
-- Only supports default BloodHound (SharpHound) features, so only Groups, Admins, Sessions and Trusts
+- Does not yet support all BloodHound (SharpHound) features, such as ACL collection (see below for supported collection methods)
 - Kerberos support is not yet complete
 - Cross-forest membership resolving is not implemented yet
 
@@ -35,4 +35,4 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 
 Muliple collectionmethods should be separated by a comma, for example: `-c Group,LocalAdmin`
 
-You can override some of the automatic detection options, such as the host/IP of the primary Domain Controller if you want to use a different Domain Controller with `-dc`, or specify your own Global Catalog with `-gc`.
+You can override some of the automatic detection options, such as the hostname of the primary Domain Controller if you want to use a different Domain Controller with `-dc`, or specify your own Global Catalog with `-gc`.
