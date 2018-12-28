@@ -159,9 +159,11 @@ class MembershipEnumerator(object):
                 "Properties": {
                     "domain": self.addomain.domain,
                     "objectsid": entry['attributes']['objectSid'],
-                    "highvalue": False
+                    "highvalue": False,
+                    "unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
                 }
             }
+
             if with_properties:
                 MembershipEnumerator.add_user_properties(user, entry)
             self.addomain.users[entry['dn']] = resolved_entry
