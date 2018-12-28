@@ -461,10 +461,10 @@ class ADComputer(object):
                 if not sid_string.startswith(self.sid):
                     # If the sid is known, we can add the admin value directly
                     try:
-                        siddata, domain = self.ad.sidcache.get(sid_string)
-                        logging.debug('Sid is cached: %s@%s', siddata['Name'], domain)
-                        self.admins.append({'Name': u'%s@%s' % (unicode(siddata['Name']).upper(), domain.upper()),
-                                            'Type': ADUtils.translateSidType(siddata['Use'])})
+                        siddata = self.ad.sidcache.get(sid_string)
+                        logging.debug('Sid is cached: %s', siddata['principal'])
+                        self.admins.append({'Name': siddata['principal'],
+                                            'Type': siddata['type'].capitalize()})
                     except KeyError:
                         # Append it to the list of unresolved SIDs
                         self.admin_sids.append(sid_string)
@@ -530,16 +530,18 @@ class ADComputer(object):
 
             for entry in resp['TranslatedNames']['Names']:
                 domain = domains[entry['DomainIndex']]
-                domainEntry = self.ad.get_domain_by_name(domain)
-                if domainEntry is not None:
-                    domain = ADUtils.ldap2domain(domainEntry['attributes']['distinguishedName'])
+                domain_entry = self.ad.get_domain_by_name(domain)
+                if domain_entry is not None:
+                    domain = ADUtils.ldap2domain(domain_entry['attributes']['distinguishedName'])
+                # TODO: what if it isn't? Should we fall back to LDAP?
 
                 if entry['Name'] != '':
-                    logging.debug('Resolved SID to name: %s@%s' % (entry['Name'], domain))
-                    self.admins.append({'Name': u'%s@%s' % (unicode(entry['Name']).upper(), domain.upper()),
-                                        'Type': ADUtils.translateSidType(entry['Use'])})
+                    resolved_entry = ADUtils.resolve_sid_entry(entry, domain)
+                    logging.debug('Resolved SID to name: %s', resolved_entry['principal'])
+                    self.admins.append({'Name': resolved_entry['principal'],
+                                        'Type': resolved_entry['type'].capitalize()})
                     # Add it to our cache
-                    self.ad.sidcache.put(sid_string, (entry, domain))
+                    self.ad.sidcache.put(sid_string, resolved_entry)
                 else:
                     logging.warning('Resolved name is empty [%s]', entry)
 

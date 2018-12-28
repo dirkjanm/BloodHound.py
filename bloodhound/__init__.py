@@ -68,7 +68,7 @@ class BloodHound(object):
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect)
             membership_enum.enumerate_memberships()
-        elif 'localadmin' in collect or 'session' in collect or 'loggedon' in collect:
+        elif 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
             self.pdc.prefetch_info('objectprops' in collect, 'acls' in collect)
@@ -78,7 +78,7 @@ class BloodHound(object):
         if 'trusts' in collect:
             trusts_enum = TrustsEnumerator(self.ad, self.pdc)
             trusts_enum.dump_trusts()
-        if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect:
+        if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
             computer_enum = ComputerEnumerator(self.ad, collect, do_gc_lookup=have_gc)
@@ -108,7 +108,7 @@ def resolve_collection_methods(methods):
     Convert methods (string) to list of validated methods to resolve
     """
     valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon',
-                     'objectprops']
+                     'objectprops', 'experimental']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
     # Similar to SharpHound, All is not really all, it excludes loggedon
     all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops']

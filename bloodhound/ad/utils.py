@@ -227,6 +227,25 @@ class ADUtils(object):
         return resolved
 
     @staticmethod
+    def resolve_sid_entry(entry, domain):
+        """
+        Convert LsarLookupSids entries to entries for the SID cache, which should match
+        the format from the resolve_ad_entry function.
+        """
+        resolved = {}
+        account = entry['Name']
+
+        resolved['principal'] = unicode('%s@%s' % (account, domain)).upper()
+        resolved['type'] = ADUtils.translateSidType(entry['Use']).lower()
+
+        # Computer accoutns have a different type
+        if resolved['type'] == 'computer':
+            short_name = account.rstrip('$')
+            resolved['principal'] = unicode('%s.%s' % (short_name, domain)).upper()
+
+        return resolved
+
+    @staticmethod
     def get_entry_property(entry, prop, default=None, raw=False):
         """
         Simple wrapper that gets an attribute from ldap3 dictionary,
@@ -237,10 +256,7 @@ class ADUtils(object):
             if raw:
                 value = entry['raw_attributes'][prop]
             else:
-                try:
-                    value = entry['attributes'][prop]
-                except TypeError:
-                    print entry
+                value = entry['attributes'][prop]
         # Doesn't exist
         except KeyError:
             return default

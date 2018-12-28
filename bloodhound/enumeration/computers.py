@@ -183,11 +183,13 @@ class ComputerEnumerator(MembershipEnumerator):
                         user = self.addomain.sidcache.get(taskuser)
                     except KeyError:
                         # Resolve SID in GC
-                        user = self.addomain.objectresolver.resolve_sid(taskuser)
+                        userentry = self.addomain.objectresolver.resolve_sid(taskuser)
+                        # Resolve it to an entry and store in the cache
+                        user = ADUtils.resolve_ad_entry(userentry)
                         self.addomain.sidcache.put(taskuser, user)
-                    logging.debug('Resolved TASK SID to username: %s', user)
+                    logging.debug('Resolved TASK SID to username: %s', user['principal'])
                     # Use sessions for now
-                    results_q.put(('session', {'UserName': user.upper(),
+                    results_q.put(('session', {'UserName': user['principal'].upper(),
                                                'ComputerName': hostname.upper(),
                                                'Weight': 2}))
 
@@ -198,11 +200,13 @@ class ComputerEnumerator(MembershipEnumerator):
                         user = self.addomain.sidcache.get(serviceuser)
                     except KeyError:
                         # Resolve UPN in GC
-                        user = self.addomain.objectresolver.resolve_upn(serviceuser)
+                        userentry = self.addomain.objectresolver.resolve_upn(serviceuser)
+                        # Resolve it to an entry and store in the cache
+                        user = ADUtils.resolve_ad_entry(userentry)
                         self.addomain.sidcache.put(serviceuser, user)
-                    logging.debug('Resolved Service UPN to username: %s', user)
+                    logging.debug('Resolved Service UPN to username: %s', user['principal'])
                     # Use sessions for now
-                    results_q.put(('session', {'UserName': user.upper(),
+                    results_q.put(('session', {'UserName': user['principal'].upper(),
                                                'ComputerName': hostname.upper(),
                                                'Weight': 2}))
 

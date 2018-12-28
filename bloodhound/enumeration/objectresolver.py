@@ -94,14 +94,12 @@ class ObjectResolver(object):
                     return None
             logging.debug('Querying GC for UPN %s', upn)
             entries = self.addc.search(search_base="",
-                                       searchFilter='(&(objectClass=user)(userPrincipalName=%s))' % safename,
+                                       search_filter='(&(objectClass=user)(userPrincipalName=%s))' % safename,
                                        use_gc=True,
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
             for entry in entries:
                 # By definition this can be only one entry
-                domain = ADUtils.ldap2domain(entry['dn'])
-                principal = (u'%s@%s' % (entry['attributes']['sAMAccountName'], domain)).upper()
-                return principal
+                return entry
 
     def resolve_sid(self, sid, use_gc=True):
         """
