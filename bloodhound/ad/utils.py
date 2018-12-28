@@ -109,6 +109,9 @@ class ADUtils(object):
         7: "2016"
     }
 
+    xml_sid_rex = re.compile('<UserId>(S-[0-9\-]+)</UserId>')
+    xml_logontype_rex = re.compile('<LogonType>([A-Za-z0-9]+)</LogonType>')
+
     @staticmethod
     def domain2ldap(domain):
         return 'DC=' + ',DC='.join(str(domain).rstrip('.').split('.'))
@@ -234,7 +237,10 @@ class ADUtils(object):
             if raw:
                 value = entry['raw_attributes'][prop]
             else:
-                value = entry['attributes'][prop]
+                try:
+                    value = entry['attributes'][prop]
+                except TypeError:
+                    print entry
         # Doesn't exist
         except KeyError:
             return default
@@ -261,6 +267,22 @@ class ADUtils(object):
             return 0
         return (seconds - 116444736000000000) / 10000000
 
+    @staticmethod
+    def parse_task_xml(xml):
+        """
+        Parse scheduled task XML and extract the user and logon type with
+        regex. Is not a good way to parse XMLs but saves us the whole parsing
+        overhead.
+        """
+        res = ADUtils.xml_sid_rex.search(xml)
+        if not res:
+            return None
+        sid = res.group(1)
+        res = ADUtils.xml_logontype_rex.search(xml)
+        if not res:
+            return None
+        logon_type = res.group(1)
+        return (sid, logon_type)
 
 class DNSCache(object):
     """

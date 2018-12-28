@@ -117,6 +117,13 @@ class ComputerEnumerator(MembershipEnumerator):
                     loggedon = c.rpc_get_loggedon()
                 else:
                     loggedon = []
+                if 'experimental' in self.collect:
+                    services = c.rpc_get_services()
+                    tasks = c.rpc_get_schtasks()
+                else:
+                    services = []
+                    tasks = []
+
                 c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
@@ -125,6 +132,7 @@ class ComputerEnumerator(MembershipEnumerator):
                 if sessions is None:
                     sessions = []
 
+                # Process found sessions
                 for ses in sessions:
                     # For every session, resolve the SAM name in the GC if needed
                     domain = self.addomain.domain
@@ -162,11 +170,42 @@ class ComputerEnumerator(MembershipEnumerator):
                                                    'Weight': user[1]}))
                 if loggedon is None:
                     loggedon = []
+
                 # Put the logged on users on the queue too
                 for user in loggedon:
                     results_q.put(('session', {'UserName': ('%s@%s' % user).upper(),
                                                'ComputerName': hostname.upper(),
                                                'Weight': 1}))
+
+                # Process Tasks
+                for taskuser in tasks:
+                    try:
+                        user = self.addomain.sidcache.get(taskuser)
+                    except KeyError:
+                        # Resolve SID in GC
+                        user = self.addomain.objectresolver.resolve_sid(taskuser)
+                        self.addomain.sidcache.put(taskuser, user)
+                    logging.debug('Resolved TASK SID to username: %s', user)
+                    # Use sessions for now
+                    results_q.put(('session', {'UserName': user.upper(),
+                                               'ComputerName': hostname.upper(),
+                                               'Weight': 2}))
+
+                # Process Services
+                for serviceuser in services:
+                    # Todo: use own cache
+                    try:
+                        user = self.addomain.sidcache.get(serviceuser)
+                    except KeyError:
+                        # Resolve UPN in GC
+                        user = self.addomain.objectresolver.resolve_upn(serviceuser)
+                        self.addomain.sidcache.put(serviceuser, user)
+                    logging.debug('Resolved Service UPN to username: %s', user)
+                    # Use sessions for now
+                    results_q.put(('session', {'UserName': user.upper(),
+                                               'ComputerName': hostname.upper(),
+                                               'Weight': 2}))
+
             except DCERPCException:
                 logging.warning('Querying computer failed: %s' % hostname)
             except Exception as e:
