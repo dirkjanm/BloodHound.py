@@ -26,9 +26,12 @@ import logging
 import traceback
 import codecs
 import json
+import Queue
+import threading
 from ldap3.core.exceptions import LDAPKeyError
-from bloodhound.ad.utils import ADUtils
-
+from bloodhound.ad.utils import ADUtils, AceResolver
+from bloodhound.enumeration.acls import AclEnumerator, parse_binary_acl
+from bloodhound.enumeration.outputworker import OutputWorker
 
 class MembershipEnumerator(object):
     """
@@ -36,7 +39,7 @@ class MembershipEnumerator(object):
     Contains the dumping functions which
     methods from the bloodhound.ad module.
     """
-    def __init__(self, addomain, addc, collect):
+    def __init__(self, addomain, addc, collect, disable_pooling):
         """
         Membership enumeration. Enumerates all groups/users/other memberships.
         """
@@ -44,6 +47,9 @@ class MembershipEnumerator(object):
         self.addc = addc
         # Store collection methods specified
         self.collect = collect
+        self.disable_pooling = disable_pooling
+        self.aclenumerator = AclEnumerator(addomain, addc, collect)
+        self.aceresolver = AceResolver(addomain, addomain.objectresolver)
 
     def get_membership(self, member):
         # First assume it is a user
@@ -133,24 +139,18 @@ class MembershipEnumerator(object):
         acl = 'acl' in self.collect
         entries = self.addc.get_users(include_properties=with_properties, acl=acl)
 
-        # If the logging level is DEBUG, we ident the objects
-        if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-            indent_level = 1
-        else:
-            indent_level = None
+        logging.debug('Writing users to file: %s', filename)
 
-        try:
-            out = codecs.open(filename, 'w', 'utf-8')
-        except:
-            logging.warning('Could not write file: %s' % filename)
-            return
+        # Use a separate queue for processing the results
+        self.result_q = Queue.Queue()
+        results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'users', filename))
+        results_worker.daemon = True
+        results_worker.start()
 
-        logging.debug('Writing users to file: %s' % filename)
+        if acl and not self.disable_pooling:
+            self.aclenumerator.init_pool()
 
-        # Initialize json header
-        out.write('{"users":[')
-
-        num_entries = 0
+        # This loops over a generator, results are fetched from LDAP on the go
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
             user = {
@@ -161,23 +161,38 @@ class MembershipEnumerator(object):
                     "objectsid": entry['attributes']['objectSid'],
                     "highvalue": False,
                     "unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
-                }
+                },
+                "Aces": []
             }
 
             if with_properties:
                 MembershipEnumerator.add_user_properties(user, entry)
             self.addomain.users[entry['dn']] = resolved_entry
-            if num_entries != 0:
-                out.write(',')
-            json.dump(user, out, indent=indent_level)
-            num_entries += 1
+            # If we are enumerating ACLs, we break out of the loop here
+            # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
+            if acl:
+                if self.disable_pooling:
+                    # Debug mode, don't run this pooled since it hides exceptions
+                    self.process_stuff(parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)))
+                else:
+                    # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)), callback=self.process_stuff)
+            else:
+                # Write it to the queue -> write to file in separate thread
+                # this is solely for consistency with acl parsing, the performance improvement is probably minimal
+                self.result_q.put(user)
 
-
-        logging.info('Found %d users', num_entries)
-        out.write('],"meta":{"type":"users","count":%d}}' % num_entries)
+        # If we are parsing ACLs, close the parsing pool first
+        # then close the result queue and join it
+        if acl and not self.disable_pooling:
+            self.aclenumerator.pool.close()
+            self.aclenumerator.pool.join()
+            self.result_q.put(None)
+        else:
+            self.result_q.put(None)
+        self.result_q.join()
 
         logging.debug('Finished writing users')
-        out.close()
 
     def enumerate_groups(self):
 
@@ -197,24 +212,17 @@ class MembershipEnumerator(object):
         filename = 'groups.json'
         entries = self.addc.get_groups(include_properties=with_properties, acl=acl)
 
-        # If the logging level is DEBUG, we ident the objects
-        if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-            indent_level = 1
-        else:
-            indent_level = None
-
-        try:
-            out = codecs.open(filename, 'w', 'utf-8')
-        except:
-            logging.warning('Could not write file: %s' % filename)
-            return
-
         logging.debug('Writing groups to file: %s' % filename)
 
-        # Initialize json header
-        out.write('{"groups":[')
+        # Use a separate queue for processing the results
+        self.result_q = Queue.Queue()
+        results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'groups', filename))
+        results_worker.daemon = True
+        results_worker.start()
 
-        num_entries = 0
+        if acl and not self.disable_pooling:
+            self.aclenumerator.init_pool()
+
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
             self.addomain.groups[entry['dn']] = resolved_entry
@@ -231,7 +239,8 @@ class MembershipEnumerator(object):
                     "objectsid": sid,
                     "highvalue": is_highvalue(sid)
                 },
-                "Members": []
+                "Members": [],
+                "Aces": []
             }
             if with_properties:
                 group['Properties']['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', default=0) == 1
@@ -242,16 +251,38 @@ class MembershipEnumerator(object):
                 if resolved_member:
                     group['Members'].append(resolved_member)
 
-            if num_entries != 0:
-                out.write(',')
-            json.dump(group, out, indent=indent_level)
-            num_entries += 1
+            # If we are enumerating ACLs, we break out of the loop here
+            # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
+            if acl:
+                if self.disable_pooling:
+                    # Debug mode, don't run this pooled since it hides exceptions
+                    self.process_stuff(parse_binary_acl(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)))
+                else:
+                    # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)), callback=self.process_stuff)
+            else:
+                # Write it to the queue -> write to file in separate thread
+                # this is solely for consistency with acl parsing, the performance improvement is probably minimal
+                self.result_q.put(group)
 
+        # If we are parsing ACLs, close the parsing pool first
+        # then close the result queue and join it
+        if acl and not self.disable_pooling:
+            self.aclenumerator.pool.close()
+            self.aclenumerator.pool.join()
+            self.result_q.put(None)
+        else:
+            self.result_q.put(None)
+        self.result_q.join()
 
-        logging.info('Found %d groups', num_entries)
-        out.write('],"meta":{"type":"groups","count":%d}}' % num_entries)
         logging.debug('Finished writing groups')
-        out.close()
+
+    def process_stuff(self, result):
+        data, aces = result
+        # Parse aces
+        data['Aces'] = self.aceresolver.resolve_aces(aces)
+        self.result_q.put(data)
+        # logging.debug('returned stuff')
 
     def enumerate_memberships(self):
         self.enumerate_users()

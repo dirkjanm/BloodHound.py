@@ -77,3 +77,44 @@ class OutputWorker(object):
         sessions_out.write('],"meta":{"type":"sessions","count":%d}}' % num_sessions)
         sessions_out.close()
         result_q.task_done()
+
+    @staticmethod
+    def membership_write_worker(result_q, enumtype, filename):
+        """
+            Worker to write the results from the results_q to the given file.
+            This is for both users and groups
+        """
+        try:
+            membership_out = codecs.open(filename, 'w', 'utf-8')
+        except:
+            logging.warning('Could not write file: %s', filename)
+            result_q.task_done()
+            return
+
+        # If the logging level is DEBUG, we ident the objects
+        if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+            indent_level = 1
+        else:
+            indent_level = None
+
+        # Write start of the json file
+        membership_out.write('{"%s":[' % enumtype)
+        num_members = 0
+        while True:
+            data = result_q.get()
+
+            if data is None:
+                break
+
+            if num_members != 0:
+                membership_out.write(',')
+            json.dump(data, membership_out, indent=indent_level)
+            num_members += 1
+
+            result_q.task_done()
+
+        logging.info('Found %d %s', num_members, enumtype)
+        # Write metadata manually
+        membership_out.write('],"meta":{"type":"%s","count":%d}}' % (enumtype, num_members))
+        membership_out.close()
+        result_q.task_done()

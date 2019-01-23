@@ -300,6 +300,47 @@ class ADUtils(object):
         logon_type = res.group(1)
         return (sid, logon_type)
 
+class AceResolver(object):
+    """
+    This class resolves ACEs containing rights, acetype and a SID to Aces containing
+    BloodHound principals, which can be outputted to json.
+    This is mostly a wrapper around the sid resolver calss
+    """
+    def __init__(self, addomain, resolver):
+        self.addomain = addomain
+        self.resolver = resolver
+
+    def resolve_aces(self, aces):
+        aces_out = []
+        for ace in aces:
+            out = {
+                'RightName': ace['rightname'],
+                'AceType': ace['acetype']
+            }
+            # Is it a well-known sid?
+            if ace['sid'] in ADUtils.WELLKNOWN_SIDS:
+                out['PrincipalName'] = u'%s@%s' % (ADUtils.WELLKNOWN_SIDS[ace['sid']][0].upper(), self.addomain.domain.upper())
+                out['PrincipalType'] = ADUtils.WELLKNOWN_SIDS[ace['sid']][1].lower()
+            else:
+                try:
+                    entry = self.addomain.sidcache.get(ace['sid'])
+                except KeyError:
+                    # Look it up instead
+                    # Is this SID part of the current domain? If not, use GC
+                    use_gc = not ace['sid'].startswith(self.addomain.domain_object.sid)
+                    ldapentry = self.resolver.resolve_sid(ace['sid'], use_gc)
+                    # Couldn't resolve...
+                    if not ldapentry:
+                        logging.warning('Could not resolve SID: %s', ace['sid'])
+                        continue
+                    entry = ADUtils.resolve_ad_entry(ldapentry)
+                    # Cache it
+                    self.addomain.sidcache.put(ace['sid'], entry)
+                out['PrincipalName'] = entry['principal'].upper()
+                out['PrincipalType'] = entry['type']
+            aces_out.append(out)
+        return aces_out
+
 class DNSCache(object):
     """
     A cache used for caching forward and backward DNS at the same time.

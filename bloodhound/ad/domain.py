@@ -28,6 +28,7 @@ import traceback
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult
+from ldap3.protocol.microsoft import security_descriptor_control
 # from impacket.krb5.kerberosv5 import KerberosError
 from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
 from bloodhound.ad.computer import ADComputer
@@ -95,7 +96,7 @@ class ADDC(ADComputer):
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
-    def search(self, search_filter='(objectClass=*)', attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False):
+    def search(self, search_filter='(objectClass=*)', attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False):
         """
         Search for objects in LDAP or Global Catalog LDAP.
         """
@@ -105,6 +106,11 @@ class ADDC(ADComputer):
             search_base = self.ad.baseDN
         if attributes is None or attributes == []:
             attributes = ALL_ATTRIBUTES
+        if query_sd:
+            # Set SD flags to only query for DACL and Owner
+            controls = security_descriptor_control(sdflags=0x05)
+        else:
+            controls = None
         # Use the GC if this is requested
         if use_gc:
             searcher = self.gcldap
@@ -119,6 +125,7 @@ class ADDC(ADComputer):
                                                         search_filter,
                                                         attributes=attributes,
                                                         paged_size=200,
+                                                        controls=controls,
                                                         generator=generator)
         try:
             # Use a generator for the result regardless of if the search function uses one
@@ -182,17 +189,22 @@ class ADDC(ADComputer):
         return entries.next()
 
 
-    def get_domains(self):
+    def get_domains(self, acl=False):
+        """
+        Function to get domains. This should only return the current domain.
+        """
         entries = self.search('(objectClass=domain)',
                               [],
-                              generator=True)
+                              generator=True,
+                              query_sd=acl)
 
         entriesNum = 0
         for entry in entries:
             entriesNum += 1
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions
-            d = ADDomain.fromLDAP(entry['attributes']['distinguishedName'], entry['attributes']['objectSid'])
+            domain_object = ADDomain.fromLDAP(entry['attributes']['distinguishedName'], entry['attributes']['objectSid'])
+            self.ad.domain_object = domain_object
             self.ad.domains[entry['attributes']['distinguishedName']] = entry
             try:
                 nbentry = self.get_netbios_name(entry['attributes']['distinguishedName'])
@@ -246,7 +258,8 @@ class ADDC(ADComputer):
             properties += ['nTSecurityDescriptor']
         entries = self.search('(objectClass=group)',
                               properties,
-                              generator=True)
+                              generator=True,
+                              query_sd=acl)
         return entries
 
 
@@ -262,7 +275,8 @@ class ADDC(ADComputer):
             properties.append('nTSecurityDescriptor')
         entries = self.search('(&(objectCategory=person)(objectClass=user))',
                               properties,
-                              generator=True)
+                              generator=True,
+                              query_sd=acl)
         return entries
 
 
@@ -276,7 +290,8 @@ class ADDC(ADComputer):
             properties.append('nTSecurityDescriptor')
         entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',
                               properties,
-                              generator=True)
+                              generator=True,
+                              query_sd=acl)
 
         entriesNum = 0
         for entry in entries:
@@ -307,7 +322,7 @@ class ADDC(ADComputer):
         return entries
 
     def prefetch_info(self, props=False, acls=False):
-        self.get_domains()
+        self.get_domains(acl=acls)
         self.get_forest_domains()
         self.get_computers(include_properties=props, acl=acls)
 
@@ -319,6 +334,8 @@ class AD(object):
 
     def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False):
         self.domain = domain
+        # Object of type ADDomain, added later
+        self.domain_object = None
         self.auth = auth
         # List of DCs for this domain. Contains just one DC since
         # we query for the primary DC specifically

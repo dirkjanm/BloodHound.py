@@ -9,7 +9,7 @@ This version of BloodHound is **only compatiable with BloodHound 2.0 or newer**.
 
 ## Limitations
 BloodHound.py currently has the following limitations:
-- Does not yet support all BloodHound (SharpHound) features, such as ACL collection (see below for supported collection methods)
+- Does not yet support all BloodHound (SharpHound) features (see below for supported collection methods)
 - Kerberos support is not yet complete
 - Cross-forest membership resolving is not implemented yet
 
@@ -28,6 +28,7 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *Group* - Performs group membership collection
 - *LocalAdmin* - Performs local admin collection
 - *Session* - Performs session collection
+- *Acl* - Performs ACL collection
 - *Trusts* - Performs domain trust enumeration
 - *LoggedOn* - Performs privileged Session enumeration (requires local admin on the target)
 - *ObjectProps* - Performs Object Properties collection for properties such as LastLogon or PwdLastSet
