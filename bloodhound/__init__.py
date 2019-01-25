@@ -164,7 +164,7 @@ def main():
                         action='store',
                         default='Default',
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
-                             'Trusts, Default (all previous), LoggedOn, ObjectProps, All (all except LoggedOn). '
+                             'Trusts, Default (all previous), LoggedOn, ObjectProps, ACL, All (all except LoggedOn). '
                              'You can specify more than one by separating them with a comma. (default: Default)')
     parser.add_argument('-u',
                         '--username',
