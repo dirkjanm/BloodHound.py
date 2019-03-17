@@ -28,7 +28,7 @@ from ldap3.utils.conv import escape_filter_chars
 from impacket.ldap.ldaptypes import OBJECTTYPE_GUID_MAP
 from impacket.uuid import string_to_bin, bin_to_string
 from bloodhound.ad.utils import ADUtils
-from dissect import cstruct
+from bloodhound.lib import cstruct
 from io import BytesIO
 import binascii
 import pprint
@@ -287,7 +287,7 @@ struct ACCESS_ALLOWED_OBJECT_ACE {
     LDAP_SID Sid;
 };
 """
-c_secd = cstruct.cstruct()
+c_secd = cstruct()
 c_secd.load(cdef, compiled=True)
 
 
