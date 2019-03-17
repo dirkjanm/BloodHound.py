@@ -75,7 +75,7 @@ class ADDomainTrust(object):
         trust_direction = self.direction - 1
 
         out = {
-            "TargetName": self.destination_domain,
+            "TargetName": self.destination_domain.upper(),
             "IsTransitive": is_transitive,
             "TrustDirection": trust_direction,
             "TrustType": trust_type
