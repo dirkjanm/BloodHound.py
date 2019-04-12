@@ -497,7 +497,7 @@ class ADComputer(object):
             return
 
         try:
-            resp = lsat.hLsarOpenPolicy2(dce, lsat.POLICY_LOOKUP_NAMES | MAXIMUM_ALLOWED)
+            resp = lsad.hLsarOpenPolicy2(dce, lsat.POLICY_LOOKUP_NAMES | MAXIMUM_ALLOWED)
         except Exception as e:
             if str(e).find('Broken pipe') >= 0:
                 return
