@@ -512,7 +512,7 @@ class ADComputer(object):
         # in our cache and this function doesn't even need to get called anymore.
         for sid_string in self.admin_sids:
             try:
-                resp = lsat.hLsarLookupSids(dce, policyHandle, [sid_string], lsat.LSAP_LOOKUP_LEVEL.LsapLookupWksta)
+                resp = lsat.hLsarLookupSids(dce, policyHandle, [sid_string], lsat.LSAP_LOOKUP_LEVEL.enumItems.LsapLookupWksta)
             except DCERPCException as e:
                 if str(e).find('STATUS_NONE_MAPPED') >= 0:
                     logging.warning('SID %s lookup failed, return status: STATUS_NONE_MAPPED', sid_string)
