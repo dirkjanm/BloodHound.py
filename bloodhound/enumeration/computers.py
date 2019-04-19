@@ -21,7 +21,8 @@
 # SOFTWARE.
 #
 ####################
-import Queue
+from __future__ import unicode_literals
+import queue
 import threading
 import logging
 import traceback
@@ -30,6 +31,7 @@ from bloodhound.enumeration.outputworker import OutputWorker
 from bloodhound.enumeration.memberships import MembershipEnumerator
 from bloodhound.ad.computer import ADComputer
 from bloodhound.ad.utils import ADUtils
+from future.utils import itervalues, iteritems, native_str
 
 class ComputerEnumerator(MembershipEnumerator):
     """
@@ -58,9 +60,9 @@ class ComputerEnumerator(MembershipEnumerator):
             Enumerates the computers in the domain. Is threaded, you can specify the number of workers.
             Will spawn threads to resolve computers and enumerate the information.
         """
-        q = Queue.Queue()
+        q = queue.Queue()
 
-        result_q = Queue.Queue()
+        result_q = queue.Queue()
         results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'computers.json', 'sessions.json'))
         results_worker.daemon = True
         results_worker.start()
@@ -72,7 +74,7 @@ class ComputerEnumerator(MembershipEnumerator):
             t.daemon = True
             t.start()
 
-        for _, computer in computers.iteritems():
+        for _, computer in iteritems(computers):
             if not 'attributes' in computer:
                 continue
 
@@ -98,7 +100,7 @@ class ComputerEnumerator(MembershipEnumerator):
 
     def process_computer(self, hostname, samname, objectsid, entry, results_q):
         """
-            Processes a single computer, pushes the results of the computer to the given Queue.
+            Processes a single computer, pushes the results of the computer to the given queue.
         """
         logging.debug('Querying computer: %s', hostname)
         c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, objectsid=objectsid)

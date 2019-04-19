@@ -21,17 +21,18 @@
 # SOFTWARE.
 #
 ####################
+from __future__ import unicode_literals
 import logging
 import threading
 from multiprocessing import Pool
 from ldap3.utils.conv import escape_filter_chars
-from impacket.ldap.ldaptypes import OBJECTTYPE_GUID_MAP
 from impacket.uuid import string_to_bin, bin_to_string
 from bloodhound.ad.utils import ADUtils
 from bloodhound.lib import cstruct
 from io import BytesIO
 import binascii
 import pprint
+from future.utils import iteritems, native_str
 
 # Extended rights and property GUID mapping, converted to binary so we don't have to do this
 # for every comparison.
@@ -41,6 +42,21 @@ EXTRIGHTS_GUID_MAPPING = {
     "GetChangesAll": string_to_bin("1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"),
     "WriteMember": string_to_bin("bf9679c0-0de6-11d0-a285-00aa003049e2"),
     "UserForceChangePassword": string_to_bin("00299570-246d-11d0-a768-00aa006e0529"),
+}
+
+"""
+objectClass mapping to GUID for some common classes (index is the ldapDisplayName).
+Reference:
+    https://msdn.microsoft.com/en-us/library/ms680938(v=vs.85).aspx
+Can also be queried from the Schema.
+This is included here instead of imported from impacket because of py2/py3 weirdness.
+"""
+OBJECTTYPE_GUID_MAP = {
+    'group': 'bf967a9c-0de6-11d0-a285-00aa003049e2',
+    'domain': '19195a5a-6da0-11d0-afd3-00c04fd930c9',
+    'organizationalUnit': 'bf967aa5-0de6-11d0-a285-00aa003049e2',
+    'user': 'bf967aba-0de6-11d0-a285-00aa003049e2',
+    'groupPolicyContainer': 'f30e3bc2-9ff0-11d1-b603-0000f80367c1'
 }
 
 def parse_binary_acl(entry, entrytype, acl):
@@ -236,7 +252,7 @@ class AclEnumerator(object):
 The following is Security Descriptor parsing using cstruct
 Thanks to Erik Schamper for helping me implement this!
 """
-cdef = """
+cdef = native_str("""
 struct SECURITY_DESCRIPTOR {
     uint8   Revision;
     uint8   Sbz1;
@@ -286,7 +302,7 @@ struct ACCESS_ALLOWED_OBJECT_ACE {
     char    InheritedObjectType[Flags & 2 * 8];
     LDAP_SID Sid;
 };
-"""
+""")
 c_secd = cstruct()
 c_secd.load(cdef, compiled=True)
 
@@ -381,7 +397,7 @@ class ACCESS_ALLOWED_OBJECT_ACE(object):
 
     def __repr__(self):
         out = []
-        for name, value in vars(ACCESS_ALLOWED_OBJECT_ACE).iteritems():
+        for name, value in iteritems(vars(ACCESS_ALLOWED_OBJECT_ACE)):
             if not name.startswith('_') and type(value) is int and self.has_flag(value):
                 out.append(name)
         data = (' | '.join(out),
@@ -449,7 +465,7 @@ class ACCESS_MASK(object):
 
     def __repr__(self):
         out = []
-        for name, value in vars(ACCESS_MASK).iteritems():
+        for name, value in iteritems(vars(ACCESS_MASK)):
             if not name.startswith('_') and type(value) is int and self.has_priv(value):
                 out.append(name)
         return "<ACCESS_MASK RawMask=%d Flags=%s>" % (self.mask, ' | '.join(out))
@@ -490,7 +506,7 @@ class ACE(object):
 
     def __repr__(self):
         out = []
-        for name, value in vars(ACE).iteritems():
+        for name, value in iteritems(vars(ACE)):
             if not name.startswith('_') and type(value) is int and self.has_flag(value):
                 out.append(name)
         return "<ACE Type=%s Flags=%s RawFlags=%d \n\tAce=%s>" % (self.ace.AceType, ' | '.join(out), self.ace.AceFlags, str(self.acedata))

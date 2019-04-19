@@ -26,7 +26,7 @@ import logging
 import traceback
 import codecs
 import json
-import Queue
+import queue
 import threading
 from ldap3.core.exceptions import LDAPKeyError
 from bloodhound.ad.utils import ADUtils, AceResolver
@@ -142,7 +142,7 @@ class MembershipEnumerator(object):
         logging.debug('Writing users to file: %s', filename)
 
         # Use a separate queue for processing the results
-        self.result_q = Queue.Queue()
+        self.result_q = queue.Queue()
         results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'users', filename))
         results_worker.daemon = True
         results_worker.start()
@@ -215,7 +215,7 @@ class MembershipEnumerator(object):
         logging.debug('Writing groups to file: %s' % filename)
 
         # Use a separate queue for processing the results
-        self.result_q = Queue.Queue()
+        self.result_q = queue.Queue()
         results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'groups', filename))
         results_worker.daemon = True
         results_worker.start()

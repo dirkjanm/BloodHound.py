@@ -21,7 +21,7 @@
 # SOFTWARE.
 #
 ####################
-
+from __future__ import unicode_literals
 import logging
 import socket
 import threading
@@ -193,7 +193,7 @@ class ADUtils(object):
         if dn != '':
             domain = ADUtils.ldap2domain(dn)
 
-        resolved['principal'] = unicode('%s@%s' % (account, domain)).upper()
+        resolved['principal'] = ('%s@%s' % (account, domain)).upper()
         if not ADUtils.get_entry_property(entry, 'sAMAccountName'):
             # TODO: Fix foreign users
             # requires cross-forest resolving
@@ -206,7 +206,7 @@ class ADUtils(object):
                     if ename in ADUtils.WELLKNOWN_SIDS:
                         name, sidtype = ADUtils.WELLKNOWN_SIDS[ename]
                         resolved['type'] = sidtype.lower()
-                        resolved['principal'] = unicode('%s@%s' % (name, domain)).upper()
+                        resolved['principal'] = ('%s@%s' % (name, domain)).upper()
             else:
                 resolved['type'] = 'unknown'
         else:
@@ -216,7 +216,7 @@ class ADUtils(object):
             elif accountType in [805306369]:
                 resolved['type'] = 'computer'
                 short_name = account.rstrip('$')
-                resolved['principal'] = unicode('%s.%s' % (short_name, domain)).upper()
+                resolved['principal'] = ('%s.%s' % (short_name, domain)).upper()
             elif accountType in [805306368]:
                 resolved['type'] = 'user'
             elif accountType in [805306370]:
@@ -235,13 +235,13 @@ class ADUtils(object):
         resolved = {}
         account = entry['Name']
 
-        resolved['principal'] = unicode('%s@%s' % (account, domain)).upper()
+        resolved['principal'] = ('%s@%s' % (account, domain)).upper()
         resolved['type'] = ADUtils.translateSidType(entry['Use']).lower()
 
         # Computer accoutns have a different type
         if resolved['type'] == 'computer':
             short_name = account.rstrip('$')
-            resolved['principal'] = unicode('%s.%s' % (short_name, domain)).upper()
+            resolved['principal'] = ('%s.%s' % (short_name, domain)).upper()
 
         return resolved
 
@@ -281,7 +281,7 @@ class ADUtils(object):
         seconds = int(seconds)
         if seconds == 0:
             return 0
-        return (seconds - 116444736000000000) / 10000000
+        return int((seconds - 116444736000000000) / 10000000)
 
     @staticmethod
     def parse_task_xml(xml):

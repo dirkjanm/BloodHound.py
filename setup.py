@@ -13,7 +13,7 @@ setup(name='bloodhound',
                 'bloodhound.lib',
                 'bloodhound.enumeration'],
       license='MIT',
-      install_requires=['dnspython', 'impacket>=0.9.17', 'ldap3==2.5.1', 'pyasn1>=0.4'],
+      install_requires=['dnspython', 'impacket>=0.9.17', 'ldap3==2.5.1', 'pyasn1>=0.4', 'future'],
       classifiers=[
         'Intended Audience :: Information Technology',
         'License :: OSI Approved :: MIT License',
