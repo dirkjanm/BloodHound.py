@@ -270,7 +270,7 @@ class ADDC(ADComputer):
                       'objectSid', 'primaryGroupID']
         if include_properties:
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
-                           'lastLogon', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
+                           'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
                            'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo']
         if acl:
             properties.append('nTSecurityDescriptor')
@@ -283,10 +283,10 @@ class ADDC(ADComputer):
 
     def get_computers(self, include_properties=False, acl=False):
         properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
-                      'dnshostname', 'samaccounttype', 'objectSid']
+                      'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID']
         if include_properties:
             properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo',
-                           'lastLogon', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
+                           'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
         if acl:
             properties.append('nTSecurityDescriptor')
         entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',

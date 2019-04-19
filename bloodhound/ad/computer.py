@@ -59,7 +59,7 @@ class ADComputer(object):
             'LocalAdmins': self.admins,
             'Properties': {
                 'objectsid': self.objectsid,
-                'domain': self.ad.domain,
+                'domain': self.ad.domain.upper(),
                 'highvalue': False
             },
             "RemoteDesktopUsers": [],
@@ -73,6 +73,9 @@ class ADComputer(object):
             props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
             props['lastlogon'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
+            )
+            props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
+                ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
             )
             props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)

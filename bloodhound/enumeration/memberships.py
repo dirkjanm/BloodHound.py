@@ -81,7 +81,7 @@ class MembershipEnumerator(object):
                         self.addomain.computers[member] = qobject
         return {
             "MemberName": resolved_entry['principal'],
-            "MemberType": resolved_entry['type'].capitalize()
+            "MemberType": resolved_entry['type'].lower()
         }
 
     def get_primary_membership(self, entry):
@@ -118,9 +118,14 @@ class MembershipEnumerator(object):
         props['lastlogon'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
         )
+        props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
+            ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
+        )
         props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
         )
+        props['dontreqpreauth'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00400000 == 0x00400000
+        props['sensitive'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00100000 == 0x00100000
         props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
         props['hasspn'] = len(props['serviceprincipalnames']) > 0
         props['displayname'] = ADUtils.get_entry_property(entry, 'displayName')
@@ -157,7 +162,7 @@ class MembershipEnumerator(object):
                 "Name": resolved_entry['principal'],
                 "PrimaryGroup": self.get_primary_membership(entry),
                 "Properties": {
-                    "domain": self.addomain.domain,
+                    "domain": self.addomain.domain.upper(),
                     "objectsid": entry['attributes']['objectSid'],
                     "highvalue": False,
                     "unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
@@ -235,7 +240,7 @@ class MembershipEnumerator(object):
             group = {
                 "Name": resolved_entry['principal'],
                 "Properties": {
-                    "domain": self.addomain.domain,
+                    "domain": self.addomain.domain.upper(),
                     "objectsid": sid,
                     "highvalue": is_highvalue(sid)
                 },
