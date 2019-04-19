@@ -1,5 +1,5 @@
 # BloodHound.py
-![Python 2.7](https://img.shields.io/badge/python-2.7.x-blue.svg)
+![Python 2.7 and 3 compatible](https://img.shields.io/badge/python-2.7%2C%203.x-blue.svg)
 ![PyPI version](https://img.shields.io/pypi/v/bloodhound.svg)
 ![License: MIT](https://img.shields.io/pypi/l/bloodhound.svg)
 
@@ -9,13 +9,14 @@ This version of BloodHound is **only compatiable with BloodHound 2.0 or newer**.
 
 ## Limitations
 BloodHound.py currently has the following limitations:
-- Does not yet support all BloodHound (SharpHound) features (see below for supported collection methods)
-- Kerberos support is not yet complete
+- Supports most, but not all BloodHound (SharpHound) features (see below for supported collection methods)
+- Does not yet support constrained Kerberos delegation collection
+- Kerberos authentication support is not yet complete
 - Cross-forest membership resolving is not implemented yet
 
 ## Installation and usage
 You can install the ingestor via pip with `pip install bloodhound`, or by cloning this repository and running `python setup.py install`, or with `pip install .`.
-BloodHound.py requires `impacket`, `ldap3` and `dnspython` to function.
+BloodHound.py requires `impacket`, `ldap3` and `dnspython` to function. To use it with python 3.x, use the latest `impacket` from GitHub.
 
 The installation will add a command line tool `bloodhound-python` to your PATH.
 
@@ -27,6 +28,8 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *Default* - Performs group membership collection, domain trust collection, local admin collection, and session collection
 - *Group* - Performs group membership collection
 - *LocalAdmin* - Performs local admin collection
+- *RDP* - Performs Remote Desktop Users collection
+- *DCOM* - Performs Distributed COM Users collection
 - *Session* - Performs session collection
 - *Acl* - Performs ACL collection
 - *Trusts* - Performs domain trust enumeration

@@ -40,8 +40,9 @@ class ADComputer(object):
         self.samname = samname
         self.rpc = None
         self.dce = None
-        self.admin_sids = []
         self.admins = []
+        self.dcom = []
+        self.rdp = []
         self.trusts = []
         self.services = []
         self.addr = None
@@ -62,8 +63,8 @@ class ADComputer(object):
                 'domain': self.ad.domain.upper(),
                 'highvalue': False
             },
-            "RemoteDesktopUsers": [],
-            "DcomUsers": [],
+            "RemoteDesktopUsers": self.rdp,
+            "DcomUsers": self.dcom,
             "AllowedToDelegate": []
         }
         props = data['Properties']
@@ -413,9 +414,9 @@ class ADComputer(object):
     """
     This magic is mostly borrowed from impacket/examples/netview.py
     """
-    def rpc_get_local_admins(self):
+    def rpc_get_group_members(self, group_rid, resultlist):
         binding = r'ncacn_np:%s[\PIPE\samr]' % self.addr
-
+        unresolved = []
         dce = self.dce_rpc_connect(binding, samr.MSRPC_UUID_SAMR)
 
         if dce is None:
@@ -454,23 +455,23 @@ class ADComputer(object):
             resp = samr.hSamrOpenAlias(dce,
                                        domainHandle,
                                        desiredAccess=samr.ALIAS_LIST_MEMBERS | MAXIMUM_ALLOWED,
-                                       aliasId=544)
+                                       aliasId=group_rid)
             resp = samr.hSamrGetMembersInAlias(dce,
                                                aliasHandle=resp['AliasHandle'])
             for member in resp['Members']['Sids']:
                 sid_string = member['SidPointer'].formatCanonical()
 
-                logging.debug('Found admin SID: %s', sid_string)
+                logging.debug('Found %d SID: %s', group_rid, sid_string)
                 if not sid_string.startswith(self.sid):
                     # If the sid is known, we can add the admin value directly
                     try:
                         siddata = self.ad.sidcache.get(sid_string)
                         logging.debug('Sid is cached: %s', siddata['principal'])
-                        self.admins.append({'Name': siddata['principal'],
-                                            'Type': siddata['type'].capitalize()})
+                        resultlist.append({'Name': siddata['principal'],
+                                           'Type': siddata['type'].capitalize()})
                     except KeyError:
                         # Append it to the list of unresolved SIDs
-                        self.admin_sids.append(sid_string)
+                        unresolved.append(sid_string)
                 else:
                     logging.debug('Ignoring local group %s', sid_string)
         except DCERPCException as e:
@@ -482,14 +483,15 @@ class ADComputer(object):
                 raise e
 
         dce.disconnect()
+        return unresolved
 
 
-    def rpc_resolve_sids(self):
+    def rpc_resolve_sids(self, sids, resultlist):
         """
-        Resolve any remaining unknown SIDs for local administrator accounts.
+        Resolve any remaining unknown SIDs for local accounts.
         """
         # If all sids were already cached, we can just return
-        if len(self.admin_sids) == 0:
+        if len(sids) == 0:
             return
         binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.addr
 
@@ -513,7 +515,7 @@ class ADComputer(object):
         # ones were resolved and which not, making it impossible to map them in the cache.
         # Therefor we use more SAMR calls at the start, but after a while most SIDs will be reliable
         # in our cache and this function doesn't even need to get called anymore.
-        for sid_string in self.admin_sids:
+        for sid_string in sids:
             try:
                 resp = lsat.hLsarLookupSids(dce, policyHandle, [sid_string], lsat.LSAP_LOOKUP_LEVEL.enumItems.LsapLookupWksta)
             except DCERPCException as e:
@@ -541,8 +543,8 @@ class ADComputer(object):
                 if entry['Name'] != '':
                     resolved_entry = ADUtils.resolve_sid_entry(entry, domain)
                     logging.debug('Resolved SID to name: %s', resolved_entry['principal'])
-                    self.admins.append({'Name': resolved_entry['principal'],
-                                        'Type': resolved_entry['type'].capitalize()})
+                    resultlist.append({'Name': resolved_entry['principal'],
+                                       'Type': resolved_entry['type'].capitalize()})
                     # Add it to our cache
                     self.ad.sidcache.put(sid_string, resolved_entry)
                 else:

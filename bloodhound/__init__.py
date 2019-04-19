@@ -69,7 +69,7 @@ class BloodHound(object):
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
             membership_enum.enumerate_memberships()
-        elif 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
+        elif 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect or 'rdp' in collect or 'dcom' in collect:
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect)
@@ -110,10 +110,10 @@ def resolve_collection_methods(methods):
     Convert methods (string) to list of validated methods to resolve
     """
     valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon',
-                     'objectprops', 'experimental', 'acl']
+                     'objectprops', 'experimental', 'acl', 'dcom', 'rdp']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
     # Similar to SharpHound, All is not really all, it excludes loggedon
-    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl']
+    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl', 'dcom', 'rdp']
     if ',' in methods:
         method_list = [method.lower() for method in methods.split(',')]
         validated_methods = []

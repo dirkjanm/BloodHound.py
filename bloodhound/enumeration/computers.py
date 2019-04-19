@@ -113,8 +113,14 @@ class ComputerEnumerator(MembershipEnumerator):
                 else:
                     sessions = []
                 if 'localadmin' in self.collect:
-                    c.rpc_get_local_admins()
-                    c.rpc_resolve_sids()
+                    unresolved = c.rpc_get_group_members(544, c.admins)
+                    c.rpc_resolve_sids(unresolved, c.admins)
+                if 'rdp' in self.collect:
+                    unresolved = c.rpc_get_group_members(555, c.rdp)
+                    c.rpc_resolve_sids(unresolved, c.rdp)
+                if 'dcom' in self.collect:
+                    unresolved = c.rpc_get_group_members(562, c.dcom)
+                    c.rpc_resolve_sids(unresolved, c.dcom)
                 if 'loggedon' in self.collect:
                     loggedon = c.rpc_get_loggedon()
                 else:
