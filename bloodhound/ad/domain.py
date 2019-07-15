@@ -232,6 +232,9 @@ class ADDC(ADComputer):
 
         entriesNum = 0
         for entry in entries:
+            # Ensure systemFlags entry is not empty before running the naming context check.
+            if not entry['attributes']['systemFlags']:
+                continue
             # This is a naming context, but not a domain
             if not entry['attributes']['systemFlags'] & 2:
                 continue
