@@ -217,7 +217,9 @@ def main():
     if args.v is True:
         logger.setLevel(logging.DEBUG)
 
-    if args.username is not None and args.password is not None:
+    if args.kerberos:
+        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
+    elif args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
     elif args.username is not None and args.password is None and args.hashes is None and not args.no_pass:
@@ -238,11 +240,8 @@ def main():
             logging.debug('Authentication: Kerberos AES')
             auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey)
     else:
-        if not args.kerberos:
-            parser.print_help()
-            sys.exit(1)
-        else:
-            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
+        parser.print_help()
+        sys.exit(1)
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp)
 

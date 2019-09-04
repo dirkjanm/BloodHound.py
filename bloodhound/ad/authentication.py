@@ -47,7 +47,7 @@ class ADAuthentication(object):
                  lm_hash='', nt_hash='', aeskey='', kdc=None):
         self.username = username
         self.domain = domain
-        if '@' in self.username:
+        if self.username and '@' in self.username:
             self.username, self.domain = self.username.rsplit('@', 1)
         self.password = password
         self.lm_hash = lm_hash
@@ -206,17 +206,22 @@ class ADAuthentication(object):
             logging.debug("No valid credentials found in cache. ")
             return False
 
-        # Verify if this ticket is actually for the specified user
         ticket = Ticket()
         decoded_tgt = decoder.decode(tgt, asn1Spec = AS_REP())[0]
         ticket.from_asn1(decoded_tgt['ticket'])
 
         tgt_principal = Principal()
         tgt_principal.from_asn1(decoded_tgt, 'crealm', 'cname')
-        expected_principal = '%s@%s' % (self.username.lower(), self.domain.upper())
-        if expected_principal != str(tgt_principal):
-            logging.warning('Username in ccache file does not match supplied username! %s != %s', tgt_principal, expected_principal)
-            return False
+        if self.username == '' or self.username is None:
+            # Retrieve username from ticket
+            self.username = tgt_principal.components[0]
+            logging.info('Retrieve username in ccache file (%s)' % self.username)
         else:
-            logging.info('Found TGT with correct principal in ccache file.')
+            # Verify if this ticket is actually for the specified user
+            expected_principal = '%s@%s' % (self.username.lower(), self.domain.upper())
+            if expected_principal != str(tgt_principal):
+                logging.warning('Username in ccache file does not match supplied username! %s != %s', tgt_principal, expected_principal)
+                return False
+            else:
+                logging.info('Found TGT with correct principal in ccache file.')
         return True
