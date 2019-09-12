@@ -39,8 +39,8 @@ from future.utils import itervalues, iteritems, native_str
 Active Directory Domain Controller
 """
 class ADDC(ADComputer):
-    def __init__(self, hostname=None, ad=None):
-        ADComputer.__init__(self, hostname)
+    def __init__(self, hostname=None, ad=None, kerberos=False):
+        ADComputer.__init__(self, hostname, kerberos=kerberos)
         self.ad = ad
         # Primary LDAP connection
         self.ldap = None

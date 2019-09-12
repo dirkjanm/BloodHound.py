@@ -33,11 +33,12 @@ from bloodhound.enumeration.domains import DomainEnumerator
 BloodHound.py is a Python port of BloodHound, designed to run on Linux and Windows.
 """
 class BloodHound(object):
-    def __init__(self, ad):
+    def __init__(self, ad, kerberos=False):
         self.ad = ad
         self.ldap = None
         self.pdc = None
         self.sessions = []
+        self.kerberos = kerberos
 
 
     def connect(self):
@@ -55,7 +56,7 @@ class BloodHound(object):
             logging.debug('Using kerberos realm: %s', self.ad.realm())
 
         # Create a domain controller object
-        self.pdc = ADDC(pdc, self.ad)
+        self.pdc = ADDC(pdc, self.ad, self.kerberos)
         # Create an object resolver
         self.ad.create_objectresolver(self.pdc)
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
@@ -82,7 +83,7 @@ class BloodHound(object):
         if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
-            computer_enum = ComputerEnumerator(self.ad, collect, do_gc_lookup=have_gc)
+            computer_enum = ComputerEnumerator(self.ad, collect, do_gc_lookup=have_gc, kerberos=self.kerberos)
             computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)
         end_time = time.time()
         minutes, seconds = divmod(int(end_time-start_time),60)
@@ -149,57 +150,52 @@ def main():
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
                              'Trusts, Default (all previous), LoggedOn, ObjectProps, ACL, All (all except LoggedOn). '
                              'You can specify more than one by separating them with a comma. (default: Default)')
+    parser.add_argument('-u',
+                        '--username',
+                        action='store',
+                        help='Username. Format: username[@domain]; If the domain is unspecified, the current domain is used.')
+    parser.add_argument('-p',
+                        '--password',
+                        action='store',
+                        help='Password')
+    parser.add_argument('-k',
+                        '--kerberos',
+                        action='store_true',
+                        help='Use current ccache file for Kerberos authentication. '
+                             'Filename is specified in the KRB5CCNAME environment variable')
+    parser.add_argument('-no-pass', action="store_true", help='don\'t ask for password (useful for -k)')
+    parser.add_argument('--hashes',
+                        action='store',
+                        help='LM:NLTM hashes')
+    parser.add_argument('-aesKey',
+                        action="store",
+                        metavar="hex key",
+                        help='AES key to use for Kerberos Authentication (128 or 256 bits)')
+    parser.add_argument('--no-ntlm',
+                        action='store_true',
+                        help='Do not use NTLM authentication as fallback')
+    parser.add_argument('-ns',
+                        '--nameserver',
+                        action='store',
+                        help='Alternative name server to use for queries')
+    parser.add_argument('--dns-tcp',
+                        action='store_true',
+                        help='Use TCP instead of UDP for DNS queries')
     parser.add_argument('-d',
                         '--domain',
                         action='store',
                         help='Domain to query.')
-    helptext = 'Specify one or more authentication options. \n' \
-               'By default Kerberos authentication is used and NTLM is used as fallback. \n' \
-               'Kerberos tickets are automatically requested if a password or hashes are specified.'
-    auopts = parser.add_argument_group('authentication options', description=helptext)
-    auopts.add_argument('-u',
-                        '--username',
-                        action='store',
-                        help='Username. Format: username[@domain]; If the domain is unspecified, the current domain is used.')
-    auopts.add_argument('-p',
-                        '--password',
-                        action='store',
-                        help='Password')
-    auopts.add_argument('-k',
-                        '--kerberos',
-                        action='store_true',
-                        help='Attempt to load ccache file with Kerberos tickets. '
-                             'Filename is specified in the KRB5CCNAME environment variable')
-    auopts.add_argument('-no-pass', action="store_true", help='don\'t ask for password (useful for -k)')
-    auopts.add_argument('--hashes',
-                        action='store',
-                        help='LM:NLTM hashes')
-    auopts.add_argument('-aesKey',
-                        action="store",
-                        metavar="hex key",
-                        help='AES key to use for Kerberos Authentication (128 or 256 bits)')
-    auopts.add_argument('--no-ntlm',
-                        action='store_true',
-                        help='Do not use NTLM authentication as fallback')
-    coopts = parser.add_argument_group('collection options')
-    coopts.add_argument('-ns',
-                        '--nameserver',
-                        action='store',
-                        help='Alternative name server to use for queries')
-    coopts.add_argument('--dns-tcp',
-                        action='store_true',
-                        help='Use TCP instead of UDP for DNS queries')
-    coopts.add_argument('-dc',
+    parser.add_argument('-dc',
                         '--domain-controller',
                         metavar='HOST',
                         action='store',
-                        help='Override which DC to query')
-    coopts.add_argument('-gc',
+                        help='Override which DC to query (hostname)')
+    parser.add_argument('-gc',
                         '--global-catalog',
                         metavar='HOST',
                         action='store',
-                        help='Override which GC to query')
-    coopts.add_argument('-w',
+                        help='Override which GC to query (hostname)')
+    parser.add_argument('-w',
                         '--workers',
                         action='store',
                         type=int,
@@ -217,8 +213,9 @@ def main():
     if args.v is True:
         logger.setLevel(logging.DEBUG)
 
-    if args.kerberos:
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
+    if args.kerberos is True:
+        logging.debug('Authentication: Kerberos ccache')
+        auth = ADAuthentication(domain=args.domain, kerberos=True)
     elif args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
@@ -262,14 +259,10 @@ def main():
 
     if args.kerberos is True:
         logging.debug('Authentication: Kerberos ccache')
-        # kerberize()
-        if not auth.load_ccache():
-            logging.debug('Could not load ticket from ccache, trying to request a TGT instead')
-            auth.get_tgt()
     else:
         auth.get_tgt()
 
-    bloodhound = BloodHound(ad)
+    bloodhound = BloodHound(ad, args.kerberos)
     bloodhound.connect()
     bloodhound.run(collect=collect,
                    num_workers=args.workers,

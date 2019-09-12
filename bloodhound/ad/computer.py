@@ -36,9 +36,10 @@ class ADComputer(object):
     """
     Computer connected to Active Directory
     """
-    def __init__(self, hostname=None, samname=None, ad=None, objectsid=None):
+    def __init__(self, hostname=None, samname=None, ad=None, objectsid=None, kerberos=False):
         self.hostname = hostname
         self.ad = ad
+        self.kerberos = kerberos
         self.samname = samname
         self.rpc = None
         self.dce = None
@@ -143,15 +144,8 @@ class ADComputer(object):
             self.rpc.setRemoteHost(self.addr)
 
             # Use Kerberos if we have a TGT
-            if hasattr(self.rpc, 'set_kerberos') and self.ad.auth.tgt:
+            if hasattr(self.rpc, 'set_kerberos') and self.kerberos:
                 self.rpc.set_kerberos(True, self.ad.auth.kdc)
-                if hasattr(self.rpc, 'set_credentials'):
-                    self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
-                                             domain=self.ad.auth.domain,
-                                             lmhash=self.ad.auth.lm_hash,
-                                             nthash=self.ad.auth.nt_hash,
-                                             aesKey=self.ad.auth.aeskey,
-                                             TGT=self.ad.auth.tgt)
             # Else set the required stuff for NTLM
             elif hasattr(self.rpc, 'set_credentials'):
                 self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
