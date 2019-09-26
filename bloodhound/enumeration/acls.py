@@ -98,7 +98,12 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 # Check from high to low, ignore lower privs which may also match the bitmask,
                 # even though this shouldn't happen since we check for exact matches currently
                 if mask.has_priv(ACCESS_MASK.GENERIC_ALL):
-                    relations.append(build_relation(sid, 'GenericAll'))
+                    if entrytype == 'computer' and \
+                    ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
+                    ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                        relations.append(build_relation(sid, 'ExtendedRight', 'ReadLAPSPassword'))
+                    else:
+                        relations.append(build_relation(sid, 'GenericAll'))
                     continue
                 if mask.has_priv(ACCESS_MASK.GENERIC_WRITE):
                     relations.append(build_relation(sid, 'GenericWrite'))
@@ -122,6 +127,13 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     relations.append(build_relation(sid, 'GenericWrite'))
                 if entrytype == 'group' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteMember']):
                     relations.append(build_relation(sid, 'WriteProperty', 'AddMember'))
+
+            # Property read privileges
+            if ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_READ_PROP):
+                if entrytype == 'computer' and \
+                ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
+                ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                    relations.append(build_relation(sid, 'ExtendedRight', 'ReadLAPSPassword'))
 
             # Extended rights
             control_access = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS)
