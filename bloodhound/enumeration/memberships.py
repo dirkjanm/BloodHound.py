@@ -178,10 +178,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_stuff(parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)))
+                    self.process_stuff(parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)), callback=self.process_stuff)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
@@ -261,10 +261,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_stuff(parse_binary_acl(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)))
+                    self.process_stuff(parse_binary_acl(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)), callback=self.process_stuff)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal

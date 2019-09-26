@@ -112,7 +112,7 @@ class DomainEnumerator(object):
 
         if 'acl' in collect or True:
             resolver = AceResolver(self.addomain, self.addomain.objectresolver)
-            _, aces = parse_binary_acl(domain, 'domain', ADUtils.get_entry_property(domain_object, 'nTSecurityDescriptor'))
+            _, aces = parse_binary_acl(domain, 'domain', ADUtils.get_entry_property(domain_object, 'nTSecurityDescriptor'), self.addc.objecttype_guid_map)
             domain['Aces'] = resolver.resolve_aces(aces)
 
         if 'trusts' in collect:
