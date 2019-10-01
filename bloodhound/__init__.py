@@ -82,7 +82,7 @@ class BloodHound(object):
         if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
-            computer_enum = ComputerEnumerator(self.ad, collect, do_gc_lookup=have_gc)
+            computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc)
             computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)
         end_time = time.time()
         minutes, seconds = divmod(int(end_time-start_time),60)

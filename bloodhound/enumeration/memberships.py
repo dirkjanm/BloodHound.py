@@ -283,7 +283,7 @@ class MembershipEnumerator(object):
         logging.debug('Finished writing groups')
 
     def enumerate_computers(self):
-        filename = 'computers_acl.json' # XXX: TODO: merge in computers.json
+        filename = 'computers.json'
 
         acl = 'acl' in self.collect
         # Already retrieve by prefetch_info()
@@ -354,4 +354,8 @@ class MembershipEnumerator(object):
     def enumerate_memberships(self):
         self.enumerate_users()
         self.enumerate_groups()
-        self.enumerate_computers()
+        if not ('localadmin' in self.collect
+                or 'session' in self.collect
+                or 'loggedon' in self.collect
+                or 'experimental' in self.collect):
+            self.enumerate_computers()
