@@ -22,7 +22,7 @@
 #
 ####################
 
-import os, sys, logging, argparse, getpass, time
+import os, sys, logging, argparse, getpass, time, re
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
@@ -254,8 +254,18 @@ def main():
 
     # Override the detected DC / GC if specified
     if args.domain_controller:
+        if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', args.domain_controller):
+            logging.error('The specified domain controller %s looks like an IP address, but requires a hostname (FQDN).\n'\
+                          'Use the -ns flag to specify a DNS server IP if the hostname does not resolve on your default nameserver.',
+                          args.domain_controller)
+            sys.exit(1)
         ad.override_dc(args.domain_controller)
     if args.global_catalog:
+        if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', args.global_catalog):
+            logging.error('The specified global catalog server %s looks like an IP address, but requires a hostname (FQDN).\n'\
+                          'Use the -ns flag to specify a DNS server IP if the hostname does not resolve on your default nameserver.',
+                          args.global_catalog)
+            sys.exit(1)
         ad.override_gc(args.global_catalog)
 
     bloodhound = BloodHound(ad)
