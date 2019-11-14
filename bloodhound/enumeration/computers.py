@@ -219,7 +219,6 @@ class ComputerEnumerator(MembershipEnumerator):
                                                'Weight': 2}))
 
             except DCERPCException:
-                logging.info(traceback.format_exc())
                 logging.warning('Querying computer failed: %s' % hostname)
             except Exception as e:
                 logging.error('Unhandled exception in computer %s processing: %s', hostname, str(e))
