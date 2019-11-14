@@ -174,9 +174,6 @@ def parse_binary_acl(entry, entrytype, acl):
             if mask.has_priv(ACCESS_MASK.WRITE_DACL):
                 relations.append(build_relation(sid, 'WriteDacl'))
 
-            if mask.has_priv(ACCESS_MASK.WRITE_DACL):
-                relations.append(build_relation(sid, 'WriteDacl'))
-
     # pprint.pprint(entry)
         # pprint.pprint(relations)
     return entry, relations
