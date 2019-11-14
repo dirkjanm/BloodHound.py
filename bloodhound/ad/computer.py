@@ -28,6 +28,7 @@ from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, sc
 from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY, RPC_C_AUTHN_LEVEL_PKT_PRIVACY
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
+from impacket import smb3structs
 from bloodhound.ad.utils import ADUtils
 
 class ADComputer(object):
@@ -145,8 +146,9 @@ class ADComputer(object):
             # TODO: check Kerberos support
             # if hasattr(self.rpc, 'set_kerberos'):
                 # self.rpc.set_kerberos(True, self.ad.auth.kdc)
-            # Yes we prefer SMB3, but it isn't supported by all OS
-            # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_30)
+            # Uncomment to force SMB2 (especially for development to prevent encryption)
+            # will break clients only supporting SMB1 ofc
+            # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_21)
 
             # Re-use the SMB connection if possible
             if self.smbconnection:
@@ -238,6 +240,12 @@ class ADComputer(object):
 
         try:
             resp = srvs.hNetrSessionEnum(dce, '\x00', NULL, 10)
+        except DCERPCException as e:
+            if 'rpc_s_access_denied' in str(e):
+                logging.debug('Access denied while enumerating Sessions on %s, likely a patched OS', self.hostname)
+                return []
+            else:
+                raise
         except Exception as e:
             if str(e).find('Broken pipe') >= 0:
                 return
@@ -475,7 +483,10 @@ class ADComputer(object):
                 else:
                     logging.debug('Ignoring local group %s', sid_string)
         except DCERPCException as e:
-            logging.debug('Exception connecting to RPC: %s', e)
+            if 'rpc_s_access_denied' in str(e):
+                logging.debug('Access denied while enumerating groups on %s, likely a patched OS', self.hostname)
+            else:
+                raise
         except Exception as e:
             if 'connection reset' in str(e):
                 logging.debug('Connection was reset: %s', e)
