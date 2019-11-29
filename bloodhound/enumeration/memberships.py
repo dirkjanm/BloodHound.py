@@ -80,34 +80,20 @@ class MembershipEnumerator(object):
                     if resolved_entry['type'] == 'computer':
                         self.addomain.computers[member] = qobject
         return {
-            "MemberName": resolved_entry['principal'],
-            "MemberType": resolved_entry['type'].lower()
+            "MemberId": resolved_entry['objectid'],
+            "MemberType": resolved_entry['type'].capitalize()
         }
 
     def get_primary_membership(self, entry):
         """
-        Looks up the primary membership based on RID. Resolves it if needed
+        Construct primary membership from RID to SID (BloodHound 3.0 only)
         """
         try:
             primarygroupid = int(entry['attributes']['primaryGroupID'])
         except (TypeError, KeyError):
             # Doesn't have a primarygroupid, means it is probably a Group instead of a user
             return
-        try:
-            group = self.addomain.groups[self.addomain.groups_dnmap[primarygroupid]]
-            return group['principal']
-        except KeyError:
-            # Look it up
-            # Construct group sid by taking the domain sid, removing the user rid and appending the group rid
-            groupsid = '%s-%d' % ('-'.join(entry['attributes']['objectSid'].split('-')[:-1]), primarygroupid)
-            group = self.addomain.objectresolver.resolve_sid(groupsid, use_gc=False)
-            if group is None:
-                logging.warning('Warning: Unknown primarygroupid %d', primarygroupid)
-                return None
-            resolved_entry = ADUtils.resolve_ad_entry(group)
-            self.addomain.groups[group['attributes']['distinguishedName']] = resolved_entry
-            self.addomain.groups_dnmap[primarygroupid] = group['attributes']['distinguishedName']
-            return resolved_entry['principal']
+        return '%s-%d' % ('-'.join(entry['attributes']['objectSid'].split('-')[:-1]), primarygroupid)
 
     @staticmethod
     def add_user_properties(user, entry):
@@ -118,9 +104,13 @@ class MembershipEnumerator(object):
         props['lastlogon'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
         )
+        if props['lastlogon'] == 0:
+            props['lastlogon'] = -1
         props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
         )
+        if props['lastlogontimestamp'] == 0:
+            props['lastlogontimestamp'] = -1
         props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
         )
@@ -159,15 +149,20 @@ class MembershipEnumerator(object):
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
             user = {
-                "Name": resolved_entry['principal'],
-                "PrimaryGroup": self.get_primary_membership(entry),
+                "AllowedToDelegate": [],
+                "ObjectIdentifier": ADUtils.get_entry_property(entry, 'objectSid'),
+                "PrimaryGroupSid": self.get_primary_membership(entry),
                 "Properties": {
+                    "name": resolved_entry['principal'],
                     "domain": self.addomain.domain.upper(),
-                    "objectsid": entry['attributes']['objectSid'],
+                    "objectid": ADUtils.get_entry_property(entry, 'objectSid'),
+                    "distinguishedname":ADUtils.get_entry_property(entry, 'distinguishedName'),
                     "highvalue": False,
-                    "unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
+                    "unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000,
+                    "passwordnotreqd": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00000020 == 0x00000020
                 },
-                "Aces": []
+                "Aces": [],
+                "SPNTargets": []
             }
 
             if with_properties:
@@ -238,15 +233,21 @@ class MembershipEnumerator(object):
                 logging.warning('Could not determine SID for group %s' % entry['attributes']['distinguishedName'])
                 continue
             group = {
-                "Name": resolved_entry['principal'],
+                "ObjectIdentifier": sid,
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
-                    "objectsid": sid,
-                    "highvalue": is_highvalue(sid)
+                    "objectid": sid,
+                    "highvalue": is_highvalue(sid),
+                    "name": resolved_entry['principal'],
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName')
                 },
                 "Members": [],
                 "Aces": []
             }
+            if sid in ADUtils.WELLKNOWN_SIDS:
+                # Prefix it with the domain
+                group['ObjectIdentifier'] = '%s-%s' % (self.addomain.domain.upper(), sid)
+                group['Properties']['objectid'] = group['ObjectIdentifier']
             if with_properties:
                 group['Properties']['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', default=0) == 1
                 group['Properties']['description'] = ADUtils.get_entry_property(entry, 'description')

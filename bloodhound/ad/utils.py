@@ -192,11 +192,9 @@ class ADUtils(object):
         dn = ADUtils.get_entry_property(entry, 'distinguishedName', '')
         if dn != '':
             domain = ADUtils.ldap2domain(dn)
-
+        resolved['objectid'] = ADUtils.get_entry_property(entry, 'objectSid', '')
         resolved['principal'] = ('%s@%s' % (account, domain)).upper()
         if not ADUtils.get_entry_property(entry, 'sAMAccountName'):
-            # TODO: Fix foreign users
-            # requires cross-forest resolving
             if 'ForeignSecurityPrincipals' in dn:
                 resolved['principal'] = domain.upper()
                 resolved['type'] = 'foreignsecurityprincipal'
@@ -207,22 +205,27 @@ class ADUtils(object):
                         name, sidtype = ADUtils.WELLKNOWN_SIDS[ename]
                         resolved['type'] = sidtype.lower()
                         resolved['principal'] = ('%s@%s' % (name, domain)).upper()
+                        # Well-known have the domain prefix since 3.0
+                        resolved['objectid'] = '%s-%s' % (domain.upper(), resolved['objectid'])
+                    else:
+                        # Foreign security principal
+                        resolved['objectid'] = ename
             else:
-                resolved['type'] = 'unknown'
+                resolved['type'] = 'Unknown'
         else:
             accountType = ADUtils.get_entry_property(entry, 'sAMAccountType')
             if accountType in [268435456, 268435457, 536870912, 536870913]:
-                resolved['type'] = 'group'
+                resolved['type'] = 'Group'
             elif accountType in [805306369]:
-                resolved['type'] = 'computer'
+                resolved['type'] = 'Computer'
                 short_name = account.rstrip('$')
                 resolved['principal'] = ('%s.%s' % (short_name, domain)).upper()
             elif accountType in [805306368]:
-                resolved['type'] = 'user'
+                resolved['type'] = 'User'
             elif accountType in [805306370]:
                 resolved['type'] = 'trustaccount'
             else:
-                resolved['type'] = 'domain'
+                resolved['type'] = 'Domain'
 
         return resolved
 
@@ -315,12 +318,13 @@ class AceResolver(object):
         for ace in aces:
             out = {
                 'RightName': ace['rightname'],
-                'AceType': ace['acetype']
+                'AceType': ace['acetype'],
+                'IsInherited': ace['inherited']
             }
             # Is it a well-known sid?
             if ace['sid'] in ADUtils.WELLKNOWN_SIDS:
-                out['PrincipalName'] = u'%s@%s' % (ADUtils.WELLKNOWN_SIDS[ace['sid']][0].upper(), self.addomain.domain.upper())
-                out['PrincipalType'] = ADUtils.WELLKNOWN_SIDS[ace['sid']][1].lower()
+                out['PrincipalSID'] = u'%s-%s' % (self.addomain.domain.upper(), ace['sid'])
+                out['PrincipalType'] = ADUtils.WELLKNOWN_SIDS[ace['sid']][1].capitalize()
             else:
                 try:
                     entry = self.addomain.sidcache.get(ace['sid'])
@@ -332,11 +336,15 @@ class AceResolver(object):
                     # Couldn't resolve...
                     if not ldapentry:
                         logging.warning('Could not resolve SID: %s', ace['sid'])
-                        continue
-                    entry = ADUtils.resolve_ad_entry(ldapentry)
-                    # Cache it
-                    self.addomain.sidcache.put(ace['sid'], entry)
-                out['PrincipalName'] = entry['principal'].upper()
+                        # Fake it
+                        entry = {
+                            'type': 'Unknown'
+                        }
+                    else:
+                        entry = ADUtils.resolve_ad_entry(ldapentry)
+                        # Cache it
+                        self.addomain.sidcache.put(ace['sid'], entry)
+                out['PrincipalSID'] = ace['sid']
                 out['PrincipalType'] = entry['type']
             aces_out.append(out)
         return aces_out

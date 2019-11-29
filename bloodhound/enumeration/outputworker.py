@@ -72,9 +72,9 @@ class OutputWorker(object):
 
         logging.debug('Write worker is done, closing files')
         # Write metadata manually
-        computers_out.write('],"meta":{"type":"computers","count":%d}}' % num_computers)
+        computers_out.write('],"meta":{"type":"computers","count":%d, "version":3}}' % num_computers)
         computers_out.close()
-        sessions_out.write('],"meta":{"type":"sessions","count":%d}}' % num_sessions)
+        sessions_out.write('],"meta":{"type":"sessions","count":%d, "version":3}}' % num_sessions)
         sessions_out.close()
         result_q.task_done()
 
@@ -115,6 +115,6 @@ class OutputWorker(object):
 
         logging.info('Found %d %s', num_members, enumtype)
         # Write metadata manually
-        membership_out.write('],"meta":{"type":"%s","count":%d}}' % (enumtype, num_members))
+        membership_out.write('],"meta":{"type":"%s","count":%d, "version":3}}' % (enumtype, num_members))
         membership_out.close()
         result_q.task_done()

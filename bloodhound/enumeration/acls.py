@@ -74,7 +74,7 @@ def parse_binary_acl(entry, entrytype, acl):
     ignoresids = ["S-1-3-0", "S-1-5-18"]
     # Ignore Creator Owner or Local System
     if osid not in ignoresids:
-        relations.append(build_relation(osid, 'Owner'))
+        relations.append(build_relation(osid, 'Owner', inherited=False))
     for ace_object in sd.dacl.aces:
         if ace_object.ace.AceType != 0x05 and ace_object.ace.AceType != 0x00:
             # These are the only two aces we care about currently
@@ -86,6 +86,7 @@ def parse_binary_acl(entry, entrytype, acl):
         if sid in ignoresids:
             continue
         if ace_object.ace.AceType == 0x05:
+            is_inherited = ace_object.has_flag(ACE.INHERITED_ACE)
             # ACCESS_ALLOWED_OBJECT_ACE
             if not ace_object.has_flag(ACE.INHERITED_ACE) and ace_object.has_flag(ACE.INHERIT_ONLY_ACE):
                 # ACE is set on this object, but only inherited, so not applicable to us
@@ -113,10 +114,10 @@ def parse_binary_acl(entry, entrytype, acl):
                 # Check from high to low, ignore lower privs which may also match the bitmask,
                 # even though this shouldn't happen since we check for exact matches currently
                 if mask.has_priv(ACCESS_MASK.GENERIC_ALL):
-                    relations.append(build_relation(sid, 'GenericAll'))
+                    relations.append(build_relation(sid, 'GenericAll', inherited=is_inherited))
                     continue
                 if mask.has_priv(ACCESS_MASK.GENERIC_WRITE):
-                    relations.append(build_relation(sid, 'GenericWrite'))
+                    relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                     # Don't skip this if it's the domain object, since BloodHound reports duplicate
                     # rights as well, and this might influence some queries
                     if entrytype != 'domain':
@@ -124,32 +125,32 @@ def parse_binary_acl(entry, entrytype, acl):
 
                 # These are specific bitmasks so don't break the loop from here
                 if mask.has_priv(ACCESS_MASK.WRITE_DACL):
-                    relations.append(build_relation(sid, 'WriteDacl'))
+                    relations.append(build_relation(sid, 'WriteDacl', inherited=is_inherited))
 
                 if mask.has_priv(ACCESS_MASK.WRITE_OWNER):
-                    relations.append(build_relation(sid, 'WriteOwner'))
+                    relations.append(build_relation(sid, 'WriteOwner', inherited=is_inherited))
 
             # Property write privileges
             writeprivs = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP)
             if writeprivs:
                 # GenericWrite
                 if entrytype in ['user', 'group'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
-                    relations.append(build_relation(sid, 'GenericWrite'))
+                    relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                 if entrytype == 'group' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteMember']):
-                    relations.append(build_relation(sid, 'WriteProperty', 'AddMember'))
+                    relations.append(build_relation(sid, 'WriteProperty', 'AddMember', inherited=is_inherited))
 
             # Extended rights
             control_access = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS)
             if control_access:
                 # All Extended
                 if entrytype in ['user', 'domain'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'All'))
+                    relations.append(build_relation(sid, 'ExtendedRight', 'All', inherited=is_inherited))
                 if entrytype == 'domain' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['GetChanges']):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'GetChanges'))
+                    relations.append(build_relation(sid, 'ExtendedRight', 'GetChanges', inherited=is_inherited))
                 if entrytype == 'domain' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['GetChangesAll']):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'GetChangesAll'))
+                    relations.append(build_relation(sid, 'ExtendedRight', 'GetChangesAll', inherited=is_inherited))
                 if entrytype == 'user' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['UserForceChangePassword']):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'User-Force-Change-Password'))
+                    relations.append(build_relation(sid, 'ExtendedRight', 'User-Force-Change-Password', inherited=is_inherited))
 
             # print(ace_object.acedata.sid)
         if ace_object.ace.AceType == 0x00:
@@ -157,22 +158,22 @@ def parse_binary_acl(entry, entrytype, acl):
             # ACCESS_ALLOWED_ACE
             if mask.has_priv(ACCESS_MASK.GENERIC_ALL):
                 # Generic all includes all other rights, so skip from here
-                relations.append(build_relation(sid, 'GenericAll'))
+                relations.append(build_relation(sid, 'GenericAll', inherited=is_inherited))
                 continue
 
-            if mask.has_priv(ACCESS_MASK.GENERIC_WRITE):
+            if mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP):
                 # Genericwrite is only for properties, don't skip after
-                relations.append(build_relation(sid, 'GenericWrite'))
+                relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
 
             if mask.has_priv(ACCESS_MASK.WRITE_OWNER):
-                relations.append(build_relation(sid, 'WriteOwner'))
+                relations.append(build_relation(sid, 'WriteOwner', inherited=is_inherited))
 
             # For users and domain, check extended rights
             if entrytype in ['user', 'domain'] and mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS):
-                relations.append(build_relation(sid, 'ExtendedRight', 'All'))
+                relations.append(build_relation(sid, 'ExtendedRight', 'All', inherited=is_inherited))
 
             if mask.has_priv(ACCESS_MASK.WRITE_DACL):
-                relations.append(build_relation(sid, 'WriteDacl'))
+                relations.append(build_relation(sid, 'WriteDacl', inherited=is_inherited))
 
     # pprint.pprint(entry)
         # pprint.pprint(relations)
@@ -233,8 +234,8 @@ def ace_applies(ace_guid, object_class):
     # If none of these match, the ACE does not apply to this object
     return False
 
-def build_relation(sid, relation, acetype=''):
-    return {'rightname': relation, 'sid': sid, 'acetype': acetype}
+def build_relation(sid, relation, acetype='', inherited=False):
+    return {'rightname': relation, 'sid': sid, 'acetype': acetype, 'inherited': inherited}
 
 class AclEnumerator(object):
     """
