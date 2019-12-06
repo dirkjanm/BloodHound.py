@@ -474,9 +474,12 @@ class ADComputer(object):
                     # If the sid is known, we can add the admin value directly
                     try:
                         siddata = self.ad.sidcache.get(sid_string)
-                        logging.debug('Sid is cached: %s', siddata['principal'])
-                        resultlist.append({'Name': siddata['principal'],
-                                           'Type': siddata['type'].capitalize()})
+                        if siddata is None:
+                            unresolved.append(sid_string)
+                        else:
+                            logging.debug('Sid is cached: %s', siddata['principal'])
+                            resultlist.append({'Name': siddata['principal'],
+                                               'Type': siddata['type'].capitalize()})
                     except KeyError:
                         # Append it to the list of unresolved SIDs
                         unresolved.append(sid_string)
@@ -502,7 +505,7 @@ class ADComputer(object):
         Resolve any remaining unknown SIDs for local accounts.
         """
         # If all sids were already cached, we can just return
-        if len(sids) == 0:
+        if sids is None or len(sids) == 0:
             return
         binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.addr
 

@@ -338,12 +338,14 @@ class AceResolver(object):
                         logging.warning('Could not resolve SID: %s', ace['sid'])
                         # Fake it
                         entry = {
-                            'type': 'Unknown'
+                            'type': 'Unknown',
+                            'principal': ace['sid']
                         }
                     else:
                         entry = ADUtils.resolve_ad_entry(ldapentry)
-                        # Cache it
-                        self.addomain.sidcache.put(ace['sid'], entry)
+                    # Entries are cached regardless of validity - unresolvable sids
+                    # are not likely to be resolved the second time and this saves traffic
+                    self.addomain.sidcache.put(ace['sid'], entry)
                 out['PrincipalSID'] = ace['sid']
                 out['PrincipalType'] = entry['type']
             aces_out.append(out)
