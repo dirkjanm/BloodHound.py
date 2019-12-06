@@ -173,9 +173,7 @@ class ADDC(ADComputer):
     def get_domain_controllers(self):
         entries = self.search('(userAccountControl:1.2.840.113556.1.4.803:=8192)',
                               ['dnshostname', 'samaccounttype', 'samaccountname',
-                               'serviceprincipalname'])
-
-        logging.info('Found %u domain controllers' % len(entries))
+                               'serviceprincipalname', 'objectSid'])
 
         return entries
 
@@ -330,6 +328,9 @@ class ADDC(ADComputer):
         self.get_forest_domains()
         self.get_computers(include_properties=props, acl=acls)
 
+    def get_root_domain(self):
+        return ADUtils.ldap2domain(self.ldap.server.info.other['configurationNamingContext'][0])
+
 
 """
 Active Directory data and cache
@@ -383,7 +384,6 @@ class AD(object):
             self.baseDN = ADUtils.domain2ldap(domain)
         else:
             self.baseDN = None
-
 
     def realm(self):
         if self.domain is not None:

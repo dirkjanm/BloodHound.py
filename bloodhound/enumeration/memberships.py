@@ -271,6 +271,8 @@ class MembershipEnumerator(object):
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
                 self.result_q.put(group)
 
+        self.write_default_groups()
+
         # If we are parsing ACLs, close the parsing pool first
         # then close the result queue and join it
         if acl and not self.disable_pooling:
@@ -289,6 +291,76 @@ class MembershipEnumerator(object):
         data['Aces'] = self.aceresolver.resolve_aces(aces)
         self.result_q.put(data)
         # logging.debug('returned stuff')
+
+    def write_default_groups(self):
+        # Put default groups in the file
+        # Domain controllers
+        rootdomain = self.addc.get_root_domain().upper()
+        entries = self.addc.get_domain_controllers()
+
+        group = {
+            "ObjectIdentifier": "%s-S-1-5-9" % rootdomain,
+            "Properties": {
+                "domain": rootdomain.upper(),
+                "name": "ENTERPRISE DOMAIN CONTROLLERS@%s" % rootdomain,
+            },
+            "Members": [],
+            "Aces": []
+        }
+        for entry in entries:
+            resolved_entry = ADUtils.resolve_ad_entry(entry)
+            memberdata = {
+                "MemberId": resolved_entry['objectid'],
+                "MemberType": resolved_entry['type'].capitalize()
+            }
+            group["Members"].append(memberdata)
+        self.result_q.put(group)
+
+        domainsid = self.addomain.domain_object.sid
+        domainname = self.addomain.domain.upper()
+
+        # Everyone
+        evgroup = {
+            "ObjectIdentifier": "%s-S-1-1-0" % domainname,
+            "Properties": {
+                "domain": domainname,
+                "name": "EVERYONE@%s" % domainname,
+            },
+            "Members": [
+                {
+                    "MemberId": "%s-515" % domainsid,
+                    "MemberType": "Group"
+                },
+                {
+                    "MemberId": "%s-513" % domainsid,
+                    "MemberType": "Group"
+                }
+            ],
+            "Aces": []
+        }
+        self.result_q.put(evgroup)
+
+        # Authenticated users
+        augroup = {
+            "ObjectIdentifier": "%s-S-1-5-11" % domainname,
+            "Properties": {
+                "domain": domainname,
+                "name": "AUTHENTICATED USERS@%s" % domainname,
+            },
+            "Members": [
+                {
+                    "MemberId": "%s-515" % domainsid,
+                    "MemberType": "Group"
+                },
+                {
+                    "MemberId": "%s-513" % domainsid,
+                    "MemberType": "Group"
+                }
+            ],
+            "Aces": []
+        }
+        self.result_q.put(augroup)
+
 
     def enumerate_memberships(self):
         self.enumerate_users()
