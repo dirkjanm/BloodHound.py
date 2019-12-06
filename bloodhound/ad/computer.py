@@ -56,13 +56,16 @@ class ADComputer(object):
 
     def get_bloodhound_data(self, entry, collect):
         data = {
-            'Name': self.hostname.upper(),
-            'PrimaryGroup': self.primarygroup,
+            'ObjectIdentifier': self.objectsid,
+            'PrimaryGroupSid': self.primarygroup,
             'LocalAdmins': self.admins,
+            'PSRemoteUsers': [],
             'Properties': {
-                'objectsid': self.objectsid,
+                'name': self.hostname.upper(),
+                'objectid': self.objectsid,
                 'domain': self.ad.domain.upper(),
-                'highvalue': False
+                'highvalue': False,
+                'distinguishedname': ADUtils.get_entry_property(entry, 'distinguishedName')
             },
             "RemoteDesktopUsers": self.rdp,
             "DcomUsers": self.dcom,
@@ -71,8 +74,8 @@ class ADComputer(object):
         props = data['Properties']
         # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
         props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
+        props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
         if 'objectprops' in collect:
-            props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
             props['lastlogon'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
             )
