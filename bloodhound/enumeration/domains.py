@@ -95,10 +95,13 @@ class DomainEnumerator(object):
             functional_level = 'Unknown'
 
         domain = {
-            "Name": self.addomain.domain.upper(),
+            "ObjectIdentifier": domain_object['attributes']['objectSid'],
             "Properties": {
+                "name": self.addomain.domain.upper(),
+                "domain": self.addomain.domain.upper(),
                 "highvalue": True,
-                "objectsid": domain_object['attributes']['objectSid'],
+                "objectid": domain_object['attributes']['objectSid'],
+                "distinguishedname": domain_object['attributes']['distinguishedName'],
                 "description": ADUtils.get_entry_property(domain_object, 'description'),
                 "functionallevel": functional_level
             },
