@@ -5,7 +5,7 @@
 
 BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/BloodHoundAD/BloodHound), based on [Impacket](https://github.com/CoreSecurity/impacket/).
 
-This version of BloodHound is **only compatiable with BloodHound 2.0 or newer**.
+This version of BloodHound.py is **only compatiable with BloodHound 3.0 or newer**.
 
 ## Limitations
 BloodHound.py currently has the following limitations:
@@ -30,6 +30,7 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *LocalAdmin* - Performs local admin collection
 - *RDP* - Performs Remote Desktop Users collection
 - *DCOM* - Performs Distributed COM Users collection
+- *DCOnly* - Runs all collection methods that can be queried from the DC only, no connection to member hosts/servers needed. This is equal to Group,Acl,Trusts,ObjectProps
 - *Session* - Performs session collection
 - *Acl* - Performs ACL collection
 - *Trusts* - Performs domain trust enumeration
