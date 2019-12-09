@@ -44,22 +44,7 @@ EXTRIGHTS_GUID_MAPPING = {
     "UserForceChangePassword": string_to_bin("00299570-246d-11d0-a768-00aa006e0529"),
 }
 
-"""
-objectClass mapping to GUID for some common classes (index is the ldapDisplayName).
-Reference:
-    https://msdn.microsoft.com/en-us/library/ms680938(v=vs.85).aspx
-Can also be queried from the Schema.
-This is included here instead of imported from impacket because of py2/py3 weirdness.
-"""
-OBJECTTYPE_GUID_MAP = {
-    'group': 'bf967a9c-0de6-11d0-a285-00aa003049e2',
-    'domain': '19195a5a-6da0-11d0-afd3-00c04fd930c9',
-    'organizationalUnit': 'bf967aa5-0de6-11d0-a285-00aa003049e2',
-    'user': 'bf967aba-0de6-11d0-a285-00aa003049e2',
-    'groupPolicyContainer': 'f30e3bc2-9ff0-11d1-b603-0000f80367c1'
-}
-
-def parse_binary_acl(entry, entrytype, acl):
+def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
     """
     Main ACL structure parse function.
     This is offloaded to subprocesses and takes the current entry and the
@@ -96,7 +81,7 @@ def parse_binary_acl(entry, entrytype, acl):
             if ace_object.has_flag(ACE.INHERITED_ACE) \
                 and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_INHERITED_OBJECT_TYPE_PRESENT):
                 # Verify if the ACE applies to this object type
-                if not ace_applies(ace_object.acedata.get_inherited_object_type().lower(), entrytype):
+                if not ace_applies(ace_object.acedata.get_inherited_object_type().lower(), entrytype, objecttype_guid_map):
                     continue
 
             mask = ace_object.acedata.mask
@@ -107,14 +92,19 @@ def parse_binary_acl(entry, entrytype, acl):
                 or mask.has_priv(ACCESS_MASK.WRITE_OWNER) or mask.has_priv(ACCESS_MASK.GENERIC_WRITE):
                 # For all generic rights we should check if it applies to our object type
                 if ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
-                    and not ace_applies(ace_object.acedata.get_object_type().lower(), entrytype):
+                    and not ace_applies(ace_object.acedata.get_object_type().lower(), entrytype, objecttype_guid_map):
                     # If it does not apply, break out of the loop here in order to
                     # avoid individual rights firing later on
                     continue
                 # Check from high to low, ignore lower privs which may also match the bitmask,
                 # even though this shouldn't happen since we check for exact matches currently
                 if mask.has_priv(ACCESS_MASK.GENERIC_ALL):
-                    relations.append(build_relation(sid, 'GenericAll', inherited=is_inherited))
+                    if entrytype == 'computer' and \
+                    ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
+                    ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                        relations.append(build_relation(sid, 'ExtendedRight', 'ReadLAPSPassword', inherited=is_inherited))
+                    else:
+                        relations.append(build_relation(sid, 'GenericAll', inherited=is_inherited))
                     continue
                 if mask.has_priv(ACCESS_MASK.GENERIC_WRITE):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
@@ -138,6 +128,13 @@ def parse_binary_acl(entry, entrytype, acl):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                 if entrytype == 'group' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteMember']):
                     relations.append(build_relation(sid, 'WriteProperty', 'AddMember', inherited=is_inherited))
+
+            # Property read privileges
+            if ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_READ_PROP):
+                if entrytype == 'computer' and \
+                ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
+                ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                    relations.append(build_relation(sid, 'ExtendedRight', 'ReadLAPSPassword'))
 
             # Extended rights
             control_access = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS)
@@ -219,17 +216,13 @@ def has_extended_right(ace_object, binrightguid):
         else:
             return False
 
-def ace_applies(ace_guid, object_class):
+def ace_applies(ace_guid, object_class, objecttype_guid_map):
     '''
     Checks if an ACE applies to this object (based on object classes).
     Note that this function assumes you already verified that InheritedObjectType is set (via the flag).
     If this is not set, the ACE applies to all object types.
     '''
-    try:
-        our_ace_guid = OBJECTTYPE_GUID_MAP[object_class]
-    except KeyError:
-        return False
-    if ace_guid == our_ace_guid:
+    if ace_guid == objecttype_guid_map[object_class]:
         return True
     # If none of these match, the ACE does not apply to this object
     return False
