@@ -33,6 +33,7 @@ from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.acls import AclEnumerator, parse_binary_acl
 from bloodhound.enumeration.outputworker import OutputWorker
+from future.utils import iteritems
 
 class MembershipEnumerator(object):
     """
@@ -324,7 +325,7 @@ class MembershipEnumerator(object):
             self.aclenumerator.init_pool()
 
         # This loops over a generator, results are fetched from LDAP on the go
-        for key, entry in entries.iteritems():
+        for key, entry in iteritems(entries):
             if not 'attributes' in entry:
                 continue
 
