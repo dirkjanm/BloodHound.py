@@ -173,10 +173,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_stuff(parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)))
+                    self.process_stuff(parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)), callback=self.process_stuff)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
@@ -262,10 +262,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_stuff(parse_binary_acl(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)))
+                    self.process_stuff(parse_binary_acl(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True)), callback=self.process_stuff)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
@@ -284,6 +284,68 @@ class MembershipEnumerator(object):
         self.result_q.join()
 
         logging.debug('Finished writing groups')
+
+    def enumerate_computers(self):
+        filename = 'computers.json'
+
+        acl = 'acl' in self.collect
+        # Already retrieve by prefetch_info()
+        #entries = self.addc.get_computers(include_properties=with_properties, acl=acl)
+        entries = self.addc.ad.computers
+
+        logging.debug('Writing computers ACL to file: %s', filename)
+
+        # Use a separate queue for processing the results
+        self.result_q = queue.Queue()
+        results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'computers', filename))
+        results_worker.daemon = True
+        results_worker.start()
+
+        if acl and not self.disable_pooling:
+            self.aclenumerator.init_pool()
+
+        # This loops over a generator, results are fetched from LDAP on the go
+        for key, entry in entries.iteritems():
+            resolved_entry = ADUtils.resolve_ad_entry(entry)
+            computer = {
+                "Name": resolved_entry['principal'],
+                "PrimaryGroup": self.get_primary_membership(entry),
+                "Properties": {
+                    "domain": self.addomain.domain.upper(),
+                    "objectsid": entry['attributes']['objectSid'],
+                    "highvalue": False,
+                    #"unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
+                    "unconstraineddelegation": False
+                },
+                "Aces": []
+            }
+
+            self.addomain.computers[entry['dn']] = resolved_entry
+            # If we are enumerating ACLs, we break out of the loop here
+            # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
+            if acl:
+                if self.disable_pooling:
+                    # Debug mode, don't run this pooled since it hides exceptions
+                    self.process_stuff(parse_binary_acl(computer, 'computer', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                else:
+                    # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(computer, 'computer', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
+            else:
+                # Write it to the queue -> write to file in separate thread
+                # this is solely for consistency with acl parsing, the performance improvement is probably minimal
+                self.result_q.put(computer)
+
+        # If we are parsing ACLs, close the parsing pool first
+        # then close the result queue and join it
+        if acl and not self.disable_pooling:
+            self.aclenumerator.pool.close()
+            self.aclenumerator.pool.join()
+            self.result_q.put(None)
+        else:
+            self.result_q.put(None)
+        self.result_q.join()
+
+        logging.debug('Finished writing computers')
 
     def process_stuff(self, result):
         data, aces = result
@@ -365,3 +427,8 @@ class MembershipEnumerator(object):
     def enumerate_memberships(self):
         self.enumerate_users()
         self.enumerate_groups()
+        if not ('localadmin' in self.collect
+                or 'session' in self.collect
+                or 'loggedon' in self.collect
+                or 'experimental' in self.collect):
+            self.enumerate_computers()

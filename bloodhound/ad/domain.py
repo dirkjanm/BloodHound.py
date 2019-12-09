@@ -25,8 +25,10 @@ from __future__ import unicode_literals
 import logging
 import traceback
 
+from uuid import UUID
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE
+from ldap3.utils.config import _ATTRIBUTES_EXCLUDED_FROM_CHECK
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult
 from ldap3.protocol.microsoft import security_descriptor_control
 # from impacket.krb5.kerberosv5 import KerberosError
@@ -188,6 +190,41 @@ class ADDC(ADComputer):
         return next(entries)
 
 
+    def get_schema(self):
+        """
+        Retrieve schema naming context.
+        """
+        _ATTRIBUTES_EXCLUDED_FROM_CHECK.append('schemaNamingContext') # XXX: Quick&Dirty
+
+        if self.ldap is None:
+            self.ldap_connect()
+
+        sresult = self.ldap.extend.standard.paged_search('',
+                                                         '(objectClass=top)',
+                                                         attributes=['schemaNamingContext'],
+                                                         search_scope=BASE,
+                                                         generator=False)
+
+        return sresult[0]['attributes']['schemaNamingContext'][0]
+
+
+    def get_objecttype(self):
+        """
+        Function to get objecttype GUID
+        """
+        self.objecttype_guid_map = dict()
+
+        schema_base = self.get_schema()
+
+        sresult = self.ldap.extend.standard.paged_search(schema_base,
+                                                         '(objectClass=*)',
+                                                         attributes=['name', 'schemaidguid'])
+        for res in sresult:
+            if res['attributes']['schemaIDGUID']:
+                guid = str(UUID(bytes_le=res['attributes']['schemaIDGUID']))
+                self.objecttype_guid_map[res['attributes']['name'].lower()] = guid
+
+
     def get_domains(self, acl=False):
         """
         Function to get domains. This should only return the current domain.
@@ -324,6 +361,8 @@ class ADDC(ADComputer):
         return entries
 
     def prefetch_info(self, props=False, acls=False):
+        if acls:
+            self.get_objecttype()
         self.get_domains(acl=acls)
         self.get_forest_domains()
         self.get_computers(include_properties=props, acl=acls)
