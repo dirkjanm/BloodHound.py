@@ -58,9 +58,10 @@ class ADComputer(object):
         if addc:
             self.aceresolver = AceResolver(ad, ad.objectresolver)
 
-    def get_bloodhound_data(self, entry, collect):
+    def get_bloodhound_data(self, entry, collect, skip_acl=False):
         data = {
             'ObjectIdentifier': self.objectsid,
+            'AllowedToAct': [],
             'PrimaryGroupSid': self.primarygroup,
             'LocalAdmins': self.admins,
             'PSRemoteUsers': [],
@@ -73,16 +74,18 @@ class ADComputer(object):
             },
             "RemoteDesktopUsers": self.rdp,
             "DcomUsers": self.dcom,
-            "AllowedToDelegate": []
+            "AllowedToDelegate": [],
+            "Sessions": [],
         }
         props = data['Properties']
         # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
         props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
         props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
+
+        if 'objectprops' in collect or 'acl' in collect:
+            props['haslaps'] = ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) != 0
+
         if 'objectprops' in collect:
-            props['lastlogon'] = ADUtils.win_timestamp_to_unix(
-                ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
-            )
             props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
             )
@@ -97,7 +100,8 @@ class ADComputer(object):
             if servicepack:
                 props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
             # TODO: AllowedToDelegate
-        if 'acl' in collect:
+
+        if 'acl' in collect and not skip_acl:
             _, aces = parse_binary_acl(data,
                                        'computer',
                                        ADUtils.get_entry_property(entry,

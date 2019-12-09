@@ -77,23 +77,38 @@ class ADDC(ADComputer):
         """
         if self.hostname in self.ad.gcs():
             # This server is a Global Catalog
-            server = self.hostname
+            initial_server = self.hostname
         else:
             # Pick the first GC server
             try:
-                server = self.ad.gcs()[0]
+                initial_server = self.ad.gcs()[0]
             except IndexError:
                 # TODO: implement fallback options for GC detection?
                 logging.error('Could not find a Global Catalog in this domain!'\
                               ' Resolving will be unreliable in forests with multiple domains')
                 return False
-        logging.info('Connecting to GC LDAP server: %s' % server)
-
-        # Convert the hostname to an IP, this prevents ldap3 from doing it
-        # which doesn't use our custom nameservers
-        q = self.ad.dnsresolver.query(server, tcp=self.ad.dns_tcp)
-        for r in q:
-            ip = r.address
+        try:
+            # Convert the hostname to an IP, this prevents ldap3 from doing it
+            # which doesn't use our custom nameservers
+            logging.info('Connecting to GC LDAP server: %s' % initial_server)
+            q = self.ad.dnsresolver.query(initial_server, tcp=self.ad.dns_tcp)
+            for r in q:
+                ip = r.address
+        except (resolver.NXDOMAIN, resolver.Timeout):
+            for server in self.ad.gcs():
+                # Skip the one we already tried
+                if server == initial_server:
+                    continue
+                try:
+                    # Convert the hostname to an IP, this prevents ldap3 from doing it
+                    # which doesn't use our custom nameservers
+                    logging.info('Connecting to GC LDAP server: %s' % server)
+                    q = self.ad.dnsresolver.query(server, tcp=self.ad.dns_tcp)
+                    for r in q:
+                        ip = r.address
+                        break
+                except (resolver.NXDOMAIN, resolver.Timeout):
+                    continue
 
         self.gcldap = self.ad.auth.getLDAPConnection(hostname=ip, gc=True,
                                                      baseDN=self.ad.baseDN, protocol=protocol)
@@ -323,10 +338,11 @@ class ADDC(ADComputer):
         properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
                       'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID']
         if include_properties:
-            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo',
+            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'ms-mcs-admpwdexpirationtime',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
         if acl:
-            properties.append('nTSecurityDescriptor')
+            # Also collect LAPS expiration time since this matters for reporting (no LAPS = no ACL reported)
+            properties += ['nTSecurityDescriptor', 'ms-mcs-admpwdexpirationtime']
         entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',
                               properties,
                               generator=True,

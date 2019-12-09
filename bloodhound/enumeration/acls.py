@@ -99,10 +99,12 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 # Check from high to low, ignore lower privs which may also match the bitmask,
                 # even though this shouldn't happen since we check for exact matches currently
                 if mask.has_priv(ACCESS_MASK.GENERIC_ALL):
+                    # Report this as LAPS rights if it's a computer object AND laps is enabled
                     if entrytype == 'computer' and \
                     ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
-                    ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
-                        relations.append(build_relation(sid, 'ExtendedRight', 'ReadLAPSPassword', inherited=is_inherited))
+                    ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd'] and \
+                    entry['Properties']['haslaps']:
+                        relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
                     else:
                         relations.append(build_relation(sid, 'GenericAll', inherited=is_inherited))
                     continue
@@ -110,7 +112,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                     # Don't skip this if it's the domain object, since BloodHound reports duplicate
                     # rights as well, and this might influence some queries
-                    if entrytype != 'domain':
+                    if entrytype != 'domain' and entrytype != 'computer':
                         continue
 
                 # These are specific bitmasks so don't break the loop from here
@@ -133,14 +135,15 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             if ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_READ_PROP):
                 if entrytype == 'computer' and \
                 ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
-                ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
-                    relations.append(build_relation(sid, 'ExtendedRight', 'ReadLAPSPassword'))
+                ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd'] and \
+                entry['Properties']['haslaps']:
+                    relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
 
             # Extended rights
             control_access = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS)
             if control_access:
                 # All Extended
-                if entrytype in ['user', 'domain'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
+                if entrytype in ['user', 'domain', 'computer'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'ExtendedRight', 'All', inherited=is_inherited))
                 if entrytype == 'domain' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['GetChanges']):
                     relations.append(build_relation(sid, 'ExtendedRight', 'GetChanges', inherited=is_inherited))

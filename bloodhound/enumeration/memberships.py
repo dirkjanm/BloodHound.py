@@ -30,6 +30,7 @@ import queue
 import threading
 from ldap3.core.exceptions import LDAPKeyError
 from bloodhound.ad.utils import ADUtils, AceResolver
+from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.acls import AclEnumerator, parse_binary_acl
 from bloodhound.enumeration.outputworker import OutputWorker
 
@@ -285,12 +286,14 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing groups')
 
-    def enumerate_computers(self):
+    def enumerate_computers_dconly(self):
+        '''
+        Enumerate computer objects. This function is only used if no
+        collection was requested that required connecting to computers anyway.
+        '''
         filename = 'computers.json'
 
         acl = 'acl' in self.collect
-        # Already retrieve by prefetch_info()
-        #entries = self.addc.get_computers(include_properties=with_properties, acl=acl)
         entries = self.addc.ad.computers
 
         logging.debug('Writing computers ACL to file: %s', filename)
@@ -306,21 +309,21 @@ class MembershipEnumerator(object):
 
         # This loops over a generator, results are fetched from LDAP on the go
         for key, entry in entries.iteritems():
-            resolved_entry = ADUtils.resolve_ad_entry(entry)
-            computer = {
-                "Name": resolved_entry['principal'],
-                "PrimaryGroup": self.get_primary_membership(entry),
-                "Properties": {
-                    "domain": self.addomain.domain.upper(),
-                    "objectsid": entry['attributes']['objectSid'],
-                    "highvalue": False,
-                    #"unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
-                    "unconstraineddelegation": False
-                },
-                "Aces": []
-            }
+            if not 'attributes' in entry:
+                continue
 
-            self.addomain.computers[entry['dn']] = resolved_entry
+            if 'dNSHostName' not in entry['attributes']:
+                continue
+
+            hostname = entry['attributes']['dNSHostName']
+            if not hostname:
+                continue
+            samname = entry['attributes']['sAMAccountName']
+
+            cobject = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, addc=self.addc, objectsid=entry['attributes']['objectSid'])
+            cobject.primarygroup = self.get_primary_membership(entry)
+            computer = cobject.get_bloodhound_data(entry, self.collect, skip_acl=True)
+
             # If we are enumerating ACLs, we break out of the loop here
             # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
             if acl:
@@ -431,4 +434,4 @@ class MembershipEnumerator(object):
                 or 'session' in self.collect
                 or 'loggedon' in self.collect
                 or 'experimental' in self.collect):
-            self.enumerate_computers()
+            self.enumerate_computers_dconly()
