@@ -191,6 +191,7 @@ class ADComputer(object):
             if self.smbconnection:
                 self.rpc.set_smb_connection(self.smbconnection)
             dce = self.rpc.get_dce_rpc()
+
             # Some interfaces require integrity (such as scheduled tasks)
             # others don't support it at all and error out.
             if integrity:
@@ -201,6 +202,12 @@ class ADComputer(object):
                 # We explicity set the smbconnection back to the rpc object
                 # this way it won't be closed when we call disconnect()
                 self.rpc.set_smb_connection(self.smbconnection)
+
+            # Hostname validation
+            authname = self.smbconnection.getServerName()
+            if authname.lower() != self.hostname.split('.')[0].lower():
+                logging.info('Ignoring host %s since its reported name %s does not match', self.hostname, authname)
+                return None
 
 # Implement encryption?
 #            dce.set_auth_level(NTLM_AUTH_PKT_PRIVACY)
