@@ -114,10 +114,12 @@ def resolve_collection_methods(methods):
     Convert methods (string) to list of validated methods to resolve
     """
     valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon',
-                     'objectprops', 'experimental', 'acl', 'dcom', 'rdp']
+                     'objectprops', 'experimental', 'acl', 'dcom', 'rdp', 'dconly']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
     # Similar to SharpHound, All is not really all, it excludes loggedon
     all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl', 'dcom', 'rdp']
+    # DC only, does not collect to computers
+    dconly_methods = ['group', 'trusts', 'objectprops', 'acl']
     if ',' in methods:
         method_list = [method.lower() for method in methods.split(',')]
         validated_methods = []
@@ -130,6 +132,8 @@ def resolve_collection_methods(methods):
                 validated_methods += default_methods
             elif method == 'all':
                 validated_methods += all_methods
+            elif method == 'dconly':
+                validated_methods += dconly_methods
             else:
                 validated_methods.append(method)
         return set(validated_methods)
@@ -142,6 +146,8 @@ def resolve_collection_methods(methods):
                 validated_methods += default_methods
             elif method == 'all':
                 validated_methods += all_methods
+            elif method == 'dconly':
+                validated_methods += dconly_methods
             else:
                 validated_methods.append(method)
             return set(validated_methods)
@@ -168,7 +174,8 @@ def main():
                         action='store',
                         default='Default',
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
-                             'Trusts, Default (all previous), LoggedOn, ObjectProps, ACL, All (all except LoggedOn). '
+                             'Trusts, Default (all previous), DCOnly (no computer connections), DCOM, RDP,'
+                             ' LoggedOn, ObjectProps, ACL, All (all except LoggedOn). '
                              'You can specify more than one by separating them with a comma. (default: Default)')
     parser.add_argument('-u',
                         '--username',
