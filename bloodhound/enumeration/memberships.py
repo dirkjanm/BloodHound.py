@@ -126,6 +126,9 @@ class MembershipEnumerator(object):
         props['description'] = ADUtils.get_entry_property(entry, 'description')
         props['userpassword'] = ADUtils.get_entry_property(entry, 'userPassword')
         props['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', 0) == 1
+        if len(ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])) > 0:
+            props['allowedtodelegate'] =  ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
+
 
     def enumerate_users(self):
         filename = 'users.json'
@@ -168,6 +171,19 @@ class MembershipEnumerator(object):
 
             if with_properties:
                 MembershipEnumerator.add_user_properties(user, entry)
+                if 'allowedtodelegate' in user['Properties']:
+                    for host in user['Properties']['allowedtodelegate']:
+                        try:
+                            target = host.split('/')[1]
+                        except IndexError:
+                            logging.warning('Invalid delegation target: %s', host)
+                            continue
+                        try:
+                            sid = self.addomain.computersidcache.get(target.lower())
+                            user['AllowedToDelegate'].append(sid)
+                        except KeyError:
+                            if '.' in target:
+                                user['AllowedToDelegate'].append(target.upper())
             self.addomain.users[entry['dn']] = resolved_entry
             # If we are enumerating ACLs, we break out of the loop here
             # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses

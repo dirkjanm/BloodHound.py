@@ -99,7 +99,23 @@ class ADComputer(object):
             servicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
             if servicepack:
                 props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
-            # TODO: AllowedToDelegate
+
+            delegatehosts = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
+            for host in delegatehosts:
+                try:
+                    target = host.split('/')[1]
+                except IndexError:
+                    logging.warning('Invalid delegation target: %s', host)
+                    continue
+                try:
+                    sid = self.ad.computersidcache.get(target.lower())
+                    data['AllowedToDelegate'].append(sid)
+                except KeyError:
+                    if '.' in target:
+                        data['AllowedToDelegate'].append(target.upper())
+            if len(delegatehosts) > 0:
+                props['allowedtodelegate'] = delegatehosts
+
 
         if 'acl' in collect and not skip_acl:
             _, aces = parse_binary_acl(data,
