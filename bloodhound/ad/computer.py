@@ -117,7 +117,21 @@ class ADComputer(object):
             if len(delegatehosts) > 0:
                 props['allowedtodelegate'] = delegatehosts
 
+            # Process resource-based constrained delegation
+            _, aces = parse_binary_acl(data,
+                                       'computer',
+                                       ADUtils.get_entry_property(entry,
+                                                                  'msDS-AllowedToActOnBehalfOfOtherIdentity',
+                                                                  raw=True),
+                                       self.addc.objecttype_guid_map)
+            outdata = self.aceresolver.resolve_aces(aces)
+            for delegated in outdata:
+                if delegated['RightName'] == 'Owner':
+                    continue
+                if delegated['RightName'] == 'GenericAll':
+                    data['AllowedToAct'].append({'MemberId': delegated['PrincipalSID'], 'MemberType': delegated['PrincipalType']})
 
+        # Run ACL collection if this was not already done centrally
         if 'acl' in collect and not skip_acl:
             _, aces = parse_binary_acl(data,
                                        'computer',

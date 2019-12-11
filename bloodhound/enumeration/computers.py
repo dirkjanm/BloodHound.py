@@ -162,6 +162,7 @@ class ComputerEnumerator(MembershipEnumerator):
                     try:
                         target = self.addomain.dnscache.get(ses['source'])
                     except KeyError:
+                        # TODO: also use discovery based on port 445 connections similar to sharphound
                         target = ADUtils.ip2host(ses['source'], self.addomain.dnsresolver, self.addomain.dns_tcp)
                         # Even if the result is the IP (aka could not resolve PTR) we still cache
                         # it since this result is unlikely to change during this run

@@ -338,7 +338,7 @@ class ADDC(ADComputer):
         properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
                       'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID']
         if include_properties:
-            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'ms-mcs-admpwdexpirationtime',
+            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'ms-mcs-admpwdexpirationtime', 'msDS-AllowedToActOnBehalfOfOtherIdentity',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
         if acl:
             # Also collect LAPS expiration time since this matters for reporting (no LAPS = no ACL reported)
