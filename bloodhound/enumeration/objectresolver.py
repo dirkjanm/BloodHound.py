@@ -58,7 +58,7 @@ class ObjectResolver(object):
             distinguishedname = self.addc.ldap_get_single(distinguishedname, use_gc=use_gc, use_resolver=True)
             return distinguishedname
 
-    def resolve_samname(self, samname):
+    def resolve_samname(self, samname, use_gc=True):
         """
         Resolve a SAM name in the GC. This can give multiple results.
         Returns a list of LDAP entries
@@ -70,11 +70,14 @@ class ObjectResolver(object):
                 if not self.addc.gc_connect():
                     # Error connecting, bail
                     return None
-            logging.debug('Querying GC for SAM Name %s', samname)
+            if use_gc:
+                logging.debug('Querying GC for SAM Name %s', samname)
+            else:
+                logging.debug('Querying LDAP for SAM Name %s', samname)
             entries = self.addc.search(search_base="",
                                        search_filter='(sAMAccountName=%s)' % safename,
-                                       use_gc=True,
-                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
+                                       use_gc=use_gc,
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid'])
             # This uses a generator, however we return a list
             for entry in entries:
                 out.append(entry)
@@ -96,7 +99,7 @@ class ObjectResolver(object):
             entries = self.addc.search(search_base="",
                                        search_filter='(&(objectClass=user)(userPrincipalName=%s))' % safename,
                                        use_gc=True,
-                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid'])
             for entry in entries:
                 # By definition this can be only one entry
                 return entry
@@ -140,27 +143,9 @@ class ObjectResolver(object):
         # If an error occurs, return
         if entries is None:
             return
-        if len(entries) > 1:
-            # Awww multiple matches, unsure which is the valid one, add them with different weights
+        if len(entries) > 0:
             for entry in entries:
-                domain = ADUtils.ldap2domain(entry['dn'])
-                principal = (u'%s@%s' % (entry['attributes']['sAMAccountName'], domain)).upper()
-                # This is consistent with SharpHound
-                if domain.lower() == self.addomain.domain.lower():
-                    weight = 1
-                else:
-                    weight = 2
-                output.append((principal, weight))
+                output.append(entry['attributes']['objectSid'])
         else:
-            if len(entries) == 0:
-                # This shouldn't even happen, but let's default to the current domain
-                principal = (u'%s@%s' % (samname, self.addomain.domain)).upper()
-                output.append((principal, 2))
-            else:
-                # One match, best case
-                entry = entries[0]
-                domain = ADUtils.ldap2domain(entry['dn'])
-                principal = (u'%s@%s' % (entry['attributes']['sAMAccountName'], domain)).upper()
-                output.append((principal, 2))
-
+            logging.warning('Failed to resolve SAM name %s in current forest', samname)
         return output

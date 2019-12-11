@@ -352,9 +352,7 @@ class ADDC(ADComputer):
         for entry in entries:
             entriesNum += 1
             self.ad.computers[entry['attributes']['distinguishedName']] = entry
-            # If we do properties too (= delegation), create an entry in hostname cache
-            if include_properties:
-                self.ad.computersidcache.put(entry['attributes']['dnshostname'].lower(), entry['attributes']['objectSid'])
+            self.ad.computersidcache.put(entry['attributes']['dnshostname'].lower(), entry['attributes']['objectSid'])
 
         logging.info('Found %u computers', entriesNum)
 

@@ -48,6 +48,7 @@ class ADComputer(object):
         self.rdp = []
         self.trusts = []
         self.services = []
+        self.sessions = []
         self.addr = None
         self.smbconnection = None
         # The SID of the local domain
@@ -75,7 +76,7 @@ class ADComputer(object):
             "RemoteDesktopUsers": self.rdp,
             "DcomUsers": self.dcom,
             "AllowedToDelegate": [],
-            "Sessions": [],
+            "Sessions": self.sessions,
         }
         props = data['Properties']
         # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
@@ -522,8 +523,8 @@ class ADComputer(object):
                             unresolved.append(sid_string)
                         else:
                             logging.debug('Sid is cached: %s', siddata['principal'])
-                            resultlist.append({'Name': siddata['principal'],
-                                               'Type': siddata['type'].capitalize()})
+                            resultlist.append({'MemberId': sid_string,
+                                               'MemberType': siddata['type'].capitalize()})
                     except KeyError:
                         # Append it to the list of unresolved SIDs
                         unresolved.append(sid_string)
@@ -601,8 +602,8 @@ class ADComputer(object):
                 if entry['Name'] != '':
                     resolved_entry = ADUtils.resolve_sid_entry(entry, domain)
                     logging.debug('Resolved SID to name: %s', resolved_entry['principal'])
-                    resultlist.append({'Name': resolved_entry['principal'],
-                                       'Type': resolved_entry['type'].capitalize()})
+                    resultlist.append({'MemberId': sid_string,
+                                       'MemberType': resolved_entry['type'].capitalize()})
                     # Add it to our cache
                     self.ad.sidcache.put(sid_string, resolved_entry)
                 else:

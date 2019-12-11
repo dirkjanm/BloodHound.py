@@ -29,12 +29,11 @@ import json
 
 class OutputWorker(object):
     @staticmethod
-    def write_worker(result_q, computers_filename, session_filename):
+    def write_worker(result_q, computers_filename):
         """
             Worker to write the results from the results_q to the given files.
         """
         computers_out = codecs.open(computers_filename, 'w', 'utf-8')
-        sessions_out = codecs.open(session_filename, 'w', 'utf-8')
 
         # If the logging level is DEBUG, we ident the objects
         if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
@@ -45,8 +44,6 @@ class OutputWorker(object):
         # Write start of the json file
         computers_out.write('{"computers":[')
         num_computers = 0
-        sessions_out.write('{"sessions":[')
-        num_sessions = 0
         while True:
             obj = result_q.get()
 
@@ -55,12 +52,7 @@ class OutputWorker(object):
                 break
 
             objtype, data = obj
-            if objtype == 'session':
-                if num_sessions != 0:
-                    sessions_out.write(',')
-                json.dump(data, sessions_out, indent=indent_level)
-                num_sessions += 1
-            elif objtype == 'computer':
+            if objtype == 'computer':
                 if num_computers != 0:
                     computers_out.write(',')
                 json.dump(data, computers_out, indent=indent_level)
@@ -74,8 +66,6 @@ class OutputWorker(object):
         # Write metadata manually
         computers_out.write('],"meta":{"type":"computers","count":%d, "version":3}}' % num_computers)
         computers_out.close()
-        sessions_out.write('],"meta":{"type":"sessions","count":%d, "version":3}}' % num_sessions)
-        sessions_out.close()
         result_q.task_done()
 
     @staticmethod

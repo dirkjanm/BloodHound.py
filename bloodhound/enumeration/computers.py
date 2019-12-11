@@ -64,7 +64,7 @@ class ComputerEnumerator(MembershipEnumerator):
         q = queue.Queue()
 
         result_q = queue.Queue()
-        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'computers.json', 'sessions.json'))
+        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'computers.json'))
         results_worker.daemon = True
         results_worker.start()
         logging.info('Starting computer enumeration with %d workers', num_workers)
@@ -136,27 +136,27 @@ class ComputerEnumerator(MembershipEnumerator):
                 c.rpc_close()
                 # c.rpc_get_domain_trusts()
 
-                results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
-
                 if sessions is None:
                     sessions = []
+
+                # Should we use the GC?
+                use_gc = self.addomain.num_domains > 1 and self.do_gc_lookup
 
                 # Process found sessions
                 for ses in sessions:
                     # For every session, resolve the SAM name in the GC if needed
                     domain = self.addomain.domain
-                    if self.addomain.num_domains > 1 and self.do_gc_lookup:
-                        try:
-                            users = self.addomain.samcache.get(samname)
-                        except KeyError:
-                            # Look up the SAM name in the GC
-                            users = self.addomain.objectresolver.gc_sam_lookup(ses['user'])
-                            if users is None:
-                                # Unknown user
-                                continue
-                            self.addomain.samcache.put(samname, users)
-                    else:
-                        users = [((u'%s@%s' % (ses['user'], domain)).upper(), 2)]
+                    try:
+                        users = self.addomain.samcache.get(samname)
+                    except KeyError:
+                        # Look up the SAM name in the GC
+                        entries = self.addomain.objectresolver.resolve_samname(ses['user'], use_gc=use_gc)
+                        if entries is not None:
+                            users = [user['attributes']['objectSid'] for user in entries]
+                        if entries is None or users is []:
+                            logging.warning('Failed to resolve SAM name %s in current forest', samname)
+                            continue
+                        self.addomain.samcache.put(samname, users)
 
                     # Resolve the IP to obtain the host the session is from
                     try:
@@ -172,52 +172,65 @@ class ComputerEnumerator(MembershipEnumerator):
                     if '.' not in target:
                         logging.debug('Resolved target does not look like an IP or domain. Assuming hostname: %s', target)
                         target = '%s.%s' % (target, domain)
+                    # Resolve target hostname
+                    try:
+                        hostsid = self.addomain.computersidcache.get(target.lower())
+                    except KeyError:
+                        logging.warning('Could not resolve hostname to SID: %s', target)
+                        continue
+
                     # Put the result on the results queue.
                     for user in users:
-                        results_q.put(('session', {'UserName': user[0].upper(),
-                                                   'ComputerName': target.upper(),
-                                                   'Weight': user[1]}))
+                        c.sessions.append({'ComputerId':hostsid, 'UserId':user})
                 if loggedon is None:
                     loggedon = []
 
                 # Put the logged on users on the queue too
-                for user in loggedon:
-                    results_q.put(('session', {'UserName': ('%s@%s' % user).upper(),
-                                               'ComputerName': hostname.upper(),
-                                               'Weight': 1}))
+                for user, userdomain in loggedon:
+                    # Construct fake UPN to cache this user
+                    fupn = '%s@%s' % (user.upper(), userdomain.upper())
+                    try:
+                        users = self.addomain.samcache.get(fupn)
+                    except KeyError:
+                        entries = self.addomain.objectresolver.resolve_samname(user, use_gc=use_gc)
+                        if entries is not None:
+                            if len(entries) > 1:
+                                for resolved_user in entries:
+                                    edn = ADUtils.get_entry_property(resolved_user, 'distinguishedName')
+                                    edom = ADUtils.ldap2domain(edn).lower()
+                                    if edom == userdomain.lower():
+                                        users = [resolved_user['attributes']['objectSid']]
+                                        break
+                                    else:
+                                        logging.debug('Skipping resolved user %s since domain does not match (%s != %s)', edn, edom, userdomain.lower())
+                            else:
+                                users = [resolved_user['attributes']['objectSid'] for resolved_user in entries]
+                        if entries is None or users is []:
+                            logging.warning('Failed to resolve SAM name %s in current forest', samname)
+                            continue
+                        self.addomain.samcache.put(fupn, users)
+                    for resultuser in users:
+                        c.sessions.append({'ComputerId':objectsid, 'UserId':resultuser})
 
                 # Process Tasks
                 for taskuser in tasks:
-                    try:
-                        user = self.addomain.sidcache.get(taskuser)
-                    except KeyError:
-                        # Resolve SID in GC
-                        userentry = self.addomain.objectresolver.resolve_sid(taskuser)
-                        # Resolve it to an entry and store in the cache
-                        user = ADUtils.resolve_ad_entry(userentry)
-                        self.addomain.sidcache.put(taskuser, user)
-                    logging.debug('Resolved TASK SID to username: %s', user['principal'])
-                    # Use sessions for now
-                    results_q.put(('session', {'UserName': user['principal'].upper(),
-                                               'ComputerName': hostname.upper(),
-                                               'Weight': 2}))
+                    c.sessions.append({'ComputerId':objectsid, 'UserId':taskuser})
 
                 # Process Services
                 for serviceuser in services:
-                    # Todo: use own cache
                     try:
                         user = self.addomain.sidcache.get(serviceuser)
                     except KeyError:
                         # Resolve UPN in GC
                         userentry = self.addomain.objectresolver.resolve_upn(serviceuser)
                         # Resolve it to an entry and store in the cache
-                        user = ADUtils.resolve_ad_entry(userentry)
-                        self.addomain.sidcache.put(serviceuser, user)
-                    logging.debug('Resolved Service UPN to username: %s', user['principal'])
-                    # Use sessions for now
-                    results_q.put(('session', {'UserName': user['principal'].upper(),
-                                               'ComputerName': hostname.upper(),
-                                               'Weight': 2}))
+                        self.addomain.sidcache.put(serviceuser, userentry['attributes']['objectSid'])
+                        user = userentry['attributes']['objectSid']
+                    logging.debug('Resolved Service UPN to SID: %s', user['objectsid'])
+                    c.sessions.append({'ComputerId':objectsid, 'UserId':user})
+
+                results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
+
 
             except DCERPCException:
                 logging.info(traceback.format_exc())
