@@ -154,6 +154,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
 
             # print(ace_object.acedata.sid)
         if ace_object.ace.AceType == 0x00:
+            is_inherited = ace_object.has_flag(ACE.INHERITED_ACE)
             mask = ace_object.acedata.mask
             # ACCESS_ALLOWED_ACE
             if mask.has_priv(ACCESS_MASK.GENERIC_ALL):
