@@ -1,0 +1,4 @@
+impacket==0.9.20
+ldap3==2.5.1
+dnspython==1.16.0
+bloodhound==0.7.0
