@@ -45,8 +45,6 @@ You can override some of the automatic detection options, such as the hostname o
 1.Build container 
 ```docker build -t bloodhound .```
 
-2.Create volume for data
-```docker volume create bloodhound-data```
+2.Run container
+```docker run -v ${PWD}:/bloodhound-data -it bloodhound```
 
-3.Run container
-```docker run --mount source=bloodhound-data,target=/bloodhound-data -it bloodhound```
