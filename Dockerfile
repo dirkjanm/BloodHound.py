@@ -27,11 +27,8 @@ RUN pip3 install --upgrade setuptools
 
 RUN mkdir /bloodhound-data
 WORKDIR /bloodhound-data
-# Move aquin files to container
 RUN pip3 install impacket 'ldap3==2.5.1' dnspython bloodhound
 
-# Set volumes
 VOLUME /bloodhound-data
-# Change workdir and user
 
 ENTRYPOINT /bin/bash
