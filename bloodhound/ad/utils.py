@@ -287,6 +287,17 @@ class ADUtils(object):
         return int((seconds - 116444736000000000) / 10000000)
 
     @staticmethod
+    def win_timestamp_to_string(seconds):
+        """
+        Convert Windows timestamp (100 ns since 1 Jan 1601) to
+        unix timestamp, then output it as bloodhound compatible string
+        """
+        seconds = ADUtils.win_timestamp_to_unix(seconds)
+        if seconds == 0:
+            return "Never"
+        return "TMSTMP-{}".format(seconds)
+
+    @staticmethod
     def parse_task_xml(xml):
         """
         Parse scheduled task XML and extract the user and logon type with

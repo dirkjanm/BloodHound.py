@@ -103,17 +103,17 @@ class MembershipEnumerator(object):
         # print entry
         # Is user enabled? Checked by seeing if the UAC flag 2 (ACCOUNT_DISABLED) is not set
         props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
-        props['lastlogon'] = ADUtils.win_timestamp_to_unix(
+        props['lastlogon'] = ADUtils.win_timestamp_to_string(
             ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
         )
         if props['lastlogon'] == 0:
             props['lastlogon'] = -1
-        props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
+        props['lastlogontimestamp'] = ADUtils.win_timestamp_to_string(
             ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
         )
         if props['lastlogontimestamp'] == 0:
             props['lastlogontimestamp'] = -1
-        props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
+        props['pwdlastset'] = ADUtils.win_timestamp_to_string(
             ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
         )
         props['dontreqpreauth'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00400000 == 0x00400000

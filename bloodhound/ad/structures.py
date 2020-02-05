@@ -44,7 +44,7 @@ class LDAP_SID(Structure):
     )
 
     def formatCanonical(self):
-        ans = 'S-%d-%d' % (self['Revision'], ord(self['IdentifierAuthority']['Value'][5]))
+        ans = 'S-%d-%d' % (self['Revision'], ord(self['IdentifierAuthority']['Value'][5:6]))
         for i in range(self['SubAuthorityCount']):
             ans += '-%d' % (unpack('<L', self['SubAuthority'][i*4:i*4+4])[0])
         return ans
