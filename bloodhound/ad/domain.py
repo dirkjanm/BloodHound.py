@@ -324,7 +324,7 @@ class ADDC(ADComputer):
         if include_properties:
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
-                           'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo']
+                           'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory']
         if acl:
             properties.append('nTSecurityDescriptor')
         entries = self.search('(&(objectCategory=person)(objectClass=user))',

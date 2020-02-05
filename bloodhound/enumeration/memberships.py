@@ -129,7 +129,7 @@ class MembershipEnumerator(object):
         props['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', 0) == 1
         if len(ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])) > 0:
             props['allowedtodelegate'] =  ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
-
+        props['sidhistory'] = ADUtils.get_entry_property(entry, 'sIDHistory', [])
 
     def enumerate_users(self):
         filename = 'users.json'
@@ -167,7 +167,8 @@ class MembershipEnumerator(object):
                     "passwordnotreqd": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00000020 == 0x00000020
                 },
                 "Aces": [],
-                "SPNTargets": []
+                "SPNTargets": [],
+                "HasSIDHistory": []
             }
 
             if with_properties:
@@ -185,6 +186,10 @@ class MembershipEnumerator(object):
                         except KeyError:
                             if '.' in target:
                                 user['AllowedToDelegate'].append(target.upper())
+                if len(user['Properties']['sidhistory']) > 0:
+                    for historysid in user['Properties']['sidhistory']:
+                        user['HasSIDHistory'].append(self.aceresolver.resolve_binary_sid(historysid))
+
             self.addomain.users[entry['dn']] = resolved_entry
             # If we are enumerating ACLs, we break out of the loop here
             # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses

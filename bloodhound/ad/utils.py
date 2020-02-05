@@ -318,7 +318,7 @@ class AceResolver(object):
     """
     This class resolves ACEs containing rights, acetype and a SID to Aces containing
     BloodHound principals, which can be outputted to json.
-    This is mostly a wrapper around the sid resolver calss
+    This is mostly a wrapper around the sid resolver calls
     """
     def __init__(self, addomain, resolver):
         self.addomain = addomain
@@ -361,6 +361,38 @@ class AceResolver(object):
                 out['PrincipalType'] = entry['type']
             aces_out.append(out)
         return aces_out
+
+    def resolve_binary_sid(self, bsid):
+        sid = LDAP_SID(bsid).formatCanonical()
+        out = {}
+        # Is it a well-known sid?
+        if sid in ADUtils.WELLKNOWN_SIDS:
+            out['ObjectID'] = u'%s-%s' % (self.addomain.domain.upper(), sid)
+            out['ObjectType'] = ADUtils.WELLKNOWN_SIDS[sid][1].capitalize()
+        else:
+            try:
+                entry = self.addomain.sidcache.get(sid)
+            except KeyError:
+                # Look it up instead
+                # Is this SID part of the current domain? If not, use GC
+                use_gc = not sid.startswith(self.addomain.domain_object.sid)
+                ldapentry = self.resolver.resolve_sid(sid, use_gc)
+                # Couldn't resolve...
+                if not ldapentry:
+                    logging.warning('Could not resolve SID: %s', sid)
+                    # Fake it
+                    entry = {
+                        'type': 'Unknown',
+                        'principal':sid
+                    }
+                else:
+                    entry = ADUtils.resolve_ad_entry(ldapentry)
+                # Entries are cached regardless of validity - unresolvable sids
+                # are not likely to be resolved the second time and this saves traffic
+                self.addomain.sidcache.put(sid, entry)
+            out['ObjectID'] = sid
+            out['ObjectType'] = entry['type']
+
 
 class DNSCache(object):
     """
