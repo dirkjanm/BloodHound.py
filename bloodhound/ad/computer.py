@@ -31,6 +31,13 @@ from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
 from impacket import smb3structs
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
+from impacket.smb3 import SMB3
+from impacket.smb import SMB
+# Try to import exceptions here, if this does not succeed, then impacket version is too old
+try:
+    HostnameValidationExceptions = (SMB3.HostnameValidationException, SMB.HostnameValidationException)
+except AttributeError:
+    HostnameValidationExceptions = ()
 
 class ADComputer(object):
     """
@@ -58,6 +65,8 @@ class ADComputer(object):
         self.primarygroup = None
         if addc:
             self.aceresolver = AceResolver(ad, ad.objectresolver)
+        # Did connecting to this host fail before?
+        self.permanentfailure = False
 
     def get_bloodhound_data(self, entry, collect, skip_acl=False):
         data = {
@@ -87,10 +96,10 @@ class ADComputer(object):
             props['haslaps'] = ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) != 0
 
         if 'objectprops' in collect:
-            props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
+            props['lastlogontimestamp'] = ADUtils.win_timestamp_to_string(
                 ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
             )
-            props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
+            props['pwdlastset'] = ADUtils.win_timestamp_to_string(
                 ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
             )
             props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
@@ -183,6 +192,9 @@ class ADComputer(object):
 
 
     def dce_rpc_connect(self, binding, uuid, integrity=False):
+        if self.permanentfailure:
+            logging.debug('Skipping connection because of previous failure')
+            return None
         logging.debug('DCE/RPC binding: %s', binding)
 
         try:
@@ -194,6 +206,10 @@ class ADComputer(object):
                                          lmhash=self.ad.auth.lm_hash,
                                          nthash=self.ad.auth.nt_hash,
                                          aesKey=self.ad.auth.aes_key)
+
+            # Use strict validation if possible
+            if hasattr(self.rpc, 'set_hostname_validation'):
+                self.rpc.set_hostname_validation(True, False, self.hostname)
 
             # TODO: check Kerberos support
             # if hasattr(self.rpc, 'set_kerberos'):
@@ -211,7 +227,15 @@ class ADComputer(object):
             # others don't support it at all and error out.
             if integrity:
                 dce.set_auth_level(RPC_C_AUTHN_LEVEL_PKT_INTEGRITY)
-            dce.connect()
+
+            # Try connecting, catch hostname validation
+            try:
+                dce.connect()
+            except HostnameValidationExceptions as exc:
+                logging.info('Ignoring host %s since its hostname does not match: %s', self.hostname, str(exc))
+                self.permanentfailure = True
+                return None
+
             if self.smbconnection is None:
                 self.smbconnection = self.rpc.get_smb_connection()
                 # We explicity set the smbconnection back to the rpc object
@@ -222,6 +246,7 @@ class ADComputer(object):
             authname = self.smbconnection.getServerName()
             if authname.lower() != self.hostname.split('.')[0].lower():
                 logging.info('Ignoring host %s since its reported name %s does not match', self.hostname, authname)
+                self.permanentfailure = True
                 return None
 
 # Implement encryption?
@@ -294,7 +319,6 @@ class ADComputer(object):
         dce = self.dce_rpc_connect(binding, srvs.MSRPC_UUID_SRVS)
 
         if dce is None:
-            logging.warning('Connection failed: %s', binding)
             return
 
         try:
@@ -354,7 +378,6 @@ class ADComputer(object):
         dce = self.dce_rpc_connect(binding, nrpc.MSRPC_UUID_NRPC)
 
         if dce is None:
-            logging.warning('Connection failed: %s', binding)
             return
 
         try:
@@ -383,7 +406,6 @@ class ADComputer(object):
         serviceusers = []
         dce = self.dce_rpc_connect(binding, scmr.MSRPC_UUID_SCMR)
         if dce is None:
-            logging.warning('Connection failed: %s', binding)
             return
         try:
             resp = scmr.hROpenSCManagerW(dce)
@@ -435,6 +457,8 @@ class ADComputer(object):
         binding = r'ncacn_np:%s[\PIPE\atsvc]' % self.addr
         try:
             dce = self.dce_rpc_connect(binding, tsch.MSRPC_UUID_TSCHS, True)
+            if dce is None:
+                return
             # Get root folder
             resp = tsch.hSchRpcEnumFolders(dce, '\\')
             for item in resp['pNames']:
@@ -487,7 +511,6 @@ class ADComputer(object):
         dce = self.dce_rpc_connect(binding, samr.MSRPC_UUID_SAMR)
 
         if dce is None:
-            logging.warning('Connection failed: %s', binding)
             return
 
         try:
@@ -571,7 +594,6 @@ class ADComputer(object):
         dce = self.dce_rpc_connect(binding, lsat.MSRPC_UUID_LSAT)
 
         if dce is None:
-            logging.warning('Connection failed')
             return
 
         try:
