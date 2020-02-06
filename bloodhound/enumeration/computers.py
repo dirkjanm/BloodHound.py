@@ -122,6 +122,9 @@ class ComputerEnumerator(MembershipEnumerator):
                 if 'dcom' in self.collect:
                     unresolved = c.rpc_get_group_members(562, c.dcom)
                     c.rpc_resolve_sids(unresolved, c.dcom)
+                if 'psremote' in self.collect:
+                    unresolved = c.rpc_get_group_members(580, c.psremote)
+                    c.rpc_resolve_sids(unresolved, c.psremote)
                 if 'loggedon' in self.collect:
                     loggedon = c.rpc_get_loggedon()
                 else:

@@ -53,6 +53,7 @@ class ADComputer(object):
         self.admins = []
         self.dcom = []
         self.rdp = []
+        self.psremote = []
         self.trusts = []
         self.services = []
         self.sessions = []
@@ -74,7 +75,7 @@ class ADComputer(object):
             'AllowedToAct': [],
             'PrimaryGroupSid': self.primarygroup,
             'LocalAdmins': self.admins,
-            'PSRemoteUsers': [],
+            'PSRemoteUsers': self.psremote,
             'Properties': {
                 'name': self.hostname.upper(),
                 'objectid': self.objectsid,

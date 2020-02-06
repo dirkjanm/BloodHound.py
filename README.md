@@ -28,6 +28,7 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *LocalAdmin* - Performs local admin collection
 - *RDP* - Performs Remote Desktop Users collection
 - *DCOM* - Performs Distributed COM Users collection
+- *PSRemote* - Performs Remote Management (PS Remoting) Users collection
 - *DCOnly* - Runs all collection methods that can be queried from the DC only, no connection to member hosts/servers needed. This is equal to Group,Acl,Trusts,ObjectProps
 - *Session* - Performs session collection
 - *Acl* - Performs ACL collection
