@@ -153,6 +153,9 @@ class MembershipEnumerator(object):
         # This loops over a generator, results are fetched from LDAP on the go
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
+            # Skip trust objects
+            if resolved_entry['type'] == 'trustaccount':
+                continue
             user = {
                 "AllowedToDelegate": [],
                 "ObjectIdentifier": ADUtils.get_entry_property(entry, 'objectSid'),
@@ -186,9 +189,16 @@ class MembershipEnumerator(object):
                         except KeyError:
                             if '.' in target:
                                 user['AllowedToDelegate'].append(target.upper())
+                # Parse SID history
                 if len(user['Properties']['sidhistory']) > 0:
                     for historysid in user['Properties']['sidhistory']:
                         user['HasSIDHistory'].append(self.aceresolver.resolve_binary_sid(historysid))
+
+            # If this is a GMSA, process it's ACL. We don't bother with threads/processes here
+            # since these accounts shouldn't be that common and neither should they have very complex
+            # DACLs which control who can read their password
+            if ADUtils.get_entry_property(entry, 'msDS-GroupMSAMembership', default=b'', raw=True) != b'':
+                self.parse_gmsa(user, entry)
 
             self.addomain.users[entry['dn']] = resolved_entry
             # If we are enumerating ACLs, we break out of the loop here
@@ -196,10 +206,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_stuff(parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                    self.process_acldata(parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(user, 'user', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
@@ -285,10 +295,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_stuff(parse_binary_acl(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                    self.process_acldata(parse_binary_acl(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(group, 'group', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
@@ -351,10 +361,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_stuff(parse_binary_acl(computer, 'computer', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                    self.process_acldata(parse_binary_acl(computer, 'computer', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(computer, 'computer', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_stuff)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(computer, 'computer', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
@@ -372,10 +382,19 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing computers')
 
-    def process_stuff(self, result):
+    def parse_gmsa(self, user, entry):
+        _, aces = parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'msDS-GroupMSAMembership', raw=True), self.addc.objecttype_guid_map)
+        processed_aces = self.aceresolver.resolve_aces(aces)
+        for ace in processed_aces:
+            if ace['RightName'] == 'Owner':
+                continue
+            ace['RightName'] = 'ReadGMSAPassword'
+            user['Aces'].append(ace)
+
+    def process_acldata(self, result):
         data, aces = result
         # Parse aces
-        data['Aces'] = self.aceresolver.resolve_aces(aces)
+        data['Aces'] += self.aceresolver.resolve_aces(aces)
         self.result_q.put(data)
         # logging.debug('returned stuff')
 

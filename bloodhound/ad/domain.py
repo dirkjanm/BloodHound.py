@@ -320,14 +320,14 @@ class ADDC(ADComputer):
     def get_users(self, include_properties=False, acl=False):
 
         properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType',
-                      'objectSid', 'primaryGroupID']
+                      'objectSid', 'primaryGroupID', 'msDS-GroupMSAMembership']
         if include_properties:
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
                            'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory']
         if acl:
             properties.append('nTSecurityDescriptor')
-        entries = self.search('(&(objectCategory=person)(objectClass=user))',
+        entries = self.search('(|(&(objectCategory=person)(objectClass=user))(objectClass=msDS-GroupManagedServiceAccount))',
                               properties,
                               generator=True,
                               query_sd=acl)
@@ -351,8 +351,8 @@ class ADDC(ADComputer):
         entriesNum = 0
         for entry in entries:
             entriesNum += 1
-            self.ad.computers[entry['attributes']['distinguishedName']] = entry
-            self.ad.computersidcache.put(entry['attributes']['dnshostname'].lower(), entry['attributes']['objectSid'])
+            self.ad.computers[ADUtils.get_entry_property(entry, 'distinguishedName', '')] = entry
+            self.ad.computersidcache.put(ADUtils.get_entry_property(entry, 'dNSHostname', '').lower(), entry['attributes']['objectSid'])
 
         logging.info('Found %u computers', entriesNum)
 

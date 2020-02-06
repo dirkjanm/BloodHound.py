@@ -216,6 +216,10 @@ class ADUtils(object):
             accountType = ADUtils.get_entry_property(entry, 'sAMAccountType')
             if accountType in [268435456, 268435457, 536870912, 536870913]:
                 resolved['type'] = 'Group'
+            elif ADUtils.get_entry_property(entry, 'msDS-GroupMSAMembership', default=b'', raw=True) != b'':
+                resolved['type'] = 'User'
+                short_name = account.rstrip('$')
+                resolved['principal'] = ('%s@%s' % (short_name, domain)).upper()
             elif accountType in [805306369]:
                 resolved['type'] = 'Computer'
                 short_name = account.rstrip('$')
