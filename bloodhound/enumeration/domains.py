@@ -123,8 +123,6 @@ class DomainEnumerator(object):
             num_entries = 0
             for entry in entries:
                 num_entries += 1
-                # TODO: self.addomain is currently only a single domain. In multi domain mode
-                # this might need to be updated
                 trust = ADDomainTrust(self.addomain.domain, entry['attributes']['name'], entry['attributes']['trustDirection'], entry['attributes']['trustType'], entry['attributes']['trustAttributes'], entry['attributes']['securityIdentifier'])
                 domain['Trusts'].append(trust.to_output())
 

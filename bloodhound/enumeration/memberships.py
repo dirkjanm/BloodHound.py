@@ -23,17 +23,12 @@
 ####################
 
 import logging
-import traceback
-import codecs
-import json
 import queue
 import threading
-from ldap3.core.exceptions import LDAPKeyError
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.acls import AclEnumerator, parse_binary_acl
 from bloodhound.enumeration.outputworker import OutputWorker
-from future.utils import iteritems
 
 class MembershipEnumerator(object):
     """
@@ -52,8 +47,12 @@ class MembershipEnumerator(object):
         self.disable_pooling = disable_pooling
         self.aclenumerator = AclEnumerator(addomain, addc, collect)
         self.aceresolver = AceResolver(addomain, addomain.objectresolver)
+        self.result_q = None
 
     def get_membership(self, member):
+        """
+        Attempt to resolve the membership (DN) of a group to an object
+        """
         # First assume it is a user
         try:
             resolved_entry = self.addomain.users[member]
@@ -71,7 +70,7 @@ class MembershipEnumerator(object):
                     use_gc = ADUtils.ldap2domain(member) != self.addomain.domain
                     qobject = self.addomain.objectresolver.resolve_distinguishedname(member, use_gc=use_gc)
                     if qobject is None:
-                        return
+                        return None
                     resolved_entry = ADUtils.resolve_ad_entry(qobject)
                     # Store it in the cache
                     if resolved_entry['type'] == 'user':
@@ -86,7 +85,8 @@ class MembershipEnumerator(object):
             "MemberType": resolved_entry['type'].capitalize()
         }
 
-    def get_primary_membership(self, entry):
+    @staticmethod
+    def get_primary_membership(entry):
         """
         Construct primary membership from RID to SID (BloodHound 3.0 only)
         """
@@ -94,11 +94,14 @@ class MembershipEnumerator(object):
             primarygroupid = int(entry['attributes']['primaryGroupID'])
         except (TypeError, KeyError):
             # Doesn't have a primarygroupid, means it is probably a Group instead of a user
-            return
+            return None
         return '%s-%d' % ('-'.join(entry['attributes']['objectSid'].split('-')[:-1]), primarygroupid)
 
     @staticmethod
     def add_user_properties(user, entry):
+        """
+        Resolve properties for user objects
+        """
         props = user['Properties']
         # print entry
         # Is user enabled? Checked by seeing if the UAC flag 2 (ACCOUNT_DISABLED) is not set
@@ -128,7 +131,7 @@ class MembershipEnumerator(object):
         props['userpassword'] = ADUtils.get_entry_property(entry, 'userPassword')
         props['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', 0) == 1
         if len(ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])) > 0:
-            props['allowedtodelegate'] =  ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
+            props['allowedtodelegate'] = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
         props['sidhistory'] = ADUtils.get_entry_property(entry, 'sIDHistory', [])
 
     def enumerate_users(self):
@@ -159,7 +162,7 @@ class MembershipEnumerator(object):
             user = {
                 "AllowedToDelegate": [],
                 "ObjectIdentifier": ADUtils.get_entry_property(entry, 'objectSid'),
-                "PrimaryGroupSid": self.get_primary_membership(entry),
+                "PrimaryGroupSid": MembershipEnumerator.get_primary_membership(entry),
                 "Properties": {
                     "name": resolved_entry['principal'],
                     "domain": self.addomain.domain.upper(),
@@ -245,7 +248,7 @@ class MembershipEnumerator(object):
         filename = 'groups.json'
         entries = self.addc.get_groups(include_properties=with_properties, acl=acl)
 
-        logging.debug('Writing groups to file: %s' % filename)
+        logging.debug('Writing groups to file: %s', filename)
 
         # Use a separate queue for processing the results
         self.result_q = queue.Queue()
@@ -263,7 +266,7 @@ class MembershipEnumerator(object):
                 sid = entry['attributes']['objectSid']
             except KeyError:
                 #Somehow we found a group without a sid?
-                logging.warning('Could not determine SID for group %s' % entry['attributes']['distinguishedName'])
+                logging.warning('Could not determine SID for group %s', entry['attributes']['distinguishedName'])
                 continue
             group = {
                 "ObjectIdentifier": sid,
@@ -339,8 +342,8 @@ class MembershipEnumerator(object):
         if acl and not self.disable_pooling:
             self.aclenumerator.init_pool()
 
-        # This loops over a generator, results are fetched from LDAP on the go
-        for key, entry in iteritems(entries):
+        # This loops over the cached entries
+        for entry in entries:
             if not 'attributes' in entry:
                 continue
 
@@ -353,7 +356,7 @@ class MembershipEnumerator(object):
             samname = entry['attributes']['sAMAccountName']
 
             cobject = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, addc=self.addc, objectsid=entry['attributes']['objectSid'])
-            cobject.primarygroup = self.get_primary_membership(entry)
+            cobject.primarygroup = MembershipEnumerator.get_primary_membership(entry)
             computer = cobject.get_bloodhound_data(entry, self.collect, skip_acl=True)
 
             # If we are enumerating ACLs, we break out of the loop here
@@ -383,6 +386,9 @@ class MembershipEnumerator(object):
         logging.debug('Finished writing computers')
 
     def parse_gmsa(self, user, entry):
+        """
+        Parse GMSA DACL which states which users can read the password
+        """
         _, aces = parse_binary_acl(user, 'user', ADUtils.get_entry_property(entry, 'msDS-GroupMSAMembership', raw=True), self.addc.objecttype_guid_map)
         processed_aces = self.aceresolver.resolve_aces(aces)
         for ace in processed_aces:
@@ -392,14 +398,19 @@ class MembershipEnumerator(object):
             user['Aces'].append(ace)
 
     def process_acldata(self, result):
+        """
+        Process ACLs that resulted from parsing with cstruct
+        """
         data, aces = result
         # Parse aces
         data['Aces'] += self.aceresolver.resolve_aces(aces)
         self.result_q.put(data)
-        # logging.debug('returned stuff')
 
     def write_default_groups(self):
-        # Put default groups in the file
+        """
+        Put default groups in the groups.json file
+        """
+
         # Domain controllers
         rootdomain = self.addc.get_root_domain().upper()
         entries = self.addc.get_domain_controllers()
@@ -469,6 +480,9 @@ class MembershipEnumerator(object):
 
 
     def enumerate_memberships(self):
+        """
+        Run appropriate enumeration tasks
+        """
         self.enumerate_users()
         self.enumerate_groups()
         if not ('localadmin' in self.collect

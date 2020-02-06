@@ -193,12 +193,10 @@ def can_write_property(ace_object, binproperty):
     if not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
         # No ObjectType present - we have generic access on all properties
         return True
-    else:
-        # Both are binary here
-        if ace_object.acedata.data.ObjectType == binproperty:
-            return True
-        else:
-            return False
+    # Both are binary here
+    if ace_object.acedata.data.ObjectType == binproperty:
+        return True
+    return False
 
 def has_extended_right(ace_object, binrightguid):
     '''
@@ -213,12 +211,10 @@ def has_extended_right(ace_object, binrightguid):
     if not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
         # No ObjectType present - we have all extended rights
         return True
-    else:
-        # Both are binary here
-        if ace_object.acedata.data.ObjectType == binrightguid:
-            return True
-        else:
-            return False
+    # Both are binary here
+    if ace_object.acedata.data.ObjectType == binrightguid:
+        return True
+    return False
 
 def ace_applies(ace_guid, object_class, objecttype_guid_map):
     '''

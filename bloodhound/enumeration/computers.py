@@ -61,7 +61,7 @@ class ComputerEnumerator(MembershipEnumerator):
             Enumerates the computers in the domain. Is threaded, you can specify the number of workers.
             Will spawn threads to resolve computers and enumerate the information.
         """
-        q = queue.Queue()
+        process_queue = queue.Queue()
 
         result_q = queue.Queue()
         results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'computers.json'))
@@ -71,9 +71,9 @@ class ComputerEnumerator(MembershipEnumerator):
         if len(computers) / num_workers > 500:
             logging.info('The workload seems to be rather large. Consider increasing the number of workers.')
         for _ in range(0, num_workers):
-            t = threading.Thread(target=self.work, args=(q,result_q))
-            t.daemon = True
-            t.start()
+            thread = threading.Thread(target=self.work, args=(process_queue, result_q))
+            thread.daemon = True
+            thread.start()
 
         for _, computer in iteritems(computers):
             if not 'attributes' in computer:
@@ -94,8 +94,8 @@ class ComputerEnumerator(MembershipEnumerator):
                 logging.info('Skipping computer: %s (not whitelisted)', hostname)
                 continue
 
-            q.put((hostname, samname, computer))
-        q.join()
+            process_queue.put((hostname, samname, computer))
+        process_queue.join()
         result_q.put(None)
         result_q.join()
 
@@ -153,7 +153,7 @@ class ComputerEnumerator(MembershipEnumerator):
                         entries = self.addomain.objectresolver.resolve_samname(ses['user'], use_gc=use_gc)
                         if entries is not None:
                             users = [user['attributes']['objectSid'] for user in entries]
-                        if entries is None or users is []:
+                        if entries is None or users == []:
                             logging.warning('Failed to resolve SAM name %s in current forest', samname)
                             continue
                         self.addomain.samcache.put(samname, users)
@@ -202,11 +202,10 @@ class ComputerEnumerator(MembershipEnumerator):
                                     if edom == userdomain.lower():
                                         users = [resolved_user['attributes']['objectSid']]
                                         break
-                                    else:
-                                        logging.debug('Skipping resolved user %s since domain does not match (%s != %s)', edn, edom, userdomain.lower())
+                                    logging.debug('Skipping resolved user %s since domain does not match (%s != %s)', edn, edom, userdomain.lower())
                             else:
                                 users = [resolved_user['attributes']['objectSid'] for resolved_user in entries]
-                        if entries is None or users is []:
+                        if entries is None or users == []:
                             logging.warning('Failed to resolve SAM name %s in current forest', samname)
                             continue
                         self.addomain.samcache.put(fupn, users)
@@ -235,7 +234,7 @@ class ComputerEnumerator(MembershipEnumerator):
 
             except DCERPCException:
                 logging.info(traceback.format_exc())
-                logging.warning('Querying computer failed: %s' % hostname)
+                logging.warning('Querying computer failed: %s', hostname)
             except Exception as e:
                 logging.error('Unhandled exception in computer %s processing: %s', hostname, str(e))
                 logging.info(traceback.format_exc())
@@ -247,15 +246,15 @@ class ComputerEnumerator(MembershipEnumerator):
                 logging.error('Unhandled exception in computer %s processing: %s', hostname, str(e))
                 logging.info(traceback.format_exc())
 
-    def work(self, q, results_q):
+    def work(self, process_queue, results_q):
         """
             Work function, will obtain work from the given queue and will push results on the results_q.
         """
         logging.debug('Start working')
 
         while True:
-            hostname, samname, entry = q.get()
+            hostname, samname, entry = process_queue.get()
             objectsid = entry['attributes']['objectSid']
             logging.info('Querying computer: %s', hostname)
             self.process_computer(hostname, samname, objectsid, entry, results_q)
-            q.task_done()
+            process_queue.task_done()
