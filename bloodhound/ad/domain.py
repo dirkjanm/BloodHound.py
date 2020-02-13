@@ -50,6 +50,8 @@ class ADDC(ADComputer):
         self.resolverldap = None
         # GC LDAP connection
         self.gcldap = None
+        # Initialize GUID map
+        self.objecttype_guid_map = None
 
     def ldap_connect(self, protocol='ldap', resolver=False):
         """
@@ -204,34 +206,16 @@ class ADDC(ADComputer):
             logging.warning('Could not determine NetBiosname of the domain: %s', str(e))
         return next(entries)
 
-
-    def get_schema(self):
-        """
-        Retrieve schema naming context.
-        """
-        _ATTRIBUTES_EXCLUDED_FROM_CHECK.append('schemaNamingContext') # XXX: Quick&Dirty
-
-        if self.ldap is None:
-            self.ldap_connect()
-
-        sresult = self.ldap.extend.standard.paged_search('',
-                                                         '(objectClass=top)',
-                                                         attributes=['schemaNamingContext'],
-                                                         search_scope=BASE,
-                                                         generator=False)
-
-        return sresult[0]['attributes']['schemaNamingContext'][0]
-
-
     def get_objecttype(self):
         """
         Function to get objecttype GUID
         """
         self.objecttype_guid_map = dict()
 
-        schema_base = self.get_schema()
+        if self.ldap is None:
+            self.ldap_connect()
 
-        sresult = self.ldap.extend.standard.paged_search(schema_base,
+        sresult = self.ldap.extend.standard.paged_search(self.ldap.server.info.other['schemaNamingContext'][0],
                                                          '(objectClass=*)',
                                                          attributes=['name', 'schemaidguid'])
         for res in sresult:
@@ -239,6 +223,11 @@ class ADDC(ADComputer):
                 guid = str(UUID(bytes_le=res['attributes']['schemaIDGUID']))
                 self.objecttype_guid_map[res['attributes']['name'].lower()] = guid
 
+        if 'ms-mcs-admpwdexpirationtime' in self.objecttype_guid_map:
+            logging.debug('Found LAPS attributes in schema')
+            self.ad.has_laps = True
+        else:
+            logging.debug('No LAPS attributes found in schema')
 
     def get_domains(self, acl=False):
         """
@@ -327,7 +316,14 @@ class ADDC(ADComputer):
                            'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory']
         if acl:
             properties.append('nTSecurityDescriptor')
-        entries = self.search('(|(&(objectCategory=person)(objectClass=user))(objectClass=msDS-GroupManagedServiceAccount))',
+
+        # Query for GMSA only if server supports it
+        if 'msDS-GroupManagedServiceAccount' in self.ldap.server.schema.object_classes:
+            query = '(|(&(objectCategory=person)(objectClass=user))(objectClass=msDS-GroupManagedServiceAccount))'
+        else:
+            logging.debug('No support for GMSA, skipping in query')
+            query = '(&(objectCategory=person)(objectClass=user))'
+        entries = self.search(query,
                               properties,
                               generator=True,
                               query_sd=acl)
@@ -338,11 +334,16 @@ class ADDC(ADComputer):
         properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
                       'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID']
         if include_properties:
-            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'ms-mcs-admpwdexpirationtime', 'msDS-AllowedToActOnBehalfOfOtherIdentity',
+            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'msDS-AllowedToActOnBehalfOfOtherIdentity',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
+            if self.ad.has_laps:
+                properties.append('ms-mcs-admpwdexpirationtime')
         if acl:
             # Also collect LAPS expiration time since this matters for reporting (no LAPS = no ACL reported)
-            properties += ['nTSecurityDescriptor', 'ms-mcs-admpwdexpirationtime']
+            if self.ad.has_laps:
+                properties += ['nTSecurityDescriptor', 'ms-mcs-admpwdexpirationtime']
+            else:
+                properties.append('nTSecurityDescriptor')
         entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',
                               properties,
                               generator=True,
@@ -437,7 +438,8 @@ class AD(object):
         self.objectresolver = None
         # Number of domains within the forest
         self.num_domains = 1
-
+        # Does the schema have laps properties
+        self.has_laps = False
         if domain is not None:
             self.baseDN = ADUtils.domain2ldap(domain)
         else:

@@ -114,7 +114,7 @@ class DomainEnumerator(object):
             "ChildOus": []
         }
 
-        if 'acl' in collect or True:
+        if 'acl' in collect:
             resolver = AceResolver(self.addomain, self.addomain.objectresolver)
             _, aces = parse_binary_acl(domain, 'domain', ADUtils.get_entry_property(domain_object, 'nTSecurityDescriptor'), self.addc.objecttype_guid_map)
             domain['Aces'] = resolver.resolve_aces(aces)
