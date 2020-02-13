@@ -102,9 +102,9 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     # Report this as LAPS rights if it's a computer object AND laps is enabled
                     if entrytype == 'computer' and \
                     ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
-                    ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd'] and \
                     entry['Properties']['haslaps']:
-                        relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
+                        if ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                            relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
                     else:
                         relations.append(build_relation(sid, 'GenericAll', inherited=is_inherited))
                     continue
@@ -135,9 +135,9 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             if ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_READ_PROP):
                 if entrytype == 'computer' and \
                 ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
-                ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd'] and \
                 entry['Properties']['haslaps']:
-                    relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
+                    if ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                        relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
 
             # Extended rights
             control_access = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS)
