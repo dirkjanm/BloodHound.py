@@ -100,8 +100,8 @@ class DomainEnumerator(object):
                 "name": self.addomain.domain.upper(),
                 "domain": self.addomain.domain.upper(),
                 "highvalue": True,
-                "objectid": domain_object['attributes']['objectSid'],
-                "distinguishedname": domain_object['attributes']['distinguishedName'],
+                "objectid": ADUtils.get_entry_property(domain_object, 'objectSid'),
+                "distinguishedname": ADUtils.get_entry_property(domain_object, 'distinguishedName'),
                 "description": ADUtils.get_entry_property(domain_object, 'description'),
                 "functionallevel": functional_level
             },
@@ -123,7 +123,7 @@ class DomainEnumerator(object):
             num_entries = 0
             for entry in entries:
                 num_entries += 1
-                trust = ADDomainTrust(self.addomain.domain, entry['attributes']['name'], entry['attributes']['trustDirection'], entry['attributes']['trustType'], entry['attributes']['trustAttributes'], entry['attributes']['securityIdentifier'])
+                trust = ADDomainTrust(ADUtils.get_entry_property(entry, 'name'), ADUtils.get_entry_property(entry, 'trustDirection'), ADUtils.get_entry_property(entry, 'trustType'), ADUtils.get_entry_property(entry, 'trustAttributes'), ADUtils.get_entry_property(entry, 'securityIdentifier'))
                 domain['Trusts'].append(trust.to_output())
 
             logging.info('Found %u trusts', num_entries)

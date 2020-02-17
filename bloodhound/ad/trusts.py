@@ -22,6 +22,7 @@
 #
 ####################
 from bloodhound.ad.structures import LDAP_SID
+import logging
 """
 Domain trust
 """
@@ -64,13 +65,17 @@ class ADDomainTrust(object):
         'Unknown':4
     }
 
-    def __init__(self, source, destination, direction, trust_type, flags, domainsid):
-        self.sourceDomain = source
+    def __init__(self, destination, direction, trust_type, flags, domainsid):
         self.destination_domain = destination
         self.direction = direction
         self.type = trust_type
         self.flags = flags
-        self.domainsid = LDAP_SID(domainsid).formatCanonical()
+        # Try catching empty SID
+        if domainsid:
+            self.domainsid = LDAP_SID(domainsid).formatCanonical()
+        else:
+            logging.debug('Domain %s has empty domain SID', self.destination_domain)
+            domainsid = ''
 
     def has_flag(self, flag):
         return self.flags & self.trust_flags[flag] == self.trust_flags[flag]
