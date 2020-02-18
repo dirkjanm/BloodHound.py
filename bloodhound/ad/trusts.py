@@ -75,7 +75,7 @@ class ADDomainTrust(object):
             self.domainsid = LDAP_SID(domainsid).formatCanonical()
         else:
             logging.debug('Domain %s has empty domain SID', self.destination_domain)
-            domainsid = ''
+            self.domainsid = ''
 
     def has_flag(self, flag):
         return self.flags & self.trust_flags[flag] == self.trust_flags[flag]
