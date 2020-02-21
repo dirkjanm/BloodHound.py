@@ -83,10 +83,11 @@ class ADComputer(object):
                 'highvalue': False,
                 'distinguishedname': ADUtils.get_entry_property(entry, 'distinguishedName')
             },
-            "RemoteDesktopUsers": self.rdp,
-            "DcomUsers": self.dcom,
-            "AllowedToDelegate": [],
-            "Sessions": self.sessions,
+            'RemoteDesktopUsers': self.rdp,
+            'DcomUsers': self.dcom,
+            'AllowedToDelegate': [],
+            'Sessions': self.sessions,
+            'Aces': []
         }
         props = data['Properties']
         # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
