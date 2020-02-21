@@ -98,10 +98,10 @@ class ADComputer(object):
             props['haslaps'] = ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) != 0
 
         if 'objectprops' in collect:
-            props['lastlogontimestamp'] = ADUtils.win_timestamp_to_string(
+            props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
             )
-            props['pwdlastset'] = ADUtils.win_timestamp_to_string(
+            props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
             )
             props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
