@@ -309,7 +309,9 @@ class ADDC(ADComputer):
     def get_users(self, include_properties=False, acl=False):
 
         properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType',
-                      'objectSid', 'primaryGroupID', 'msDS-GroupMSAMembership']
+                      'objectSid', 'primaryGroupID']
+        if 'msDS-GroupMSAMembership'.lower() in self.objecttype_guid_map:
+            properties.append('msDS-GroupMSAMembership')
         if include_properties:
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
@@ -334,8 +336,10 @@ class ADDC(ADComputer):
         properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
                       'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID']
         if include_properties:
-            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'msDS-AllowedToActOnBehalfOfOtherIdentity',
+            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
+            if 'msDS-AllowedToActOnBehalfOfOtherIdentity'.lower() in self.objecttype_guid_map:
+                properties.append('msDS-AllowedToActOnBehalfOfOtherIdentity')
             if self.ad.has_laps:
                 properties.append('ms-mcs-admpwdexpirationtime')
         if acl:

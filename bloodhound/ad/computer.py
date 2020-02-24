@@ -543,11 +543,16 @@ class ADComputer(object):
                                         desiredAccess=samr.DOMAIN_LOOKUP | MAXIMUM_ALLOWED,
                                         domainId=sid)
             domainHandle = resp['DomainHandle']
-
-            resp = samr.hSamrOpenAlias(dce,
-                                       domainHandle,
-                                       desiredAccess=samr.ALIAS_LIST_MEMBERS | MAXIMUM_ALLOWED,
-                                       aliasId=group_rid)
+            try:
+                resp = samr.hSamrOpenAlias(dce,
+                                           domainHandle,
+                                           desiredAccess=samr.ALIAS_LIST_MEMBERS | MAXIMUM_ALLOWED,
+                                           aliasId=group_rid)
+            except samr.DCERPCSessionError as error:
+                # Group does not exist
+                if 'STATUS_NO_SUCH_ALIAS' in str(error):
+                    logging.debug('No group with RID %d exists', group_rid)
+                    return
             resp = samr.hSamrGetMembersInAlias(dce,
                                                aliasHandle=resp['AliasHandle'])
             for member in resp['Members']['Sids']:
