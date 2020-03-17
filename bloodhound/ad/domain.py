@@ -51,7 +51,7 @@ class ADDC(ADComputer):
         # GC LDAP connection
         self.gcldap = None
         # Initialize GUID map
-        self.objecttype_guid_map = None
+        self.objecttype_guid_map = dict()
 
     def ldap_connect(self, protocol='ldap', resolver=False):
         """
@@ -383,8 +383,7 @@ class ADDC(ADComputer):
         return entries
 
     def prefetch_info(self, props=False, acls=False):
-        if acls:
-            self.get_objecttype()
+        self.get_objecttype()
         self.get_domains(acl=acls)
         self.get_forest_domains()
         self.get_computers(include_properties=props, acl=acls)
