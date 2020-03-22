@@ -73,12 +73,12 @@ class MembershipEnumerator(object):
                         return None
                     resolved_entry = ADUtils.resolve_ad_entry(qobject)
                     # Store it in the cache
-                    if resolved_entry['type'] == 'user':
+                    if resolved_entry['type'] == 'User':
                         self.addomain.users[member] = resolved_entry
-                    if resolved_entry['type'] == 'group':
+                    if resolved_entry['type'] == 'Group':
                         self.addomain.groups[member] = resolved_entry
                     # Computers are stored as raw entries
-                    if resolved_entry['type'] == 'computer':
+                    if resolved_entry['type'] == 'Computer':
                         self.addomain.computers[member] = qobject
         return {
             "MemberId": resolved_entry['objectid'],

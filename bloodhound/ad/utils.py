@@ -203,7 +203,7 @@ class ADUtils(object):
                     ename = entry['attributes']['name']
                     if ename in ADUtils.WELLKNOWN_SIDS:
                         name, sidtype = ADUtils.WELLKNOWN_SIDS[ename]
-                        resolved['type'] = sidtype.lower()
+                        resolved['type'] = sidtype.capitalize()
                         resolved['principal'] = ('%s@%s' % (name, domain)).upper()
                         # Well-known have the domain prefix since 3.0
                         resolved['objectid'] = '%s-%s' % (domain.upper(), resolved['objectid'])
@@ -385,7 +385,7 @@ class AceResolver(object):
                 self.addomain.sidcache.put(sid, entry)
             out['ObjectID'] = sid
             out['ObjectType'] = entry['type']
-
+        return out
 
 class DNSCache(object):
     """
