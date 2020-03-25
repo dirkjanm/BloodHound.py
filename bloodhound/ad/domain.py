@@ -29,7 +29,7 @@ from uuid import UUID
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE
 from ldap3.utils.config import _ATTRIBUTES_EXCLUDED_FROM_CHECK
-from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult
+from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError
 from ldap3.protocol.microsoft import security_descriptor_control
 # from impacket.krb5.kerberosv5 import KerberosError
 from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
@@ -121,7 +121,7 @@ class ADDC(ADComputer):
         Search for objects in LDAP or Global Catalog LDAP.
         """
         if self.ldap is None:
-            self.ldap_connect()
+            self.ldap_connect(resolver=use_resolver)
         if search_base is None:
             search_base = self.ad.baseDN
         if attributes is None or attributes == []:
@@ -161,6 +161,9 @@ class ADDC(ADComputer):
         except LDAPNoSuchObjectResult:
             # This may indicate the object doesn't exist or access is denied
             logging.warning('LDAP Server reported that the search in %s for %s does not exist.', search_base, search_filter)
+        except LDAPSocketReceiveError:
+            logging.warning('Connection to LDAP server lost. Will try to reconnect - data may be inaccurate')
+            self.ldap_connect(resolver=use_resolver)
 
     def ldap_get_single(self, qobject, attributes=None, use_gc=False, use_resolver=False):
         """
