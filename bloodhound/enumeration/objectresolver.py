@@ -66,11 +66,11 @@ class ObjectResolver(object):
         out = []
         safename = escape_filter_chars(samname)
         with self.lock:
-            if not self.addc.gcldap:
-                if not self.addc.gc_connect():
-                    # Error connecting, bail
-                    return None
             if use_gc:
+                if not self.addc.gcldap:
+                    if not self.addc.gc_connect():
+                        # Error connecting, bail
+                        return None
                 logging.debug('Querying GC for SAM Name %s', samname)
             else:
                 logging.debug('Querying LDAP for SAM Name %s', samname)

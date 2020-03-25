@@ -131,6 +131,11 @@ class ADDC(ADComputer):
             controls = security_descriptor_control(sdflags=0x05)
         else:
             controls = None
+
+        # If we don't query the GC, don't accept an empty search base
+        if search_base == "" and not use_gc:
+            search_base = self.ad.baseDN
+
         # Use the GC if this is requested
         if use_gc:
             searcher = self.gcldap
