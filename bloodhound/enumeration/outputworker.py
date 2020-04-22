@@ -55,7 +55,11 @@ class OutputWorker(object):
             if objtype == 'computer':
                 if num_computers != 0:
                     computers_out.write(',')
-                json.dump(data, computers_out, indent=indent_level)
+                try:
+                    json.dump(data, computers_out, indent=indent_level)
+                except TypeError:
+                    logging.error('Data error {0}, could not convert data to json'.format(repr(data)))
+                    computers_out.write('{}')
                 num_computers += 1
             else:
                 logging.warning("Type is %s this should not happen", objtype)
