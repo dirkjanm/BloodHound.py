@@ -355,8 +355,7 @@ class AceResolver(object):
             aces_out.append(out)
         return aces_out
 
-    def resolve_binary_sid(self, bsid):
-        sid = LDAP_SID(bsid).formatCanonical()
+    def resolve_sid(self, sid):
         out = {}
         # Is it a well-known sid?
         if sid in ADUtils.WELLKNOWN_SIDS:
