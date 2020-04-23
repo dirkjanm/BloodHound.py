@@ -42,9 +42,9 @@ Muliple collectionmethods should be separated by a comma, for example: `-c Group
 You can override some of the automatic detection options, such as the hostname of the primary Domain Controller if you want to use a different Domain Controller with `-dc`, or specify your own Global Catalog with `-gc`.
 
 ## Docker usage
-1.Build container 
-```docker build -t bloodhound .```
-2.Run container
-```docker run -v ${PWD}:/bloodhound-data -it bloodhound```
+1. Build container  
+```docker build -t bloodhound .```  
+2. Run container  
+```docker run -v ${PWD}:/bloodhound-data -it bloodhound```  
 After that you can run `bloodhound-python` inside container, all data will be stored in the path from where you start the container.
 
