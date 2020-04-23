@@ -27,6 +27,7 @@ import queue
 import threading
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.computer import ADComputer
+from bloodhound.ad.structures import LDAP_SID
 from bloodhound.enumeration.acls import AclEnumerator, parse_binary_acl
 from bloodhound.enumeration.outputworker import OutputWorker
 
@@ -133,7 +134,7 @@ class MembershipEnumerator(object):
         props['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', 0) == 1
         if len(ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])) > 0:
             props['allowedtodelegate'] = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
-        props['sidhistory'] = ADUtils.get_entry_property(entry, 'sIDHistory', [])
+        props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
 
     def enumerate_users(self):
         filename = 'users.json'
@@ -196,7 +197,7 @@ class MembershipEnumerator(object):
                 # Parse SID history
                 if len(user['Properties']['sidhistory']) > 0:
                     for historysid in user['Properties']['sidhistory']:
-                        user['HasSIDHistory'].append(self.aceresolver.resolve_binary_sid(historysid))
+                        user['HasSIDHistory'].append(self.aceresolver.resolve_sid(historysid))
 
             # If this is a GMSA, process it's ACL. We don't bother with threads/processes here
             # since these accounts shouldn't be that common and neither should they have very complex
@@ -330,7 +331,7 @@ class MembershipEnumerator(object):
         filename = 'computers.json'
 
         acl = 'acl' in self.collect
-        entries = self.addc.ad.computers
+        entries = self.addc.ad.computers.values()
 
         logging.debug('Writing computers ACL to file: %s', filename)
 
