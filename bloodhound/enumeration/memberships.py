@@ -331,7 +331,7 @@ class MembershipEnumerator(object):
         filename = 'computers.json'
 
         acl = 'acl' in self.collect
-        entries = self.addc.ad.computers
+        entries = self.addc.ad.computers.values()
 
         logging.debug('Writing computers ACL to file: %s', filename)
 
