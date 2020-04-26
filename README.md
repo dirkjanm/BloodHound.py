@@ -5,7 +5,7 @@
 
 BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/BloodHoundAD/BloodHound), based on [Impacket](https://github.com/CoreSecurity/impacket/).
 
-This version of BloodHound.py is **only compatiable with BloodHound 3.0 or newer**.
+This version of BloodHound.py is **only compatible with BloodHound 3.0 or newer**.
 
 ## Limitations
 BloodHound.py currently has the following limitations:
@@ -37,7 +37,7 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *ObjectProps* - Performs Object Properties collection for properties such as LastLogon or PwdLastSet
 - *All* - Runs all methods above, except LoggedOn
 
-Muliple collectionmethods should be separated by a comma, for example: `-c Group,LocalAdmin`
+Multiple collectionmethods should be separated by a comma, for example: `-c Group,LocalAdmin`
 
 You can override some of the automatic detection options, such as the hostname of the primary Domain Controller if you want to use a different Domain Controller with `-dc`, or specify your own Global Catalog with `-gc`.
 

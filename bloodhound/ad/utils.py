@@ -245,7 +245,7 @@ class ADUtils(object):
         resolved['principal'] = ('%s@%s' % (account, domain)).upper()
         resolved['type'] = ADUtils.translateSidType(entry['Use']).lower()
 
-        # Computer accoutns have a different type
+        # Computer accounts have a different type
         if resolved['type'] == 'computer':
             short_name = account.rstrip('$')
             resolved['principal'] = ('%s.%s' % (short_name, domain)).upper()
