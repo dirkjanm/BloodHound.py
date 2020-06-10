@@ -60,7 +60,7 @@ class ADAuthentication(object):
         else:
             ldappass = self.password
         ldaplogin = '%s\\%s' % (self.domain, self.username)
-        conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=30)
+        conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
 
         # TODO: Kerberos auth for ldap
         if self.kdc is not None:
