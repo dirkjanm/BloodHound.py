@@ -199,6 +199,10 @@ def main():
     parser.add_argument('--dns-tcp',
                         action='store_true',
                         help='Use TCP instead of UDP for DNS queries')
+    parser.add_argument('--dns-timeout',
+                        help='How many seconds to wait before timing out DNS queries (default: 3)',
+                        type=float,
+                        default=3.0)
     parser.add_argument('-d',
                         '--domain',
                         action='store',
@@ -252,7 +256,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp)
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout)
 
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)

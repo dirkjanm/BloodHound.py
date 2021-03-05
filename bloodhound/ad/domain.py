@@ -405,7 +405,7 @@ Active Directory data and cache
 """
 class AD(object):
 
-    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False):
+    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0):
         self.domain = domain
         # Object of type ADDomain, added later
         self.domain_object = None
@@ -431,11 +431,14 @@ class AD(object):
             self.dnsresolver.nameservers = [nameserver]
         # Resolve DNS over TCP?
         self.dns_tcp = dns_tcp
+        # Set DNS timeout
+        self.dns_timeout = dns_timeout
         # Give it a cache to prevent duplicate lookups
         self.dnsresolver.cache = resolver.Cache()
         # Default timeout after 3 seconds if the DNS servers
         # do not come up with an answer
-        self.dnsresolver.lifetime = 3.0
+        self.dnsresolver.lifetime = self.ad.dns_timeout 
+        self.dnsresolver.timeout = self.ad.dns_timeout 
         # Also create a custom cache for both forward and backward lookups
         # this cache is thread-safe
         self.dnscache = DNSCache()
