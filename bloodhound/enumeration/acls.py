@@ -126,7 +126,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             writeprivs = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP)
             if writeprivs:
                 # GenericWrite
-                if entrytype in ['user', 'group'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
+                if entrytype in ['user', 'group', 'computer'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                 if entrytype == 'group' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteMember']):
                     relations.append(build_relation(sid, 'WriteProperty', 'AddMember', inherited=is_inherited))
