@@ -199,6 +199,11 @@ def main():
     parser.add_argument('--dns-tcp',
                         action='store_true',
                         help='Use TCP instead of UDP for DNS queries')
+    parser.add_argument('--dns-timeout',
+                        action='store',
+                        type=int,
+                        default=3,
+                        help='DNS query timeout in seconds (default: 3)')
     parser.add_argument('-d',
                         '--domain',
                         action='store',
@@ -225,6 +230,9 @@ def main():
     parser.add_argument('--disable-pooling',
                         action='store_true',
                         help='Don\'t use subprocesses for ACL parsing (only for debugging purposes)')
+    parser.add_argument('--disable-autogc',
+                        action='store_true',
+                        help='Don\'t automatically select a Global Catalog (use only if it gives errors)')
 
     args = parser.parse_args()
 
@@ -252,7 +260,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp)
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout)
 
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)

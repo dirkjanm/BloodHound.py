@@ -85,7 +85,6 @@ class ADDC(ADComputer):
             try:
                 initial_server = self.ad.gcs()[0]
             except IndexError:
-                # TODO: implement fallback options for GC detection?
                 logging.error('Could not find a Global Catalog in this domain!'\
                               ' Resolving will be unreliable in forests with multiple domains')
                 return False
@@ -405,7 +404,7 @@ Active Directory data and cache
 """
 class AD(object):
 
-    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False):
+    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0):
         self.domain = domain
         # Object of type ADDomain, added later
         self.domain_object = None
@@ -435,7 +434,7 @@ class AD(object):
         self.dnsresolver.cache = resolver.Cache()
         # Default timeout after 3 seconds if the DNS servers
         # do not come up with an answer
-        self.dnsresolver.lifetime = 3.0
+        self.dnsresolver.lifetime = float(dns_timeout)
         # Also create a custom cache for both forward and backward lookups
         # this cache is thread-safe
         self.dnscache = DNSCache()
@@ -526,7 +525,12 @@ class AD(object):
         except resolver.NXDOMAIN:
             # Only show warning if we don't already have a GC specified manually
             if options and not options.global_catalog:
-                logging.warning('Could not find a global catalog server. Please specify one with -gc')
+                if not options.disable_autogc:
+                    logging.warning('Could not find a global catalog server, assuming the primary DC has this role\n'
+                                    'If this gives errors, either specify a hostname with -gc or disable gc resolution with --disable-autogc')
+                    self._gcs = self._dcs
+                else:
+                    logging.warning('Could not find a global catalog server. Please specify one with -gc')
 
         if kerberos is True:
             try:
