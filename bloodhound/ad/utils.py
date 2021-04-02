@@ -307,6 +307,17 @@ class ADUtils(object):
         logon_type = res.group(1)
         return (sid, logon_type)
 
+    @staticmethod
+    def ensure_string(data):
+        """
+        Sometimes properties can contain binary data. Since we can't assume encoding, make
+        sure it can be outputted as json
+        """
+        if isinstance(data, bytes):
+            data = repr(data)
+        return data
+
+
 class AceResolver(object):
     """
     This class resolves ACEs containing rights, acetype and a SID to Aces containing
