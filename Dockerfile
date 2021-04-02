@@ -26,6 +26,8 @@ RUN apk update && \
         dbus-dev \
         dbus-glib-dev \
         linux-headers \
+        rust \
+        cargo \
         make && \ 
 	apk add --no-cache bash && \
     pip3 install --upgrade setuptools && \
