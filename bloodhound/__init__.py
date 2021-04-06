@@ -236,7 +236,7 @@ def main():
                         help='Don\'t automatically select a Global Catalog (use only if it gives errors)')
     parser.add_argument('--zip',
                         action='store_true',
-                        help='Automatically zip json output')                     
+                        help='Compress the JSON output files into a zip archive')                     
 
     args = parser.parse_args()
 
@@ -290,7 +290,7 @@ def main():
                           args.global_catalog)
             sys.exit(1)
         ad.override_gc(args.global_catalog)
-    # For stamping the outputfiles and/or zip folder
+    # For adding timestamp prefix to the outputfiles 
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y%m%d%H%M%S') + "_"
     bloodhound = BloodHound(ad)
     bloodhound.connect()
@@ -300,9 +300,9 @@ def main():
                    timestamp=timestamp)
 
     if args.zip:
-        logging.info("Zipping files")
+        logging.info("Compressing output into " + timestamp + "bloodhound.zip")
         # Get a list of files in the current dir
-        list_of_files = os.listdir(os.getcwd()) #list of files in the current directory
+        list_of_files = os.listdir(os.getcwd())
         # Create handle to zip file with timestamp prefix
         with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
             # For each of those files we fetched
