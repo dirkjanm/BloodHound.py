@@ -56,7 +56,7 @@ class ComputerEnumerator(MembershipEnumerator):
         # Store collection methods specified
         self.collect = collect
 
-    def enumerate_computers(self, computers, num_workers=10):
+    def enumerate_computers(self, computers, num_workers=10, timestamp=""):
         """
             Enumerates the computers in the domain. Is threaded, you can specify the number of workers.
             Will spawn threads to resolve computers and enumerate the information.
@@ -64,7 +64,7 @@ class ComputerEnumerator(MembershipEnumerator):
         process_queue = queue.Queue()
 
         result_q = queue.Queue()
-        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, 'computers.json'))
+        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, timestamp + 'computers.json'))
         results_worker.daemon = True
         results_worker.start()
         logging.info('Starting computer enumeration with %d workers', num_workers)

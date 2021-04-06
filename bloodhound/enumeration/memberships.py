@@ -136,8 +136,8 @@ class MembershipEnumerator(object):
             props['allowedtodelegate'] = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
         props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
 
-    def enumerate_users(self):
-        filename = 'users.json'
+    def enumerate_users(self, timestamp=""):
+        filename = timestamp + 'users.json'
 
         # Should we include extra properties in the query?
         with_properties = 'objectprops' in self.collect
@@ -232,7 +232,7 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing users')
 
-    def enumerate_groups(self):
+    def enumerate_groups(self, timestamp=""):
 
         highvalue = ["S-1-5-32-544", "S-1-5-32-550", "S-1-5-32-549", "S-1-5-32-551", "S-1-5-32-548"]
 
@@ -247,7 +247,7 @@ class MembershipEnumerator(object):
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
 
-        filename = 'groups.json'
+        filename = timestamp + 'groups.json'
         entries = self.addc.get_groups(include_properties=with_properties, acl=acl)
 
         logging.debug('Writing groups to file: %s', filename)
@@ -323,12 +323,12 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing groups')
 
-    def enumerate_computers_dconly(self):
+    def enumerate_computers_dconly(self,timestamp =""):
         '''
         Enumerate computer objects. This function is only used if no
         collection was requested that required connecting to computers anyway.
         '''
-        filename = 'computers.json'
+        filename = timestamp + 'computers.json'
 
         acl = 'acl' in self.collect
         entries = self.addc.ad.computers.values()
@@ -481,14 +481,14 @@ class MembershipEnumerator(object):
         self.result_q.put(augroup)
 
 
-    def enumerate_memberships(self):
+    def enumerate_memberships(self, timestamp=""):
         """
         Run appropriate enumeration tasks
         """
-        self.enumerate_users()
-        self.enumerate_groups()
+        self.enumerate_users(timestamp)
+        self.enumerate_groups(timestamp)
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect
                 or 'experimental' in self.collect):
-            self.enumerate_computers_dconly()
+            self.enumerate_computers_dconly(timestamp)
