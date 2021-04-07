@@ -298,7 +298,7 @@ def main():
                    num_workers=args.workers,
                    disable_pooling=args.disable_pooling,
                    timestamp=timestamp)
-
+    #If args --zip is true
     if args.zip:
         logging.info("Compressing output into " + timestamp + "bloodhound.zip")
         # Get a list of files in the current dir
