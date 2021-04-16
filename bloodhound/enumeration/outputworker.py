@@ -27,12 +27,15 @@ import traceback
 import codecs
 import json
 
+
 class OutputWorker(object):
     @staticmethod
     def write_worker(result_q, computers_filename):
         """
             Worker to write the results from the results_q to the given files.
         """
+
+      
         computers_out = codecs.open(computers_filename, 'w', 'utf-8')
 
         # If the logging level is DEBUG, we ident the objects

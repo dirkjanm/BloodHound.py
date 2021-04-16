@@ -22,7 +22,8 @@
 #
 ####################
 
-import os, sys, logging, argparse, getpass, time, re
+import os, sys, logging, argparse, getpass, time, re, datetime
+from zipfile import ZipFile
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
@@ -65,14 +66,14 @@ class BloodHound(object):
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, collect, num_workers=10, disable_pooling=False):
+    def run(self, collect, num_workers=10, disable_pooling=False, timestamp = ""):
         start_time = time.time()
         if 'group' in collect or 'objectprops' in collect or 'acl' in collect:
             # Fetch domains/computers for later
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect)
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
-            membership_enum.enumerate_memberships()
+            membership_enum.enumerate_memberships(timestamp=timestamp)
         elif any(method in collect for method in ['localadmin', 'session', 'loggedon', 'experimental', 'rdp', 'dcom', 'psremote']):
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
@@ -82,12 +83,12 @@ class BloodHound(object):
             self.pdc.get_domains('acl' in collect)
         if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
             trusts_enum = DomainEnumerator(self.ad, self.pdc)
-            trusts_enum.dump_domain(collect)
+            trusts_enum.dump_domain(collect,timestamp=timestamp)
         if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
             computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc)
-            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers)
+            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp)
         end_time = time.time()
         minutes, seconds = divmod(int(end_time-start_time),60)
         logging.info('Done in %02dM %02dS' % (minutes, seconds))
@@ -233,6 +234,9 @@ def main():
     parser.add_argument('--disable-autogc',
                         action='store_true',
                         help='Don\'t automatically select a Global Catalog (use only if it gives errors)')
+    parser.add_argument('--zip',
+                        action='store_true',
+                        help='Compress the JSON output files into a zip archive')                     
 
     args = parser.parse_args()
 
@@ -286,12 +290,29 @@ def main():
                           args.global_catalog)
             sys.exit(1)
         ad.override_gc(args.global_catalog)
-
+    # For adding timestamp prefix to the outputfiles 
+    timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y%m%d%H%M%S') + "_"
     bloodhound = BloodHound(ad)
     bloodhound.connect()
     bloodhound.run(collect=collect,
                    num_workers=args.workers,
-                   disable_pooling=args.disable_pooling)
+                   disable_pooling=args.disable_pooling,
+                   timestamp=timestamp)
+    #If args --zip is true, the compress output  
+    if args.zip:
+        logging.info("Compressing output into " + timestamp + "bloodhound.zip")
+        # Get a list of files in the current dir
+        list_of_files = os.listdir(os.getcwd())
+        # Create handle to zip file with timestamp prefix
+        with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
+            # For each of those files we fetched
+            for each_file in list_of_files:
+                # If the files starts with the current timestamp and ends in json
+                if each_file.startswith(timestamp) and each_file.endswith("json"):
+                    # Write it to the zip
+                    zip.write(each_file)
+                    # Remove it from disk
+                    os.remove(each_file)
 
 
 if __name__ == '__main__':
