@@ -317,7 +317,7 @@ class ADDC(ADComputer):
 
         properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType',
                       'objectSid', 'primaryGroupID']
-        if 'msDS-GroupMSAMembership'.lower() in self.objecttype_guid_map:
+        if 'ms-DS-GroupMSAMembership'.lower() in self.objecttype_guid_map:
             properties.append('msDS-GroupMSAMembership')
         if include_properties:
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
