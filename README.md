@@ -14,7 +14,7 @@ BloodHound.py currently has the following limitations:
 
 ## Installation and usage
 You can install the ingestor via pip with `pip install bloodhound`, or by cloning this repository and running `python setup.py install`, or with `pip install .`.
-BloodHound.py requires `impacket`, `ldap3` and `dnspython` to function. To use it with python 3.x, use the latest `impacket` from GitHub.
+BloodHound.py requires `impacket`, `ldap3` and `dnspython` to function.
 
 The installation will add a command line tool `bloodhound-python` to your PATH.
 
