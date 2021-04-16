@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='bloodhound',
-      version='1.0.5',
+      version='1.1.0',
       description='Python based ingestor for BloodHound',
       author='Dirk-jan Mollema, Edwin van Vliet, Matthijs Gielen',
       author_email='dirkjan.mollema@fox-it.com, edwin.vanvliet@fox-it.com, matthijs.gielen@fox-it.com',
@@ -21,7 +21,8 @@ setup(name='bloodhound',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7'
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
       ],
       entry_points= {
         'console_scripts': ['bloodhound-python=bloodhound:main']
