@@ -408,7 +408,7 @@ class ADComputer(object):
         serviceusers = []
         dce = self.dce_rpc_connect(binding, scmr.MSRPC_UUID_SCMR)
         if dce is None:
-            return
+            return serviceusers
         try:
             resp = scmr.hROpenSCManagerW(dce)
             scManagerHandle = resp['lpScHandle']
@@ -460,7 +460,7 @@ class ADComputer(object):
         try:
             dce = self.dce_rpc_connect(binding, tsch.MSRPC_UUID_TSCHS, True)
             if dce is None:
-                return
+                return schtaskusers
             # Get root folder
             resp = tsch.hSchRpcEnumFolders(dce, '\\')
             for item in resp['pNames']:

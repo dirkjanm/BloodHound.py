@@ -229,7 +229,7 @@ class ComputerEnumerator(MembershipEnumerator):
                         # Resolve it to an entry and store in the cache
                         self.addomain.sidcache.put(serviceuser, userentry['attributes']['objectSid'])
                         user = userentry['attributes']['objectSid']
-                    logging.debug('Resolved Service UPN to SID: %s', user['objectsid'])
+                    logging.debug('Resolved Service UPN to SID: %s', user)
                     c.sessions.append({'ComputerId':objectsid, 'UserId':user})
 
                 results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
