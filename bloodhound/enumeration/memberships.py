@@ -130,7 +130,7 @@ class MembershipEnumerator(object):
         props['title'] = ADUtils.get_entry_property(entry, 'title')
         props['homedirectory'] = ADUtils.get_entry_property(entry, 'homeDirectory')
         props['description'] = ADUtils.get_entry_property(entry, 'description')
-        props['userpassword'] = ADUtils.get_entry_property(entry, 'userPassword')
+        props['userpassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'userPassword'))
         props['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', 0) == 1
         if len(ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])) > 0:
             props['allowedtodelegate'] = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
