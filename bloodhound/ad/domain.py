@@ -41,7 +41,7 @@ from future.utils import itervalues, iteritems, native_str
 Active Directory Domain Controller
 """
 class ADDC(ADComputer):
-    def __init__(self, hostname=None, ad=None):
+    def __init__(self, hostname=None, ad=None, override_ip=None):
         ADComputer.__init__(self, hostname)
         self.ad = ad
         # Primary LDAP connection
@@ -52,6 +52,8 @@ class ADDC(ADComputer):
         self.gcldap = None
         # Initialize GUID map
         self.objecttype_guid_map = dict()
+        # override which IP gets chosen
+        self.dc_ipaddress = override_ip
 
     def ldap_connect(self, protocol='ldap', resolver=False):
         """
@@ -62,8 +64,27 @@ class ADDC(ADComputer):
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
         q = self.ad.dnsresolver.query(self.hostname, tcp=self.ad.dns_tcp)
-        for r in q:
-            ip = r.address
+
+        # if an overrided DC IP address was provided
+        if self.dc_ipaddress:
+
+            # checking if in results from dns resolution
+            in_results = False
+            results = []
+            for r in q:
+                results.append(r.address)
+                if r.address == self.dc_ipaddress:
+                    in_results = True
+            if not in_results:
+                logging.warning('Your Domain Controllers override IP address appears to not be resolved for the primary DC. results are:')
+                logging.warning(' '.join(results))
+
+            # still let user assign, since it was an override
+            ip = self.dc_ipaddress
+        else:
+            # normal logic without an overriding DC IP address
+            for r in q:
+                ip = r.address
 
         ldap = self.ad.auth.getLDAPConnection(hostname=ip,
                                               baseDN=self.ad.baseDN, protocol=protocol)
