@@ -345,7 +345,7 @@ class ADDC(ADComputer):
         if include_properties:
             properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
-            if 'msDS-AllowedToActOnBehalfOfOtherIdentity'.lower() in self.objecttype_guid_map:
+            if 'ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity'.lower() in self.objecttype_guid_map:
                 properties.append('msDS-AllowedToActOnBehalfOfOtherIdentity')
             if self.ad.has_laps:
                 properties.append('ms-mcs-admpwdexpirationtime')
