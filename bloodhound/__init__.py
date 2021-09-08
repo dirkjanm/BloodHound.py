@@ -246,7 +246,8 @@ def main():
     if args.kerberos is True:
         logging.debug('Authentication: kerberos')
         kerberize()
-        auth = ADAuthentication()
+        # The username is optional for kerberos but may be requird to specify the client principal
+        auth = ADAuthentication(username=args.username, domain=args.domain) 
     elif args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)

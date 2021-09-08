@@ -23,7 +23,7 @@
 ####################
 
 import logging
-from ldap3 import Server, Connection, NTLM, ALL
+from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
 
 """
@@ -42,46 +42,41 @@ class ADAuthentication(object):
         self.aes_key = aes_key
         self.kdc = kdc
 
-
-    def getLDAPConnection(self, hostname='', baseDN='', protocol='ldaps', gc=False):
+    
+    def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
         if gc:
             # Global Catalog connection
             if protocol == 'ldaps':
                 # Ldap SSL
-                server = Server("%s://%s:3269" % (protocol, hostname), get_info=ALL)
+                server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
             else:
                 # Plain LDAP
-                server = Server("%s://%s:3268" % (protocol, hostname), get_info=ALL)
+                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
         else:
-            server = Server("%s://%s" % (protocol, hostname), get_info=ALL)
-        # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
-        if self.nt_hash != '':
-            ldappass = self.lm_hash + ':' + self.nt_hash
+            server = Server("%s://%s" % (protocol, ip), get_info=ALL)
+        if  self.kdc is None:
+            # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
+            if self.nt_hash != '':
+                ldappass = self.lm_hash + ':' + self.nt_hash
+            else:
+                ldappass = self.password
+            ldaplogin = '%s\\%s' % (self.domain, self.username)
+            conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
         else:
-            ldappass = self.password
-        ldaplogin = '%s\\%s' % (self.domain, self.username)
-        conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
-
-        # TODO: Kerberos auth for ldap
-        if self.kdc is not None:
-            logging.error('Kerberos login is not yet supported!')
-            # try:
-            #     logging.debug('Authenticating to LDAP server using Kerberos')
-            #     conn.kerberosLogin(self.username, self.password, self.domain,
-            #                        self.lm_hash, self.nt_hash, self.aes_key,
-            #                        self.kdc)
-            # except KerberosError as e:
-            #     logging.warning('Kerberos login failed: %s' % e)
-            #     return None
-        else:
-            logging.debug('Authenticating to LDAP server')
-            if not conn.bind():
-                result = conn.result
-                if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
-                    logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
-                                    'Trying to connect over LDAPS instead...')
-                    return self.getLDAPConnection(hostname, baseDN, 'ldaps')
-                else:
-                    logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
-                    return None
+            logging.debug('Using Kerberos to authenticate to LDAP server')
+            # optional user princial to select the correct ticket
+            user_principal = self.username if self.username is not None and len(self.username) > 0 else None
+            # we have to use the sasl_credentials to pass the hostname to GSSAPI because server only contains the ip
+            server_name = hostname.upper().split(".%s" % self.domain.upper())[0]
+            conn = Connection(server, user=user_principal, authentication=SASL, sasl_mechanism=KERBEROS, sasl_credentials=(server_name,))
+        logging.debug('Authenticating to LDAP server')
+        if not conn.bind():
+            result = conn.result
+            if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
+                logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
+                                'Trying to connect over LDAPS instead...')
+                return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
+            else:
+                logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
+                return None
         return conn

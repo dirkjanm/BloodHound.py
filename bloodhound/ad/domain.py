@@ -31,7 +31,6 @@ from ldap3 import ALL_ATTRIBUTES, BASE
 from ldap3.utils.config import _ATTRIBUTES_EXCLUDED_FROM_CHECK
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError
 from ldap3.protocol.microsoft import security_descriptor_control
-# from impacket.krb5.kerberosv5 import KerberosError
 from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
@@ -65,7 +64,7 @@ class ADDC(ADComputer):
         for r in q:
             ip = r.address
 
-        ldap = self.ad.auth.getLDAPConnection(hostname=ip,
+        ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip,
                                               baseDN=self.ad.baseDN, protocol=protocol)
         if resolver:
             self.resolverldap = ldap
@@ -88,6 +87,7 @@ class ADDC(ADComputer):
                 logging.error('Could not find a Global Catalog in this domain!'\
                               ' Resolving will be unreliable in forests with multiple domains')
                 return False
+        ldap_hostname = inital_server
         try:
             # Convert the hostname to an IP, this prevents ldap3 from doing it
             # which doesn't use our custom nameservers
@@ -107,11 +107,12 @@ class ADDC(ADComputer):
                     q = self.ad.dnsresolver.query(server, tcp=self.ad.dns_tcp)
                     for r in q:
                         ip = r.address
+                        ldap_hostname = server
                         break
                 except (resolver.NXDOMAIN, resolver.Timeout):
                     continue
 
-        self.gcldap = self.ad.auth.getLDAPConnection(hostname=ip, gc=True,
+        self.gcldap = self.ad.auth.getLDAPConnection(hostname=ldap_hostname, ip=ip, gc=True,
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
@@ -534,7 +535,7 @@ class AD(object):
 
         if kerberos is True:
             try:
-                q = self.dnsresolver.query('_kerberos._tcp.dc._msdcs', 'SRV', tcp=self.dns_tcp)
+                q = self.dnsresolver.query('_kerberos._tcp.dc._msdcs.%s' % self.domain, 'SRV', tcp=self.dns_tcp)
                 for r in q:
                     kdc = str(r.target).rstrip('.')
                     logging.debug('Found KDC: %s' % str(r.target).rstrip('.'))
