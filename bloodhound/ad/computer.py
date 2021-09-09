@@ -69,6 +69,14 @@ class ADComputer(object):
         # Did connecting to this host fail before?
         self.permanentfailure = False
 
+    @property
+    def rpc_binding_target(self):
+        # if connecting via Kerberos we cannot bypass the dns resolution by passing an ip to the RPC call 
+        # we have to request a binding for the hostname so it matches the SPN
+        if self.ad.auth.kdc is not None:
+            return self.hostname 
+        return self.addr
+
     def get_bloodhound_data(self, entry, collect, skip_acl=False):
         data = {
             'ObjectIdentifier': self.objectsid,
@@ -192,7 +200,6 @@ class ADComputer(object):
             return False
         return True
 
-
     def dce_rpc_connect(self, binding, uuid, integrity=False):
         if self.permanentfailure:
             logging.debug('Skipping connection because of previous failure')
@@ -213,9 +220,10 @@ class ADComputer(object):
             if hasattr(self.rpc, 'set_hostname_validation'):
                 self.rpc.set_hostname_validation(True, False, self.hostname)
 
-            # TODO: check Kerberos support
-            # if hasattr(self.rpc, 'set_kerberos'):
-                # self.rpc.set_kerberos(True, self.ad.auth.kdc)
+            # Kerberos support
+            if hasattr(self.rpc, 'set_kerberos'):
+                self.rpc.set_kerberos(True, self.ad.auth.kdc)
+                
             # Uncomment to force SMB2 (especially for development to prevent encryption)
             # will break clients only supporting SMB1 ofc
             # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_21)
@@ -246,7 +254,10 @@ class ADComputer(object):
 
             # Hostname validation
             authname = self.smbconnection.getServerName()
-            if authname.lower() != self.hostname.split('.')[0].lower():
+            # this condition occured if kerberos is enabled
+            if len(authname) == 0 and self.rpc_binding_target == self.hostname:
+                logging.debug("SMB did not return a ServerName, but binding target matches hostname, ignoring mismatch!")
+            elif authname.lower() != self.hostname.split('.')[0].lower():
                 logging.info('Ignoring host %s since its reported name %s does not match', self.hostname, authname)
                 self.permanentfailure = True
                 return None
@@ -316,7 +327,7 @@ class ADComputer(object):
             self.smbconnection.logoff()
 
     def rpc_get_sessions(self):
-        binding = r'ncacn_np:%s[\PIPE\srvsvc]' % self.addr
+        binding = r'ncacn_np:%s[\PIPE\srvsvc]' % self.rpc_binding_target
 
         dce = self.dce_rpc_connect(binding, srvs.MSRPC_UUID_SRVS)
 
@@ -375,7 +386,7 @@ class ADComputer(object):
     """
     """
     def rpc_get_domain_trusts(self):
-        binding = r'ncacn_np:%s[\PIPE\netlogon]' % self.addr
+        binding = r'ncacn_np:%s[\PIPE\netlogon]' % self.rpc_binding_target
 
         dce = self.dce_rpc_connect(binding, nrpc.MSRPC_UUID_NRPC)
 
@@ -404,7 +415,7 @@ class ADComputer(object):
         Query services with stored credentials via RPC.
         These credentials can be dumped with mimikatz via lsadump::secrets or via secretsdump.py
         """
-        binding = r'ncacn_np:%s[\PIPE\svcctl]' % self.addr
+        binding = r'ncacn_np:%s[\PIPE\svcctl]' % self.rpc_binding_target
         serviceusers = []
         dce = self.dce_rpc_connect(binding, scmr.MSRPC_UUID_SCMR)
         if dce is None:
@@ -456,7 +467,7 @@ class ADComputer(object):
         folders = ['\\']
         tasks = []
         schtaskusers = []
-        binding = r'ncacn_np:%s[\PIPE\atsvc]' % self.addr
+        binding = r'ncacn_np:%s[\PIPE\atsvc]' % self.rpc_binding_target
         try:
             dce = self.dce_rpc_connect(binding, tsch.MSRPC_UUID_TSCHS, True)
             if dce is None:
@@ -508,7 +519,7 @@ class ADComputer(object):
     This magic is mostly borrowed from impacket/examples/netview.py
     """
     def rpc_get_group_members(self, group_rid, resultlist):
-        binding = r'ncacn_np:%s[\PIPE\samr]' % self.addr
+        binding = r'ncacn_np:%s[\PIPE\samr]' % self.rpc_binding_target
         unresolved = []
         dce = self.dce_rpc_connect(binding, samr.MSRPC_UUID_SAMR)
 
@@ -596,7 +607,7 @@ class ADComputer(object):
         # If all sids were already cached, we can just return
         if sids is None or len(sids) == 0:
             return
-        binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.addr
+        binding = r'ncacn_np:%s[\PIPE\lsarpc]' % self.rpc_binding_target
 
         dce = self.dce_rpc_connect(binding, lsat.MSRPC_UUID_LSAT)
 

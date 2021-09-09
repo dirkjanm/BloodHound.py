@@ -189,7 +189,7 @@ def main():
     parser.add_argument('-k',
                         '--kerberos',
                         action='store_true',
-                        help='Use kerberos')
+                        help='Use kerberos (not fully compatible with with custom nameserver, kerberos stack uses system DNS)')
     parser.add_argument('--hashes',
                         action='store',
                         help='LM:NLTM hashes')

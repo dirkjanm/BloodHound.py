@@ -10,7 +10,6 @@ This version of BloodHound.py is **only compatible with BloodHound 3.0 or newer*
 ## Limitations
 BloodHound.py currently has the following limitations:
 - Supports most, but not all BloodHound (SharpHound) features (see below for supported collection methods, mainly GPO based methods are missing)
-- Kerberos authentication support is not yet complete
 
 ## Installation and usage
 You can install the ingestor via pip with `pip install bloodhound`, or by cloning this repository and running `python setup.py install`, or with `pip install .`.
