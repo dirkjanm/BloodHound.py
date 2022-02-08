@@ -1,6 +1,6 @@
 ####################
 #
-# Copyright (c) 2018 Fox-IT
+# Copyright (c) 2022 Fox-IT
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -54,13 +54,17 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
     if not acl:
         return entry, []
     sd = SecurityDescriptor(BytesIO(acl))
+
+    # Check for protected DACL flag
+    entry['IsACLProtected'] = sd.has_control(sd.PD)
     relations = []
+
     # Parse owner
     osid = str(sd.owner_sid)
-    ignoresids = ["S-1-3-0", "S-1-5-18"]
+    ignoresids = ["S-1-3-0", "S-1-5-18", "S-1-5-10"]
     # Ignore Creator Owner or Local System
     if osid not in ignoresids:
-        relations.append(build_relation(osid, 'Owner', inherited=False))
+        relations.append(build_relation(osid, 'Owns', inherited=False))
     for ace_object in sd.dacl.aces:
         if ace_object.ace.AceType != 0x05 and ace_object.ace.AceType != 0x00:
             # These are the only two aces we care about currently
@@ -130,10 +134,26 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 if entrytype in ['user', 'group', 'computer'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                 if entrytype == 'group' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteMember']):
-                    relations.append(build_relation(sid, 'WriteProperty', 'AddMember', inherited=is_inherited))
+                    relations.append(build_relation(sid, 'AddMember', '', inherited=is_inherited))
                 if entrytype == 'computer' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['AllowedToAct']):
-                    relations.append(build_relation(sid, 'WriteProperty', 'AllowedToAct', inherited=is_inherited))
-                    
+                    relations.append(build_relation(sid, 'AddAllowedToAct', '', inherited=is_inherited))
+
+                # Since 4.0
+                # Key credential link property write rights
+                if entrytype in ['user', 'computer'] and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
+                and 'ms-ds-key-credential-link' in objecttype_guid_map and ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-ds-key-credential-link']:
+                    relations.append(build_relation(sid, 'AddKeyCredentialLink', inherited=is_inherited))
+
+                # ServicePrincipalName property write rights (exclude generic rights)
+                if entrytype == 'user' and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
+                and ace_object.acedata.get_object_type().lower() == objecttype_guid_map['service-principal-name']:
+                    relations.append(build_relation(sid, 'WriteSPN', inherited=is_inherited))
+
+            elif ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_SELF):
+                # Self add - since 4.0
+                if entrytype == 'group' and ace_object.acedata.data.ObjectType == EXTRIGHTS_GUID_MAPPING['WriteMember']:
+                    relations.append(build_relation(sid, 'AddSelf', '', inherited=is_inherited))
+
             # Property read privileges
             if ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_READ_PROP):
                 if entrytype == 'computer' and \
@@ -147,18 +167,17 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             if control_access:
                 # All Extended
                 if entrytype in ['user', 'domain'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'All', inherited=is_inherited))
+                    relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
                 if entrytype == 'computer' and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
                 entry['Properties']['haslaps']:
-                    relations.append(build_relation(sid, 'ExtendedRight', 'All', inherited=is_inherited))
+                    relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
                 if entrytype == 'domain' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['GetChanges']):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'GetChanges', inherited=is_inherited))
+                    relations.append(build_relation(sid, 'GetChanges', '', inherited=is_inherited))
                 if entrytype == 'domain' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['GetChangesAll']):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'GetChangesAll', inherited=is_inherited))
+                    relations.append(build_relation(sid, 'GetChangesAll', '', inherited=is_inherited))
                 if entrytype == 'user' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['UserForceChangePassword']):
-                    relations.append(build_relation(sid, 'ExtendedRight', 'User-Force-Change-Password', inherited=is_inherited))
+                    relations.append(build_relation(sid, 'ForceChangePassword', '', inherited=is_inherited))
 
-            # print(ace_object.acedata.sid)
         if ace_object.ace.AceType == 0x00:
             is_inherited = ace_object.has_flag(ACE.INHERITED_ACE)
             mask = ace_object.acedata.mask
@@ -177,11 +196,11 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
 
             # For users and domain, check extended rights
             if entrytype in ['user', 'domain'] and mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS):
-                relations.append(build_relation(sid, 'ExtendedRight', 'All', inherited=is_inherited))
+                relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
                 
             if entrytype == 'computer' and mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS) and \
             entry['Properties']['haslaps']:
-                relations.append(build_relation(sid, 'ExtendedRight', 'All', inherited=is_inherited))
+                relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
 
             if mask.has_priv(ACCESS_MASK.WRITE_DACL):
                 relations.append(build_relation(sid, 'WriteDacl', inherited=is_inherited))
@@ -238,7 +257,9 @@ def ace_applies(ace_guid, object_class, objecttype_guid_map):
     return False
 
 def build_relation(sid, relation, acetype='', inherited=False):
-    return {'rightname': relation, 'sid': sid, 'acetype': acetype, 'inherited': inherited}
+    if acetype != '':
+        raise ValueError("BH 4.0 incompatible output called")
+    return {'rightname': relation, 'sid': sid, 'inherited': inherited}
 
 class AclEnumerator(object):
     """
@@ -314,10 +335,34 @@ c_secd.load(cdef, compiled=True)
 
 
 class SecurityDescriptor(object):
+    # Control indexes in bit field
+    SR = 0  # Self-Relative
+    RM = 1  # RM Control Valid
+    PS = 2  # SACL Protected
+    PD = 3  # DACL Protected
+    SI = 4  # SACL Auto-Inherited
+    DI = 5  # DACL Auto-Inherited
+    SC = 6  # SACL Computed Inheritance Required
+    DC = 7  # DACL Computed Inheritance Required
+    SS = 8  # Server Security
+    DT = 9  # DACL Trusted
+    SD = 10 # SACL Defaulted
+    SP = 11 # SACL Present
+    DD = 12 # DACL Defaulted
+    DP = 13 # DACL Present
+    GD = 14 # Group Defaulted
+    OD = 15 # Owner Defaulted
+
+    def has_control(self, control):
+        # Convert to bin representation and
+        # look up index. Slice off 0b
+        return bin(self.control)[2:][control] == '1'
+
     def __init__(self, fh):
         self.fh = fh
         self.descriptor = c_secd.SECURITY_DESCRIPTOR(fh)
 
+        self.control = self.descriptor.Control
         self.owner_sid = b''
         self.group_sid = b''
         self.sacl = b''

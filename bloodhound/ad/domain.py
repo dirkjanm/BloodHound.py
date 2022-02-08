@@ -236,6 +236,12 @@ class ADDC(ADComputer):
         else:
             logging.debug('No LAPS attributes found in schema')
 
+        if 'ms-ds-key-credential-link' in self.objecttype_guid_map:
+            logging.debug('Found KeyCredentialLink attributes in schema')
+            self.ad.has_keycredlink = True
+        else:
+            logging.debug('No KeyCredentialLink attributes found in schema')
+
     def get_domains(self, acl=False):
         """
         Function to get domains. This should only return the current domain.
@@ -303,7 +309,7 @@ class ADDC(ADComputer):
     def get_groups(self, include_properties=False, acl=False):
         properties = ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid', 'member']
         if include_properties:
-            properties += ['adminCount', 'description']
+            properties += ['adminCount', 'description', 'whencreated']
         if acl:
             properties += ['nTSecurityDescriptor']
         entries = self.search('(objectClass=group)',
@@ -316,13 +322,14 @@ class ADDC(ADComputer):
     def get_users(self, include_properties=False, acl=False):
 
         properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType',
-                      'objectSid', 'primaryGroupID']
+                      'objectSid', 'primaryGroupID', 'isDeleted']
         if 'ms-DS-GroupMSAMembership'.lower() in self.objecttype_guid_map:
             properties.append('msDS-GroupMSAMembership')
         if include_properties:
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
-                           'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory']
+                           'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory',
+                           'whencreated', 'unicodepwd', 'unixuserpassword']
         if acl:
             properties.append('nTSecurityDescriptor')
 
@@ -341,11 +348,14 @@ class ADDC(ADComputer):
 
     def get_computers(self, include_properties=False, acl=False):
         properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
-                      'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID']
+                      'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID',
+                      'isDeleted']
         if include_properties:
-            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo',
-                           'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description', 'operatingSystemServicePack']
-            if 'msDS-AllowedToActOnBehalfOfOtherIdentity'.lower() in self.objecttype_guid_map:
+            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'sIDHistory', 'whencreated',
+                           'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description',
+                           'operatingSystemServicePack']
+            # Difference between guid map which maps the lowercase schema object name and the property name itself
+            if 'ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity'.lower() in self.objecttype_guid_map:
                 properties.append('msDS-AllowedToActOnBehalfOfOtherIdentity')
             if self.ad.has_laps:
                 properties.append('ms-mcs-admpwdexpirationtime')
@@ -450,6 +460,8 @@ class AD(object):
         self.num_domains = 1
         # Does the schema have laps properties
         self.has_laps = False
+        # Does the schema have msDS-KeyCredentialLink
+        self.has_keycredlink = False
         if domain is not None:
             self.baseDN = ADUtils.domain2ldap(domain)
         else:

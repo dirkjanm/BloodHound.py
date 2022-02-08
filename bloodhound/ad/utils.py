@@ -287,7 +287,7 @@ class ADUtils(object):
         """
         seconds = int(seconds)
         if seconds == 0:
-            return -1
+            return 0
         return int((seconds - 116444736000000000) / 10000000)
 
     @staticmethod
@@ -333,7 +333,6 @@ class AceResolver(object):
         for ace in aces:
             out = {
                 'RightName': ace['rightname'],
-                'AceType': ace['acetype'],
                 'IsInherited': ace['inherited']
             }
             # Is it a well-known sid?
