@@ -49,9 +49,9 @@ class ComputerEnumerator(MembershipEnumerator):
         """
         self.addomain = addomain
         self.addc = addc
-        # Blacklist and whitelist are only used for debugging purposes
-        self.blacklist = []
-        self.whitelist = []
+        # blocklist and allowlist are only used for debugging purposes
+        self.blocklist = []
+        self.allowlist = []
         self.do_gc_lookup = do_gc_lookup
         # Store collection methods specified
         self.collect = collect
@@ -83,15 +83,16 @@ class ComputerEnumerator(MembershipEnumerator):
                 continue
 
             hostname = computer['attributes']['dNSHostName']
-            if not hostname:
-                continue
             samname = computer['attributes']['sAMAccountName']
+            if not hostname:
+                logging.info('Invalid computer object without hostname: %s', samname)
+                hostname = ''
             # For debugging purposes only
-            if hostname in self.blacklist:
-                logging.info('Skipping computer: %s (blacklisted)', hostname)
+            if hostname in self.blocklist:
+                logging.info('Skipping computer: %s (blocklisted)', hostname)
                 continue
-            if len(self.whitelist) > 0 and hostname not in self.whitelist:
-                logging.info('Skipping computer: %s (not whitelisted)', hostname)
+            if len(self.allowlist) > 0 and hostname not in self.allowlist:
+                logging.info('Skipping computer: %s (not allowlisted)', hostname)
                 continue
 
             process_queue.put((hostname, samname, computer))
@@ -106,7 +107,7 @@ class ComputerEnumerator(MembershipEnumerator):
         logging.debug('Querying computer: %s', hostname)
         c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, addc=self.addc, objectsid=objectsid)
         c.primarygroup = self.get_primary_membership(entry)
-        if c.try_connect() == True:
+        if hostname and c.try_connect():
             try:
 
                 if 'session' in self.collect:
@@ -213,11 +214,11 @@ class ComputerEnumerator(MembershipEnumerator):
                             continue
                         self.addomain.samcache.put(fupn, users)
                     for resultuser in users:
-                        c.sessions.append({'ComputerId':objectsid, 'UserId':resultuser})
+                        c.loggedon.append({'ComputerId':objectsid, 'UserId':resultuser})
 
                 # Process Tasks
                 for taskuser in tasks:
-                    c.sessions.append({'ComputerId':objectsid, 'UserId':taskuser})
+                    c.loggedon.append({'ComputerId':objectsid, 'UserId':taskuser})
 
                 # Process Services
                 for serviceuser in services:
@@ -230,7 +231,7 @@ class ComputerEnumerator(MembershipEnumerator):
                         self.addomain.sidcache.put(serviceuser, userentry['attributes']['objectSid'])
                         user = userentry['attributes']['objectSid']
                     logging.debug('Resolved Service UPN to SID: %s', user)
-                    c.sessions.append({'ComputerId':objectsid, 'UserId':user})
+                    c.loggedon.append({'ComputerId':objectsid, 'UserId':user})
 
                 results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
 
@@ -242,6 +243,7 @@ class ComputerEnumerator(MembershipEnumerator):
                 logging.error('Unhandled exception in computer %s processing: %s', hostname, str(e))
                 logging.info(traceback.format_exc())
         else:
+            c.permanentfailure = True
             # Write the info we have to the file regardless
             try:
                 results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
