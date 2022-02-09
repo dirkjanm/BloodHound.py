@@ -45,7 +45,7 @@ class OutputWorker(object):
             indent_level = None
 
         # Write start of the json file
-        computers_out.write('{"computers":[')
+        computers_out.write('{"data":[')
         num_computers = 0
         while True:
             obj = result_q.get()
@@ -72,7 +72,7 @@ class OutputWorker(object):
 
         logging.debug('Write worker is done, closing files')
         # Write metadata manually
-        computers_out.write('],"meta":{"type":"computers","count":%d, "version":3}}' % num_computers)
+        computers_out.write('],"meta":{"methods":0,"type":"computers","count":%d, "version":4}}' % num_computers)
         computers_out.close()
         result_q.task_done()
 
@@ -96,7 +96,7 @@ class OutputWorker(object):
             indent_level = None
 
         # Write start of the json file
-        membership_out.write('{"%s":[' % enumtype)
+        membership_out.write('{"data":[')
         num_members = 0
         while True:
             data = result_q.get()
@@ -118,6 +118,6 @@ class OutputWorker(object):
 
         logging.info('Found %d %s', num_members, enumtype)
         # Write metadata manually
-        membership_out.write('],"meta":{"type":"%s","count":%d, "version":3}}' % (enumtype, num_members))
+        membership_out.write('],"meta":{"methods":0,"type":"%s","count":%d, "version":4}}' % (enumtype, num_members))
         membership_out.close()
         result_q.task_done()

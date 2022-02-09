@@ -25,6 +25,7 @@
 import logging
 import queue
 import threading
+import calendar
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.computer import ADComputer
 from bloodhound.ad.structures import LDAP_SID
@@ -82,8 +83,8 @@ class MembershipEnumerator(object):
                     if resolved_entry['type'] == 'Computer':
                         self.addomain.computers[member] = qobject
         return {
-            "MemberId": resolved_entry['objectid'],
-            "MemberType": resolved_entry['type'].capitalize()
+            "ObjectIdentifier": resolved_entry['objectid'],
+            "ObjectType": resolved_entry['type'].capitalize()
         }
 
     @staticmethod
@@ -110,8 +111,6 @@ class MembershipEnumerator(object):
         props['lastlogon'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
         )
-        if props['lastlogon'] == 0:
-            props['lastlogon'] = -1
         props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
             ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
         )
@@ -135,6 +134,17 @@ class MembershipEnumerator(object):
         if len(ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])) > 0:
             props['allowedtodelegate'] = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
         props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
+        # v4 props
+        whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+        if isinstance(whencreated, int):
+            props['whencreated'] = whencreated
+        else:
+            props['whencreated'] = calendar.timegm(whencreated.timetuple())
+        props['unixpassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'unixuserpassword'))
+        props['unicodepassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'unicodepwd'))
+        # Non-default schema?
+        # props['sfupassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'msSFU30Password'))
+        props['sfupassword'] = None
 
     def enumerate_users(self, timestamp=""):
         filename = timestamp + 'users.json'
@@ -164,19 +174,20 @@ class MembershipEnumerator(object):
             user = {
                 "AllowedToDelegate": [],
                 "ObjectIdentifier": ADUtils.get_entry_property(entry, 'objectSid'),
-                "PrimaryGroupSid": MembershipEnumerator.get_primary_membership(entry),
+                "PrimaryGroupSID": MembershipEnumerator.get_primary_membership(entry),
                 "Properties": {
                     "name": resolved_entry['principal'],
                     "domain": self.addomain.domain.upper(),
-                    "objectid": ADUtils.get_entry_property(entry, 'objectSid'),
-                    "distinguishedname":ADUtils.get_entry_property(entry, 'distinguishedName'),
-                    "highvalue": False,
+                    "domainsid": self.addomain.domain_object.sid,
+                    "distinguishedname":ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000,
+                    "trustedtoauth": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x01000000 == 0x01000000,
                     "passwordnotreqd": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00000020 == 0x00000020
                 },
                 "Aces": [],
                 "SPNTargets": [],
-                "HasSIDHistory": []
+                "HasSIDHistory": [],
+                "IsDeleted": ADUtils.get_entry_property(entry, 'isDeleted', default=False)
             }
 
             if with_properties:
@@ -219,6 +230,8 @@ class MembershipEnumerator(object):
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
                 self.result_q.put(user)
+
+        self.write_default_users()
 
         # If we are parsing ACLs, close the parsing pool first
         # then close the result queue and join it
@@ -274,21 +287,22 @@ class MembershipEnumerator(object):
                 "ObjectIdentifier": sid,
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
-                    "objectid": sid,
-                    "highvalue": is_highvalue(sid),
+                    "domainsid": self.addomain.domain_object.sid,
                     "name": resolved_entry['principal'],
-                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName')
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper()
                 },
                 "Members": [],
-                "Aces": []
+                "Aces": [],
+                "IsDeleted": ADUtils.get_entry_property(entry, 'isDeleted', default=False)
             }
             if sid in ADUtils.WELLKNOWN_SIDS:
                 # Prefix it with the domain
                 group['ObjectIdentifier'] = '%s-%s' % (self.addomain.domain.upper(), sid)
-                group['Properties']['objectid'] = group['ObjectIdentifier']
             if with_properties:
                 group['Properties']['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', default=0) == 1
                 group['Properties']['description'] = ADUtils.get_entry_property(entry, 'description')
+                whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+                group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
             for member in entry['attributes']['member']:
                 resolved_member = self.get_membership(member)
@@ -408,6 +422,32 @@ class MembershipEnumerator(object):
         data['Aces'] += self.aceresolver.resolve_aces(aces)
         self.result_q.put(data)
 
+    def write_default_users(self):
+        """
+        Write built-in users to users.json file
+        """
+
+        domainsid = self.addomain.domain_object.sid
+        domainname = self.addomain.domain.upper()
+
+        user = {
+            "AllowedToDelegate": [],
+            "ObjectIdentifier": "%s-S-1-5-20" % domainname,
+            "PrimaryGroupSID": None,
+            "Properties": {
+                "domain": domainname,
+                "domainsid": self.addomain.domain_object.sid,
+                "name": "NT AUTHORITY@%s" % domainname,
+            },
+            "Aces": [],
+            "SPNTargets": [],
+            "HasSIDHistory": [],
+            "IsDeleted": False,
+            "IsACLProtected": False,
+        }
+        self.result_q.put(user)
+
+
     def write_default_groups(self):
         """
         Put default groups in the groups.json file
@@ -418,6 +458,8 @@ class MembershipEnumerator(object):
         entries = self.addc.get_domain_controllers()
 
         group = {
+            "IsDeleted": False,
+            "IsACLProtected": False,
             "ObjectIdentifier": "%s-S-1-5-9" % rootdomain,
             "Properties": {
                 "domain": rootdomain.upper(),
@@ -429,8 +471,8 @@ class MembershipEnumerator(object):
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
             memberdata = {
-                "MemberId": resolved_entry['objectid'],
-                "MemberType": resolved_entry['type'].capitalize()
+                "ObjectIdentifier": resolved_entry['objectid'],
+                "ObjectType": resolved_entry['type'].capitalize()
             }
             group["Members"].append(memberdata)
         self.result_q.put(group)
@@ -440,45 +482,48 @@ class MembershipEnumerator(object):
 
         # Everyone
         evgroup = {
+            "IsDeleted": False,
+            "IsACLProtected": False,
             "ObjectIdentifier": "%s-S-1-1-0" % domainname,
             "Properties": {
                 "domain": domainname,
+                "domainsid": self.addomain.domain_object.sid,
                 "name": "EVERYONE@%s" % domainname,
             },
-            "Members": [
-                {
-                    "MemberId": "%s-515" % domainsid,
-                    "MemberType": "Group"
-                },
-                {
-                    "MemberId": "%s-513" % domainsid,
-                    "MemberType": "Group"
-                }
-            ],
+            "Members": [],
             "Aces": []
         }
         self.result_q.put(evgroup)
 
         # Authenticated users
         augroup = {
+            "IsDeleted": False,
+            "IsACLProtected": False,
             "ObjectIdentifier": "%s-S-1-5-11" % domainname,
             "Properties": {
                 "domain": domainname,
+                "domainsid": self.addomain.domain_object.sid,
                 "name": "AUTHENTICATED USERS@%s" % domainname,
             },
-            "Members": [
-                {
-                    "MemberId": "%s-515" % domainsid,
-                    "MemberType": "Group"
-                },
-                {
-                    "MemberId": "%s-513" % domainsid,
-                    "MemberType": "Group"
-                }
-            ],
+            "Members": [],
             "Aces": []
         }
         self.result_q.put(augroup)
+
+        # Interactive
+        iugroup = {
+            "IsDeleted": False,
+            "IsACLProtected": False,
+            "ObjectIdentifier": "%s-S-1-5-4" % domainname,
+            "Properties": {
+                "domain": domainname,
+                "domainsid": self.addomain.domain_object.sid,
+                "name": "INTERACTIVE@%s" % domainname,
+            },
+            "Members": [],
+            "Aces": []
+        }
+        self.result_q.put(iugroup)
 
 
     def enumerate_memberships(self, timestamp=""):

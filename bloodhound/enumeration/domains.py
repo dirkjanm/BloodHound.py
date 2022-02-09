@@ -25,6 +25,7 @@
 import logging
 import codecs
 import json
+import calendar
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.trusts import ADDomainTrust
 from bloodhound.enumeration.acls import parse_binary_acl
@@ -82,11 +83,11 @@ class DomainEnumerator(object):
 
         # Initialize json structure
         datastruct = {
-            "domains": [],
+            "data": [],
             "meta": {
                 "type": "domains",
                 "count": 0,
-                "version":3
+                "version":4
             }
         }
         # Get functional level
@@ -96,24 +97,33 @@ class DomainEnumerator(object):
         except KeyError:
             functional_level = 'Unknown'
 
+        whencreated = ADUtils.get_entry_property(domain_object, 'whencreated', default=0)
+        if not isinstance(whencreated, int):
+            whencreated = calendar.timegm(whencreated.timetuple())
         domain = {
             "ObjectIdentifier": domain_object['attributes']['objectSid'],
             "Properties": {
                 "name": self.addomain.domain.upper(),
                 "domain": self.addomain.domain.upper(),
-                "highvalue": True,
-                "objectid": ADUtils.get_entry_property(domain_object, 'objectSid'),
-                "distinguishedname": ADUtils.get_entry_property(domain_object, 'distinguishedName'),
+                "domainsid": ADUtils.get_entry_property(domain_object, 'objectSid'),
+                "distinguishedname": ADUtils.get_entry_property(domain_object, 'distinguishedName').upper(),
                 "description": ADUtils.get_entry_property(domain_object, 'description'),
-                "functionallevel": functional_level
+                "functionallevel": functional_level,
+                'whencreated': whencreated
             },
             "Trusts": [],
             "Aces": [],
             # The below is all for GPO collection, unsupported as of now.
             "Links": [],
-            "Users": [],
-            "Computers": [],
-            "ChildOus": []
+            "ChildObjects": [],
+            "GPOChanges": {
+                "AffectedComputers": [],
+                "DcomUsers": [],
+                "LocalAdmins": [],
+                "PSRemoteUsers": [],
+                "RemoteDesktopUsers": []
+            },
+            "IsDeleted": False,
         }
 
         if 'acl' in collect:
@@ -132,7 +142,7 @@ class DomainEnumerator(object):
 
         # Single domain only
         datastruct['meta']['count'] = 1
-        datastruct['domains'].append(domain)
+        datastruct['data'].append(domain)
         json.dump(datastruct, out, indent=indent_level)
 
         logging.debug('Finished writing domain info')

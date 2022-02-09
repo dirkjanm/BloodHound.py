@@ -24,6 +24,7 @@
 
 import logging
 import traceback
+import calendar
 from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, scmr, tsch
 from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY, RPC_C_AUTHN_LEVEL_PKT_PRIVACY
 from impacket.dcerpc.v5.ndr import NULL
@@ -44,7 +45,6 @@ class ADComputer(object):
     Computer connected to Active Directory
     """
     def __init__(self, hostname=None, samname=None, ad=None, addc=None, objectsid=None):
-        self.hostname = hostname
         self.ad = ad
         self.addc = addc
         self.samname = samname
@@ -57,6 +57,7 @@ class ADComputer(object):
         self.trusts = []
         self.services = []
         self.sessions = []
+        self.loggedon = []
         self.addr = None
         self.smbconnection = None
         # The SID of the local domain
@@ -68,42 +69,90 @@ class ADComputer(object):
             self.aceresolver = AceResolver(ad, ad.objectresolver)
         # Did connecting to this host fail before?
         self.permanentfailure = False
+        # Process invalid hosts
+        if not hostname:
+            self.hostname = '%s.%s' % (samname[:-1].upper(), self.ad.domain.upper())
+        else:
+            self.hostname = hostname
 
     def get_bloodhound_data(self, entry, collect, skip_acl=False):
         data = {
             'ObjectIdentifier': self.objectsid,
             'AllowedToAct': [],
-            'PrimaryGroupSid': self.primarygroup,
-            'LocalAdmins': self.admins,
-            'PSRemoteUsers': self.psremote,
+            'PrimaryGroupSID': self.primarygroup,
+            'LocalAdmins': {
+                'Collected': 'localadmin' in collect and not self.permanentfailure,
+                'FailureReason': None,
+                'Results': self.admins,
+            },
+            'PSRemoteUsers': {
+                'Collected': 'psremote' in collect and not self.permanentfailure,
+                'FailureReason': None,
+                'Results': self.psremote
+            },
             'Properties': {
                 'name': self.hostname.upper(),
-                'objectid': self.objectsid,
+                'domainsid': self.ad.domain_object.sid,
                 'domain': self.ad.domain.upper(),
-                'highvalue': False,
-                'distinguishedname': ADUtils.get_entry_property(entry, 'distinguishedName')
+                'distinguishedname': ADUtils.get_entry_property(entry, 'distinguishedName').upper()
             },
-            'RemoteDesktopUsers': self.rdp,
-            'DcomUsers': self.dcom,
+            'RemoteDesktopUsers': {
+                'Collected': 'rdp' in collect and not self.permanentfailure,
+                'FailureReason': None,
+                'Results': self.rdp
+            },
+            'DcomUsers': {
+                'Collected': 'dcom' in collect and not self.permanentfailure,
+                'FailureReason': None,
+                'Results': self.dcom
+            },
             'AllowedToDelegate': [],
-            'Sessions': self.sessions,
-            'Aces': []
+            'Sessions': {
+                'Collected': 'session' in collect and not self.permanentfailure,
+                'FailureReason': None,
+                'Results': self.sessions
+            },
+            'PrivilegedSessions': {
+                'Collected': 'loggedon' in collect and not self.permanentfailure,
+                'FailureReason': None,
+                'Results': self.loggedon
+            },
+            # Unsupported for now
+            'RegistrySessions': {
+                'Collected': False,
+                'FailureReason': None,
+                'Results': []
+            },
+            'Aces': [],
+            'HasSIDHistory': [],
+            'IsDeleted': ADUtils.get_entry_property(entry, 'isDeleted', default=False),
+            'Status': None
         }
         props = data['Properties']
         # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
         props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
         props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
+        props['trustedtoauth'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x01000000 == 0x01000000
 
         if 'objectprops' in collect or 'acl' in collect:
             props['haslaps'] = ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) != 0
 
         if 'objectprops' in collect:
+            props['lastlogon'] = ADUtils.win_timestamp_to_unix(
+                ADUtils.get_entry_property(entry, 'lastlogon', default=0, raw=True)
+            )
             props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
             )
+            if props['lastlogontimestamp'] == 0:
+                props['lastlogontimestamp'] = -1
             props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
                 ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
             )
+            whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+            if not isinstance(whencreated, int):
+                whencreated = calendar.timegm(whencreated.timetuple())
+            props['whencreated'] = whencreated
             props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
             props['description'] = ADUtils.get_entry_property(entry, 'description')
             props['operatingsystem'] = ADUtils.get_entry_property(entry, 'operatingSystem')
@@ -111,7 +160,7 @@ class ADComputer(object):
             servicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
             if servicepack:
                 props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
-
+            props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
             delegatehosts = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
             for host in delegatehosts:
                 try:
@@ -140,7 +189,7 @@ class ADComputer(object):
                 if delegated['RightName'] == 'Owner':
                     continue
                 if delegated['RightName'] == 'GenericAll':
-                    data['AllowedToAct'].append({'MemberId': delegated['PrincipalSID'], 'MemberType': delegated['PrincipalType']})
+                    data['AllowedToAct'].append({'ObjectIdentifier': delegated['PrincipalSID'], 'ObjectType': delegated['PrincipalType']})
 
         # Run ACL collection if this was not already done centrally
         if 'acl' in collect and not skip_acl:
@@ -567,8 +616,8 @@ class ADComputer(object):
                             unresolved.append(sid_string)
                         else:
                             logging.debug('Sid is cached: %s', siddata['principal'])
-                            resultlist.append({'MemberId': sid_string,
-                                               'MemberType': siddata['type'].capitalize()})
+                            resultlist.append({'ObjectIdentifier': sid_string,
+                                               'ObjectType': siddata['type'].capitalize()})
                     except KeyError:
                         # Append it to the list of unresolved SIDs
                         unresolved.append(sid_string)
@@ -645,8 +694,8 @@ class ADComputer(object):
                 if entry['Name'] != '':
                     resolved_entry = ADUtils.resolve_sid_entry(entry, domain)
                     logging.debug('Resolved SID to name: %s', resolved_entry['principal'])
-                    resultlist.append({'MemberId': sid_string,
-                                       'MemberType': resolved_entry['type'].capitalize()})
+                    resultlist.append({'ObjectIdentifier': sid_string,
+                                       'ObjectType': resolved_entry['type'].capitalize()})
                     # Add it to our cache
                     self.ad.sidcache.put(sid_string, resolved_entry)
                 else:
