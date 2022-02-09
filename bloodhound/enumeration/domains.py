@@ -98,6 +98,8 @@ class DomainEnumerator(object):
             functional_level = 'Unknown'
 
         whencreated = ADUtils.get_entry_property(domain_object, 'whencreated', default=0)
+        if not isinstance(whencreated, int):
+            whencreated = calendar.timegm(whencreated.timetuple())
         domain = {
             "ObjectIdentifier": domain_object['attributes']['objectSid'],
             "Properties": {
@@ -107,7 +109,7 @@ class DomainEnumerator(object):
                 "distinguishedname": ADUtils.get_entry_property(domain_object, 'distinguishedName').upper(),
                 "description": ADUtils.get_entry_property(domain_object, 'description'),
                 "functionallevel": functional_level,
-                'whencreated': calendar.timegm(whencreated.timetuple())
+                'whencreated': whencreated
             },
             "Trusts": [],
             "Aces": [],

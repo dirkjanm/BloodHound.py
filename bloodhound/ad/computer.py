@@ -150,7 +150,9 @@ class ADComputer(object):
                 ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
             )
             whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-            props['whencreated'] = calendar.timegm(whencreated.timetuple())
+            if not isinstance(whencreated, int):
+                whencreated = calendar.timegm(whencreated.timetuple())
+            props['whencreated'] = whencreated
             props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
             props['description'] = ADUtils.get_entry_property(entry, 'description')
             props['operatingsystem'] = ADUtils.get_entry_property(entry, 'operatingSystem')
