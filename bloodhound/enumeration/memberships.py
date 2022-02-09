@@ -136,7 +136,10 @@ class MembershipEnumerator(object):
         props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
         # v4 props
         whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-        props['whencreated'] = calendar.timegm(whencreated.timetuple())
+        if isinstance(whencreated, int):
+            props['whencreated'] = whencreated
+        else:
+            props['whencreated'] = calendar.timegm(whencreated.timetuple())
         props['unixpassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'unixuserpassword'))
         props['unicodepassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'unicodepwd'))
         # Non-default schema?
