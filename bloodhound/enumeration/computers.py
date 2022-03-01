@@ -186,7 +186,7 @@ class ComputerEnumerator(MembershipEnumerator):
 
                     # Put the result on the results queue.
                     for user in users:
-                        c.sessions.append({'ComputerId':hostsid, 'UserId':user})
+                        c.sessions.append({'ComputerSID':hostsid, 'UserSID':user})
                 if loggedon is None:
                     loggedon = []
 
@@ -214,11 +214,11 @@ class ComputerEnumerator(MembershipEnumerator):
                             continue
                         self.addomain.samcache.put(fupn, users)
                     for resultuser in users:
-                        c.loggedon.append({'ComputerId':objectsid, 'UserId':resultuser})
+                        c.loggedon.append({'ComputerSID':objectsid, 'UserSID':resultuser})
 
                 # Process Tasks
                 for taskuser in tasks:
-                    c.loggedon.append({'ComputerId':objectsid, 'UserId':taskuser})
+                    c.loggedon.append({'ComputerSID':objectsid, 'UserSID':taskuser})
 
                 # Process Services
                 for serviceuser in services:
@@ -231,7 +231,7 @@ class ComputerEnumerator(MembershipEnumerator):
                         self.addomain.sidcache.put(serviceuser, userentry['attributes']['objectSid'])
                         user = userentry['attributes']['objectSid']
                     logging.debug('Resolved Service UPN to SID: %s', user)
-                    c.loggedon.append({'ComputerId':objectsid, 'UserId':user})
+                    c.loggedon.append({'ComputerSID':objectsid, 'UserSID':user})
 
                 results_q.put(('computer', c.get_bloodhound_data(entry, self.collect)))
 
