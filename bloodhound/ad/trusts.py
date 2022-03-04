@@ -56,7 +56,7 @@ class ADDomainTrust(object):
                   'UPLEVEL':0x02,
                   'MIT':0x03}
 
-    # BloodHound trust types
+    # BloodHound trust types - deprecated
     bh_trust_type = {
         'ParentChild': 0,
         'CrossLink': 1,
@@ -64,7 +64,13 @@ class ADDomainTrust(object):
         'External': 3,
         'Unknown':4
     }
-
+    # BH4.1 mapping
+    trust_dir = {
+        0: 'Disabled',
+        1: 'Inbound',
+        2: 'Outbound',
+        3: 'Bidirectional'
+    }
     def __init__(self, destination, direction, trust_type, flags, domainsid):
         self.destination_domain = destination
         self.direction = direction
@@ -82,19 +88,19 @@ class ADDomainTrust(object):
 
     def to_output(self):
         if self.has_flag('WITHIN_FOREST'):
-            trusttype = self.bh_trust_type['ParentChild']
+            trusttype = 'ParentChild'
             is_transitive = True
             sid_filtering = self.has_flag('QUARANTINED_DOMAIN')
         elif self.has_flag('FOREST_TRANSITIVE'):
-            trusttype = self.bh_trust_type['Forest']
+            trusttype = 'Forest'
             is_transitive = True
             sid_filtering = True
         elif self.has_flag('TREAT_AS_EXTERNAL') or self.has_flag('CROSS_ORGANIZATION'):
-            trusttype = self.bh_trust_type['External']
+            trusttype = 'External'
             is_transitive = False
             sid_filtering = True
         else:
-            trusttype = self.bh_trust_type['Unknown']
+            trusttype = 'Unknown'
             is_transitive = not self.has_flag('NON_TRANSITIVE')
             sid_filtering = True
 
@@ -102,7 +108,7 @@ class ADDomainTrust(object):
             "TargetDomainName": self.destination_domain.upper(),
             "TargetDomainSid": self.domainsid,
             "IsTransitive": is_transitive,
-            "TrustDirection": self.direction,
+            "TrustDirection": self.trust_dir[self.direction],
             "TrustType": trusttype,
             "SidFilteringEnabled": sid_filtering
         }
