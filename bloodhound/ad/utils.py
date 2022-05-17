@@ -198,9 +198,9 @@ class ADUtils(object):
             if 'ForeignSecurityPrincipals' in dn:
                 resolved['principal'] = domain.upper()
                 resolved['type'] = 'foreignsecurityprincipal'
-                if 'name' in entry['attributes']:
+                ename = ADUtils.get_entry_property(entry, 'name')
+                if ename:
                     # Fix wellknown entries
-                    ename = entry['attributes']['name']
                     if ename in ADUtils.WELLKNOWN_SIDS:
                         name, sidtype = ADUtils.WELLKNOWN_SIDS[ename]
                         resolved['type'] = sidtype.capitalize()
