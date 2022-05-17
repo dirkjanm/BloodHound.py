@@ -30,6 +30,7 @@ from impacket.dcerpc.v5.rpcrt import DCERPCException
 from bloodhound.enumeration.outputworker import OutputWorker
 from bloodhound.enumeration.memberships import MembershipEnumerator
 from bloodhound.ad.computer import ADComputer
+from bloodhound.ad.structures import LDAP_SID
 from bloodhound.ad.utils import ADUtils
 from future.utils import itervalues, iteritems, native_str
 

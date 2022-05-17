@@ -325,11 +325,14 @@ class ADDC(ADComputer):
                       'objectSid', 'primaryGroupID', 'isDeleted']
         if 'ms-DS-GroupMSAMembership'.lower() in self.objecttype_guid_map:
             properties.append('msDS-GroupMSAMembership')
+
         if include_properties:
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
                            'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory',
-                           'whencreated', 'unicodepwd', 'unixuserpassword']
+                           'whencreated', 'unicodepwd']
+            if 'unixuserpassword' in self.objecttype_guid_map:
+                properties.append('unixuserpassword')
         if acl:
             properties.append('nTSecurityDescriptor')
 
