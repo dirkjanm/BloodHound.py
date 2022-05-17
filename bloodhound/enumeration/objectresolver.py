@@ -55,7 +55,10 @@ class ObjectResolver(object):
                 logging.debug('Querying GC for DN %s', distinguishedname)
             else:
                 logging.debug('Querying resolver LDAP for DN %s', distinguishedname)
-            distinguishedname = self.addc.ldap_get_single(distinguishedname, use_gc=use_gc, use_resolver=True)
+            distinguishedname = self.addc.ldap_get_single(distinguishedname,
+                                                          use_gc=use_gc,
+                                                          use_resolver=True,
+                                                          attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid'])
             return distinguishedname
 
     def resolve_samname(self, samname, use_gc=True):
