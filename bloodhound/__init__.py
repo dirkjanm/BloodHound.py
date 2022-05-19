@@ -66,7 +66,7 @@ class BloodHound(object):
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, collect, num_workers=10, disable_pooling=False, timestamp = ""):
+    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile=""):
         start_time = time.time()
         if 'group' in collect or 'objectprops' in collect or 'acl' in collect:
             # Fetch domains/computers for later
@@ -87,8 +87,8 @@ class BloodHound(object):
         if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
-            computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc)
-            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp)
+            computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc, computerfile=computerfile)
+            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp, )
         end_time = time.time()
         minutes, seconds = divmod(int(end_time-start_time),60)
         logging.info('Done in %02dM %02dS' % (minutes, seconds))
@@ -236,7 +236,14 @@ def main():
                         help='Don\'t automatically select a Global Catalog (use only if it gives errors)')
     parser.add_argument('--zip',
                         action='store_true',
-                        help='Compress the JSON output files into a zip archive')                     
+                        help='Compress the JSON output files into a zip archive')
+    parser.add_argument('--computerfile',
+                        action='store',
+                        help='File containing computer FQDNs to use as allowlist for any computer based methods')
+    parser.add_argument('--cachefile',
+                        action='store',
+                        help='Cache file (experimental)')
+
 
     args = parser.parse_args()
 
@@ -297,7 +304,8 @@ def main():
     bloodhound.run(collect=collect,
                    num_workers=args.workers,
                    disable_pooling=args.disable_pooling,
-                   timestamp=timestamp)
+                   timestamp=timestamp,
+                   computerfile=args.computerfile)
     #If args --zip is true, the compress output  
     if args.zip:
         logging.info("Compressing output into " + timestamp + "bloodhound.zip")

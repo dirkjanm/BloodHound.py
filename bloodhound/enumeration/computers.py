@@ -26,6 +26,7 @@ import queue
 import threading
 import logging
 import traceback
+import codecs
 from impacket.dcerpc.v5.rpcrt import DCERPCException
 from bloodhound.enumeration.outputworker import OutputWorker
 from bloodhound.enumeration.memberships import MembershipEnumerator
@@ -43,7 +44,7 @@ class ComputerEnumerator(MembershipEnumerator):
     This class extends the MembershipEnumerator class just to inherit the
     membership lookup functions which are also needed for computers.
     """
-    def __init__(self, addomain, addc, collect, do_gc_lookup=True):
+    def __init__(self, addomain, addc, collect, do_gc_lookup=True, computerfile=""):
         """
         Computer enumeration. Enumerates all computers in the given domain.
         Every domain enumerated will get its own instance of this class.
@@ -56,6 +57,11 @@ class ComputerEnumerator(MembershipEnumerator):
         self.do_gc_lookup = do_gc_lookup
         # Store collection methods specified
         self.collect = collect
+        if computerfile:
+            logging.info('Limiting enumeration to FQDNs in %s', computerfile)
+            with codecs.open(computerfile, 'r', 'utf-8') as cfile:
+                for line in cfile:
+                    self.allowlist.append(line.strip().lower())
 
     def enumerate_computers(self, computers, num_workers=10, timestamp=""):
         """
@@ -92,8 +98,8 @@ class ComputerEnumerator(MembershipEnumerator):
             if hostname in self.blocklist:
                 logging.info('Skipping computer: %s (blocklisted)', hostname)
                 continue
-            if len(self.allowlist) > 0 and hostname not in self.allowlist:
-                logging.info('Skipping computer: %s (not allowlisted)', hostname)
+            if len(self.allowlist) > 0 and hostname.lower() not in self.allowlist:
+                logging.debug('Skipping computer: %s (not allowlisted)', hostname)
                 continue
 
             process_queue.put((hostname, samname, computer))
