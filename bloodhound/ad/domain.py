@@ -24,6 +24,8 @@
 from __future__ import unicode_literals
 import logging
 import traceback
+import codecs
+import json
 
 from uuid import UUID
 from dns import resolver
@@ -306,6 +308,31 @@ class ADDC(ADComputer):
         self.ad.num_domains = entriesNum
         logging.info('Found %u domains in the forest', entriesNum)
 
+    def get_cache_items(self):
+        self.get_objecttype()
+        self.get_forest_domains()
+        self.gc_connect()
+        sidcache = {}
+        dncache = {}
+        for nc, domain in self.ad.domains.items():
+            logging.info('Processing domain %s', domain['attributes']['name'])
+            query = '(|(&(objectCategory=person)(objectClass=user))(objectClass=group)(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2))))'
+            entries = self.search(query,
+                                  use_gc=True,
+                                  use_resolver=True,
+                                  attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'],
+                                  search_base=nc,
+                                  generator=True)
+            for lentry in entries:
+                resolved_entry = ADUtils.resolve_ad_entry(lentry)
+                cacheitem = {
+                    "ObjectIdentifier": resolved_entry['objectid'],
+                    "ObjectType": resolved_entry['type'].capitalize()
+                }
+                sidcache[resolved_entry['objectid']] = cacheitem
+                dncache[ADUtils.get_entry_property(lentry, 'distinguishedName').upper()] = cacheitem
+        return dncache, sidcache
+
     def get_groups(self, include_properties=False, acl=False):
         properties = ['distinguishedName', 'samaccountname', 'samaccounttype', 'objectsid', 'member']
         if include_properties:
@@ -376,6 +403,14 @@ class ADDC(ADComputer):
         entriesNum = 0
         for entry in entries:
             entriesNum += 1
+            # Resolve it first for DN cache
+            resolved_entry = ADUtils.resolve_ad_entry(entry)
+            cacheitem = {
+                "ObjectIdentifier": resolved_entry['objectid'],
+                "ObjectType": resolved_entry['type'].capitalize()
+            }
+            self.ad.dncache[ADUtils.get_entry_property(entry, 'distinguishedName', '').upper()] = cacheitem
+            # This list is used to process computers later on
             self.ad.computers[ADUtils.get_entry_property(entry, 'distinguishedName', '')] = entry
             self.ad.computersidcache.put(ADUtils.get_entry_property(entry, 'dNSHostname', '').lower(), entry['attributes']['objectSid'])
 
@@ -455,6 +490,9 @@ class AD(object):
         self.sidcache = SidCache()
         # Create a thread-safe SAM lookup cache
         self.samcache = SamCache()
+        # DN cache dict - use generic cache for all objects
+        # holds only direct bloodhound output
+        self.dncache = {}
         # Create SID cache for computer accounts
         self.computersidcache = SidCache()
         # Object Resolver, initialized later
@@ -493,6 +531,15 @@ class AD(object):
 
     def create_objectresolver(self, addc):
         self.objectresolver = ObjectResolver(addomain=self, addc=addc)
+
+    def load_cachefile(self, cachefile):
+        with codecs.open(cachefile, 'r', 'utf-8') as cfile:
+            cachedata = json.load(cfile)
+        self.dncache = cachedata['dncache']
+        logging.info('Loaded cached DNs and SIDs from cachefile')
+
+    def save_cachefile(self, cachefile):
+        pass
 
     def dns_resolve(self, domain=None, kerberos=True, options=None):
         logging.debug('Querying domain controller information from DNS')

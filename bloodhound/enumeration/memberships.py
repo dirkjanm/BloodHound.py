@@ -55,7 +55,23 @@ class MembershipEnumerator(object):
         """
         Attempt to resolve the membership (DN) of a group to an object
         """
-        # First assume it is a user
+        # New logic here
+        try:
+            linkentry = self.addomain.dncache[member.upper()]
+        except KeyError:
+            use_gc = ADUtils.ldap2domain(member) != self.addomain.domain
+            qobject = self.addomain.objectresolver.resolve_distinguishedname(member, use_gc=use_gc)
+            if qobject is None:
+                return None
+            resolved_entry = ADUtils.resolve_ad_entry(qobject)
+            linkentry = {
+                "ObjectIdentifier": resolved_entry['objectid'],
+                "ObjectType": resolved_entry['type'].capitalize()
+            }
+            self.addomain.dncache[member.upper()] = linkentry
+        return linkentry
+
+        # DEPRECATED
         try:
             resolved_entry = self.addomain.users[member]
         except KeyError:
@@ -216,7 +232,13 @@ class MembershipEnumerator(object):
             if ADUtils.get_entry_property(entry, 'msDS-GroupMSAMembership', default=b'', raw=True) != b'':
                 self.parse_gmsa(user, entry)
 
-            self.addomain.users[entry['dn']] = resolved_entry
+            # Cache link entry for membership resolution
+            linkentry = {
+                "ObjectIdentifier": resolved_entry['objectid'],
+                "ObjectType": resolved_entry['type'].capitalize()
+            }
+            self.addomain.dncache[entry['dn'].upper()] = linkentry
+
             # If we are enumerating ACLs, we break out of the loop here
             # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
             if acl:
@@ -276,7 +298,6 @@ class MembershipEnumerator(object):
 
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
-            self.addomain.groups[entry['dn']] = resolved_entry
             try:
                 sid = entry['attributes']['objectSid']
             except KeyError:
@@ -308,6 +329,13 @@ class MembershipEnumerator(object):
                 resolved_member = self.get_membership(member)
                 if resolved_member:
                     group['Members'].append(resolved_member)
+
+            # Create cache entry for links
+            link_output = {
+                "ObjectIdentifier": group['ObjectIdentifier'],
+                "ObjectType": 'Group'
+            }
+            self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
 
             # If we are enumerating ACLs, we break out of the loop here
             # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses

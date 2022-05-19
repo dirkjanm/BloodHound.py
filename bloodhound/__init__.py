@@ -66,8 +66,11 @@ class BloodHound(object):
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile=""):
+    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None):
         start_time = time.time()
+        if cachefile:
+            self.ad.load_cachefile(cachefile)
+
         if 'group' in collect or 'objectprops' in collect or 'acl' in collect:
             # Fetch domains/computers for later
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect)
@@ -305,7 +308,8 @@ def main():
                    num_workers=args.workers,
                    disable_pooling=args.disable_pooling,
                    timestamp=timestamp,
-                   computerfile=args.computerfile)
+                   computerfile=args.computerfile,
+                   cachefile=args.cachefile)
     #If args --zip is true, the compress output  
     if args.zip:
         logging.info("Compressing output into " + timestamp + "bloodhound.zip")
