@@ -493,6 +493,7 @@ class AD(object):
         # DN cache dict - use generic cache for all objects
         # holds only direct bloodhound output
         self.dncache = {}
+        self.newsidcache = SidCache()
         # Create SID cache for computer accounts
         self.computersidcache = SidCache()
         # Object Resolver, initialized later
@@ -536,6 +537,7 @@ class AD(object):
         with codecs.open(cachefile, 'r', 'utf-8') as cfile:
             cachedata = json.load(cfile)
         self.dncache = cachedata['dncache']
+        self.newsidcache.load(cachedata['sidcache'])
         logging.info('Loaded cached DNs and SIDs from cachefile')
 
     def save_cachefile(self, cachefile):

@@ -341,7 +341,7 @@ class AceResolver(object):
                 out['PrincipalType'] = ADUtils.WELLKNOWN_SIDS[ace['sid']][1].capitalize()
             else:
                 try:
-                    entry = self.addomain.sidcache.get(ace['sid'])
+                    linkitem = self.addomain.newsidcache.get(ace['sid'])
                 except KeyError:
                     # Look it up instead
                     # Is this SID part of the current domain? If not, use GC
@@ -353,19 +353,24 @@ class AceResolver(object):
                         # Fake it
                         entry = {
                             'type': 'Unknown',
-                            'principal': ace['sid']
+                            'objectid': ace['sid']
                         }
                     else:
                         entry = ADUtils.resolve_ad_entry(ldapentry)
+                    linkitem = {
+                        "ObjectIdentifier": entry['objectid'],
+                        "ObjectType": entry['type'].capitalize()
+                    }
                     # Entries are cached regardless of validity - unresolvable sids
                     # are not likely to be resolved the second time and this saves traffic
-                    self.addomain.sidcache.put(ace['sid'], entry)
+                    self.addomain.newsidcache.put(ace['sid'], linkitem)
                 out['PrincipalSID'] = ace['sid']
-                out['PrincipalType'] = entry['type']
+                out['PrincipalType'] = linkitem['ObjectType']
             aces_out.append(out)
         return aces_out
 
     def resolve_sid(self, sid):
+        raise NotImplementedError
         out = {}
         # Is it a well-known sid?
         if sid in ADUtils.WELLKNOWN_SIDS:
@@ -385,7 +390,7 @@ class AceResolver(object):
                     # Fake it
                     entry = {
                         'type': 'Unknown',
-                        'principal':sid
+                        'objectid':sid
                     }
                 else:
                     entry = ADUtils.resolve_ad_entry(ldapentry)
@@ -441,6 +446,10 @@ class SidCache(object):
     def put(self, entry, value):
         with self.lock:
             self._cache[entry] = value
+
+    # Overwrite cache from disk
+    def load(self, cache):
+        self._cache = cache
 
 class SamCache(SidCache):
     """
