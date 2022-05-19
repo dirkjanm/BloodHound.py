@@ -58,7 +58,7 @@ class ObjectResolver(object):
             distinguishedname = self.addc.ldap_get_single(distinguishedname,
                                                           use_gc=use_gc,
                                                           use_resolver=True,
-                                                          attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid'])
+                                                          attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             return distinguishedname
 
     def resolve_samname(self, samname, use_gc=True):
@@ -80,7 +80,7 @@ class ObjectResolver(object):
             entries = self.addc.search(search_base="",
                                        search_filter='(sAMAccountName=%s)' % safename,
                                        use_gc=use_gc,
-                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid'])
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             # This uses a generator, however we return a list
             for entry in entries:
                 out.append(entry)
@@ -102,7 +102,7 @@ class ObjectResolver(object):
             entries = self.addc.search(search_base="",
                                        search_filter='(&(objectClass=user)(userPrincipalName=%s))' % safename,
                                        use_gc=True,
-                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid'])
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             for entry in entries:
                 # By definition this can be only one entry
                 return entry
@@ -131,7 +131,7 @@ class ObjectResolver(object):
                                        search_filter='(objectSid=%s)' % sid,
                                        use_gc=use_gc,
                                        use_resolver=True,
-                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType'])
+                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'name'])
             for entry in entries:
                 return entry
 
