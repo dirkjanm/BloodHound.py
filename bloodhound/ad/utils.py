@@ -370,15 +370,15 @@ class AceResolver(object):
         return aces_out
 
     def resolve_sid(self, sid):
-        raise NotImplementedError
+        # Resolve SIDs for SID history purposes
         out = {}
         # Is it a well-known sid?
         if sid in ADUtils.WELLKNOWN_SIDS:
-            out['ObjectID'] = u'%s-%s' % (self.addomain.domain.upper(), sid)
+            out['ObjectIdentifier'] = u'%s-%s' % (self.addomain.domain.upper(), sid)
             out['ObjectType'] = ADUtils.WELLKNOWN_SIDS[sid][1].capitalize()
         else:
             try:
-                entry = self.addomain.sidcache.get(sid)
+                linkitem = self.addomain.newsidcache.get(sid)
             except KeyError:
                 # Look it up instead
                 # Is this SID part of the current domain? If not, use GC
@@ -394,11 +394,15 @@ class AceResolver(object):
                     }
                 else:
                     entry = ADUtils.resolve_ad_entry(ldapentry)
+                linkitem = {
+                    "ObjectIdentifier": entry['objectid'],
+                    "ObjectType": entry['type'].capitalize()
+                }
                 # Entries are cached regardless of validity - unresolvable sids
                 # are not likely to be resolved the second time and this saves traffic
-                self.addomain.sidcache.put(sid, entry)
-            out['ObjectID'] = sid
-            out['ObjectType'] = entry['type']
+                self.addomain.newsidcache.put(sid, linkitem)
+            out['ObjectIdentifier'] = sid
+            out['ObjectType'] = linkitem['ObjectType']
         return out
 
 class DNSCache(object):
