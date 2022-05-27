@@ -43,6 +43,8 @@ EXTRIGHTS_GUID_MAPPING = {
     "WriteMember": string_to_bin("bf9679c0-0de6-11d0-a285-00aa003049e2"),
     "UserForceChangePassword": string_to_bin("00299570-246d-11d0-a768-00aa006e0529"),
     "AllowedToAct": string_to_bin("3f78c3e5-f79a-46bd-a0b8-9d18116ddc79"),
+    "UserAccountRestrictionsSet": string_to_bin("4c164200-20c0-11d0-a768-00aa006e0529")
+    #9b026da6-0d3c-465c-8bee-5199d7165cba
 }
 
 def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
@@ -75,6 +77,10 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
         # Ignore Creator Owner or Local System
         if sid in ignoresids:
             continue
+
+        # For debugging, print specific aces
+        # if sid == "S-1-5-21-2895268558-4179327395-2773671012-513":
+        #     print(ace_object)
         if ace_object.ace.AceType == 0x05:
             is_inherited = ace_object.has_flag(ACE.INHERITED_ACE)
             # ACCESS_ALLOWED_OBJECT_ACE
@@ -137,6 +143,10 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     relations.append(build_relation(sid, 'AddMember', '', inherited=is_inherited))
                 if entrytype == 'computer' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['AllowedToAct']):
                     relations.append(build_relation(sid, 'AddAllowedToAct', '', inherited=is_inherited))
+                # Property set, but ignore Domain Admins since they already have enough privileges anyway
+                if entrytype == 'computer' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['UserAccountRestrictionsSet']) and not sid.endswith('-512'):
+                    relations.append(build_relation(sid, 'AddAllowedToAct', '', inherited=is_inherited))
+
 
                 # Since 4.0
                 # Key credential link property write rights
@@ -168,8 +178,8 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 # All Extended
                 if entrytype in ['user', 'domain'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
-                if entrytype == 'computer' and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
-                entry['Properties']['haslaps']:
+                # Also report all extended if no laps
+                if entrytype == 'computer' and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
                 if entrytype == 'domain' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['GetChanges']):
                     relations.append(build_relation(sid, 'GetChanges', '', inherited=is_inherited))
@@ -197,9 +207,10 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             # For users and domain, check extended rights
             if entrytype in ['user', 'domain'] and mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS):
                 relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
-                
+
+            # Also report all extended if no laps
             if entrytype == 'computer' and mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS) and \
-            entry['Properties']['haslaps']:
+                sid != "S-1-5-32-544" and not sid.endswith('-512'):
                 relations.append(build_relation(sid, 'AllExtendedRights', '', inherited=is_inherited))
 
             if mask.has_priv(ACCESS_MASK.WRITE_DACL):
