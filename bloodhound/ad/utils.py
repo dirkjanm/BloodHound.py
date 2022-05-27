@@ -211,7 +211,7 @@ class ADUtils(object):
                         # Foreign security principal
                         resolved['objectid'] = ename
             else:
-                resolved['type'] = 'Unknown'
+                resolved['type'] = 'Base'
         else:
             accountType = ADUtils.get_entry_property(entry, 'sAMAccountType')
             if accountType in [268435456, 268435457, 536870912, 536870913]:
@@ -352,7 +352,7 @@ class AceResolver(object):
                         logging.warning('Could not resolve SID: %s', ace['sid'])
                         # Fake it
                         entry = {
-                            'type': 'Unknown',
+                            'type': 'Base',
                             'objectid': ace['sid']
                         }
                     else:
@@ -389,7 +389,7 @@ class AceResolver(object):
                     logging.warning('Could not resolve SID: %s', sid)
                     # Fake it
                     entry = {
-                        'type': 'Unknown',
+                        'type': 'Base',
                         'objectid':sid
                     }
                 else:

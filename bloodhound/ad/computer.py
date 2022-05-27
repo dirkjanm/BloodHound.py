@@ -129,10 +129,6 @@ class ADComputer(object):
             'Status': None
         }
 
-        # Fallback for computers without DNSHostname. Inconsistent with BloodHound but makes sure data is more complete
-        if not self.hostname:
-            data['Properties']['name'] = self.samname.upper()
-
         props = data['Properties']
         # via the TRUSTED_FOR_DELEGATION (0x00080000) flag in UAC
         props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000

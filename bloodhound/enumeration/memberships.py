@@ -395,10 +395,10 @@ class MembershipEnumerator(object):
                 continue
 
             hostname = ADUtils.get_entry_property(entry, 'dNSHostName')
+            samname = ADUtils.get_entry_property(entry, 'sAMAccountName')
             if not hostname:
                 logging.debug('Invalid computer object without hostname: %s', samname)
                 hostname = ''
-            samname = entry['attributes']['sAMAccountName']
 
             cobject = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, addc=self.addc, objectsid=entry['attributes']['objectSid'])
             cobject.primarygroup = MembershipEnumerator.get_primary_membership(entry)
