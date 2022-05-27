@@ -73,14 +73,14 @@ class BloodHound(object):
 
         if 'group' in collect or 'objectprops' in collect or 'acl' in collect:
             # Fetch domains/computers for later
-            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect)
+            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=False)
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
             membership_enum.enumerate_memberships(timestamp=timestamp)
         elif any(method in collect for method in ['localadmin', 'session', 'loggedon', 'experimental', 'rdp', 'dcom', 'psremote']):
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
-            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect)
+            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=True)
         elif 'trusts' in collect:
             # Prefetch domains
             self.pdc.get_domains('acl' in collect)

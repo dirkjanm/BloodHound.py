@@ -372,8 +372,11 @@ class MembershipEnumerator(object):
         '''
         filename = timestamp + 'computers.json'
 
+        # Should we include extra properties in the query?
+        with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
-        entries = self.addc.ad.computers.values()
+
+        entries = self.addc.get_computers(include_properties=with_properties, acl=acl)
 
         logging.debug('Writing computers ACL to file: %s', filename)
 
@@ -391,12 +394,10 @@ class MembershipEnumerator(object):
             if not 'attributes' in entry:
                 continue
 
-            if 'dNSHostName' not in entry['attributes']:
-                continue
-
-            hostname = entry['attributes']['dNSHostName']
+            hostname = ADUtils.get_entry_property(entry, 'dNSHostName')
             if not hostname:
-                continue
+                logging.debug('Invalid computer object without hostname: %s', samname)
+                hostname = ''
             samname = entry['attributes']['sAMAccountName']
 
             cobject = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, addc=self.addc, objectsid=entry['attributes']['objectSid'])

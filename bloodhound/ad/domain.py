@@ -377,6 +377,10 @@ class ADDC(ADComputer):
 
 
     def get_computers(self, include_properties=False, acl=False):
+        """
+        Get all computer objects. This purely gets them using LDAP. This function is used directly in case of DCOnly enum,
+        or used to create a cache in case of computer enumeration later on.
+        """
         properties = ['samaccountname', 'userAccountControl', 'distinguishedname',
                       'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID',
                       'isDeleted']
@@ -399,6 +403,16 @@ class ADDC(ADComputer):
                               properties,
                               generator=True,
                               query_sd=acl)
+
+        return entries
+
+    def get_computers_withcache(self, include_properties=False, acl=False):
+        """
+        Get all computer objects. This is the function used when we do computer enumeration, in which case these
+        items are cached first. Calls the function with generator above to create the list.
+        """
+
+        entries = self.get_computers(include_properties, acl)
 
         entriesNum = 0
         for entry in entries:
@@ -437,11 +451,12 @@ class ADDC(ADComputer):
                               generator=True)
         return entries
 
-    def prefetch_info(self, props=False, acls=False):
+    def prefetch_info(self, props=False, acls=False, cache_computers=False):
         self.get_objecttype()
         self.get_domains(acl=acls)
         self.get_forest_domains()
-        self.get_computers(include_properties=props, acl=acls)
+        if cache_computers:
+            self.get_computers_withcache(include_properties=props, acl=acls)
 
     def get_root_domain(self):
         return ADUtils.ldap2domain(self.ldap.server.info.other['configurationNamingContext'][0])

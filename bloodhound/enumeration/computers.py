@@ -86,15 +86,16 @@ class ComputerEnumerator(MembershipEnumerator):
             if not 'attributes' in computer:
                 continue
 
-            if 'dNSHostName' not in computer['attributes']:
-                continue
+            # if 'dNSHostName' not in computer['attributes']:
+            #     continue
 
-            hostname = computer['attributes']['dNSHostName']
+            hostname = ADUtils.get_entry_property(computer, 'dNSHostName')
             samname = computer['attributes']['sAMAccountName']
             if not hostname:
-                logging.info('Invalid computer object without hostname: %s', samname)
+                logging.debug('Invalid computer object without hostname: %s', samname)
                 hostname = ''
-            # For debugging purposes only
+
+            # Check if filtering
             if hostname in self.blocklist:
                 logging.info('Skipping computer: %s (blocklisted)', hostname)
                 continue
