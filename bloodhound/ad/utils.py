@@ -349,7 +349,7 @@ class AceResolver(object):
                     ldapentry = self.resolver.resolve_sid(ace['sid'], use_gc)
                     # Couldn't resolve...
                     if not ldapentry:
-                        logging.warning('Could not resolve SID: %s', ace['sid'])
+                        logging.debug('Could not resolve SID: %s', ace['sid'])
                         # Fake it
                         entry = {
                             'type': 'Base',
@@ -386,7 +386,7 @@ class AceResolver(object):
                 ldapentry = self.resolver.resolve_sid(sid, use_gc)
                 # Couldn't resolve...
                 if not ldapentry:
-                    logging.warning('Could not resolve SID: %s', sid)
+                    logging.debug('Could not resolve SID: %s', sid)
                     # Fake it
                     entry = {
                         'type': 'Base',
