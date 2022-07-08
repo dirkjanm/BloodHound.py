@@ -136,8 +136,10 @@ class ComputerEnumerator(MembershipEnumerator):
                     c.rpc_resolve_sids(unresolved, c.psremote)
                 if 'loggedon' in self.collect:
                     loggedon = c.rpc_get_loggedon()
+                    registry_sessions = c.rpc_get_registry_sessions()
                 else:
                     loggedon = []
+                    registry_sessions = []
                 if 'experimental' in self.collect:
                     services = c.rpc_get_services()
                     tasks = c.rpc_get_schtasks()
@@ -224,6 +226,13 @@ class ComputerEnumerator(MembershipEnumerator):
                     for resultuser in users:
                         c.loggedon.append({'ComputerSID':objectsid, 'UserSID':resultuser})
 
+                if registry_sessions is None:
+                    registry_sessions = []
+
+                # Process found registry sessions
+                for ses in registry_sessions:
+                    c.registry_sessions.append({'ComputerSID':objectsid, 'UserSID':ses['user']})
+    
                 # Process Tasks
                 for taskuser in tasks:
                     c.loggedon.append({'ComputerSID':objectsid, 'UserSID':taskuser})

@@ -25,7 +25,9 @@
 import logging
 import traceback
 import calendar
-from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, scmr, tsch
+import time
+import re
+from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, scmr, tsch, rrp
 from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY, RPC_C_AUTHN_LEVEL_PKT_PRIVACY
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
@@ -58,6 +60,7 @@ class ADComputer(object):
         self.services = []
         self.sessions = []
         self.loggedon = []
+        self.registry_sessions = []
         self.addr = None
         self.smbconnection = None
         # The SID of the local domain
@@ -117,11 +120,10 @@ class ADComputer(object):
                 'FailureReason': None,
                 'Results': self.loggedon
             },
-            # Unsupported for now
             'RegistrySessions': {
-                'Collected': False,
+                'Collected': 'loggedon' in collect and not self.permanentfailure,
                 'FailureReason': None,
-                'Results': []
+                'Results': self.registry_sessions
             },
             'Aces': [],
             'HasSIDHistory': [],
@@ -421,6 +423,66 @@ class ADComputer(object):
         dce.disconnect()
 
         return sessions
+
+    def rpc_get_registry_sessions(self):
+        binding = r'ncacn_np:%s[\pipe\winreg]' % self.addr
+
+        # Try to bind to the Remote Registry RPC interface, if it fails try again once.
+        binding_attempts = 2
+        while binding_attempts > 0:
+            dce = self.dce_rpc_connect(binding, rrp.MSRPC_UUID_RRP)
+            if dce is None:
+                # If the Remote Registry is not yet started, the named pipe '\pipe\winreg' does not
+                # exist and therefore the following exception is expected: STATUS_PIPE_NOT_AVAILABLE.
+                # But this initial attempt should trigger it. Wait 1s and hope the service had enough
+                # time to start.
+                time.sleep(1)
+            else:
+                # We could connect to the Remote Registry, so exit the loop.
+                break
+            binding_attempts -= 1
+
+        # If the two binding attempts failed, silently return.
+        if dce is None:
+            return
+
+        registry_sessions = []
+
+        # Impacket's 'hOpenUsers' will allow us to open the remote HKU hive.
+        try:
+            resp = rrp.hOpenUsers(dce)
+        except DCERPCException as e:
+            if 'rpc_s_access_denied' in str(e):
+                logging.debug('Access denied while enumerating Registry Sessions on %s', self.hostname)
+                return []
+            else:
+                logging.debug('Exception connecting to RPC: %s', e)
+        except Exception as e:
+            if str(e).find('Broken pipe') >= 0:
+                return
+            else:
+                raise
+
+        # Once we have a handle on the remote HKU hive, we can call 'BaseRegEnumKey' in a loop in
+        # order to enumerate the subkeys which names are the SIDs of the logged in users.
+        key_handle = resp['phKey']
+        index = 1
+        sid_filter = "^S-1-5-21-[0-9]+-[0-9]+-[0-9]+-[0-9]+$"
+        while True:
+            try:
+                resp = rrp.hBaseRegEnumKey(dce, key_handle, index)
+                sid = resp['lpNameOut'].rstrip('\0')
+                if re.match(sid_filter, sid):
+                    logging.info('User with SID %s is logged in on %s' % (sid, self.hostname))
+                    registry_sessions.append({'user': sid})
+                index += 1
+            except:
+                break
+
+        rrp.hBaseRegCloseKey(dce, key_handle)
+        dce.disconnect()
+
+        return registry_sessions
 
     """
     """
