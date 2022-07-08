@@ -36,6 +36,7 @@ from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
 from impacket.smb3 import SMB3
 from impacket.smb import SMB
+from impacket.smbconnection import SessionError
 # Try to import exceptions here, if this does not succeed, then impacket version is too old
 try:
     HostnameValidationExceptions = (SMB3.HostnameValidationException, SMB.HostnameValidationException)
@@ -289,6 +290,14 @@ class ADComputer(object):
                 logging.info('Ignoring host %s since its hostname does not match: %s', self.hostname, str(exc))
                 self.permanentfailure = True
                 return None
+            except SessionError as exc:
+                if 'STATUS_PIPE_NOT_AVAILABLE' in str(exc) and 'winreg' in binding.lower():
+                    # This can happen, silently ignore
+                    return None
+                # Else, just log it
+                logging.debug(traceback.format_exc())
+                logging.warning('DCE/RPC connection failed: %s', str(e))
+                return None
 
             if self.smbconnection is None:
                 self.smbconnection = self.rpc.get_smb_connection()
@@ -435,7 +444,7 @@ class ADComputer(object):
                 # If the Remote Registry is not yet started, the named pipe '\pipe\winreg' does not
                 # exist and therefore the following exception is expected: STATUS_PIPE_NOT_AVAILABLE.
                 # But this initial attempt should trigger it. Wait 1s and hope the service had enough
-                # time to start.
+                # time to start.
                 time.sleep(1)
             else:
                 # We could connect to the Remote Registry, so exit the loop.
@@ -444,6 +453,7 @@ class ADComputer(object):
 
         # If the two binding attempts failed, silently return.
         if dce is None:
+            logging.debug('Failed opening remote registry after 2 attempts')
             return
 
         registry_sessions = []
