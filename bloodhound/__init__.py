@@ -71,13 +71,16 @@ class BloodHound(object):
         if cachefile:
             self.ad.load_cachefile(cachefile)
 
+        # Check early if we should enumerate computers as well
+        do_computer_enum = any(method in collect for method in ['localadmin', 'session', 'loggedon', 'experimental', 'rdp', 'dcom', 'psremote'])
+
         if 'group' in collect or 'objectprops' in collect or 'acl' in collect:
-            # Fetch domains/computers for later
-            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=False)
+            # Fetch domains for later, computers if needed
+            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
             membership_enum.enumerate_memberships(timestamp=timestamp)
-        elif any(method in collect for method in ['localadmin', 'session', 'loggedon', 'experimental', 'rdp', 'dcom', 'psremote']):
+        elif do_computer_enum:
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=True)
@@ -87,7 +90,7 @@ class BloodHound(object):
         if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
             trusts_enum = DomainEnumerator(self.ad, self.pdc)
             trusts_enum.dump_domain(collect,timestamp=timestamp)
-        if 'localadmin' in collect or 'session' in collect or 'loggedon' in collect or 'experimental' in collect:
+        if do_computer_enum:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
             computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc, computerfile=computerfile)
