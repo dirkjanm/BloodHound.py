@@ -291,12 +291,12 @@ class ADComputer(object):
                 self.permanentfailure = True
                 return None
             except SessionError as exc:
-                if 'STATUS_PIPE_NOT_AVAILABLE' in str(exc) and 'winreg' in binding.lower():
+                if ('STATUS_PIPE_NOT_AVAILABLE' in str(exc) or 'STATUS_OBJECT_NAME_NOT_FOUND' in str(exc)) and 'winreg' in binding.lower():
                     # This can happen, silently ignore
                     return None
                 # Else, just log it
                 logging.debug(traceback.format_exc())
-                logging.warning('DCE/RPC connection failed: %s', str(e))
+                logging.warning('DCE/RPC connection failed: %s', str(exc))
                 return None
 
             if self.smbconnection is None:
