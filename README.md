@@ -1,11 +1,11 @@
 # BloodHound.py
-![Python 2.7 and 3 compatible](https://img.shields.io/badge/python-2.7%2C%203.x-blue.svg)
+![Python 3 compatible](https://img.shields.io/badge/python-3.x-blue.svg)
 ![PyPI version](https://img.shields.io/pypi/v/bloodhound.svg)
 ![License: MIT](https://img.shields.io/pypi/l/bloodhound.svg)
 
 BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/BloodHoundAD/BloodHound), based on [Impacket](https://github.com/CoreSecurity/impacket/).
 
-This version of BloodHound.py is **only compatible with BloodHound 4.1 or newer**. For the 3.x range, use version 1.1.1 via pypi.
+This version of BloodHound.py is **only compatible with BloodHound 4.1 or newer**. For the 3.x range, use version 1.1.1 via pypi. As of version 1.3, BloodHound.py only supports Python 3, Python 2 is no longer tested and may break in the future.
 
 ## Limitations
 BloodHound.py currently has the following limitations:
@@ -36,6 +36,7 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *LoggedOn* - Performs privileged Session enumeration (requires local admin on the target)
 - *ObjectProps* - Performs Object Properties collection for properties such as LastLogon or PwdLastSet
 - *All* - Runs all methods above, except LoggedOn
+- *Experimental* - Connects to individual hosts to enumerate services and scheduled tasks that may have stored credentials
 
 Multiple collectionmethods should be separated by a comma, for example: `-c Group,LocalAdmin`
 
@@ -46,5 +47,5 @@ You can override some of the automatic detection options, such as the hostname o
 ```docker build -t bloodhound .```  
 2. Run container  
 ```docker run -v ${PWD}:/bloodhound-data -it bloodhound```  
-After that you can run `bloodhound-python` inside container, all data will be stored in the path from where you start the container.
+After that you can run `bloodhound-python` inside the container, all data will be stored in the path from where you start the container.
 
