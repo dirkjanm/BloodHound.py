@@ -484,6 +484,10 @@ class ADComputer(object):
                 sid = resp['lpNameOut'].rstrip('\0')
                 if re.match(sid_filter, sid):
                     logging.info('User with SID %s is logged in on %s' % (sid, self.hostname))
+                    # Ignore local accounts (best effort, self.sid is only
+                    # populated if we enumerated a group before)
+                    if self.sid and sid.startswith(self.sid):
+                        continue
                     registry_sessions.append({'user': sid})
                 index += 1
             except:
