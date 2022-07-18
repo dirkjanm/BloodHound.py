@@ -47,7 +47,7 @@ class BloodHound(object):
             sys.exit(1)
 
         if not self.ad.baseDN:
-            logging.error('Could not figure out the domain to query. Please specify this manualy with -d')
+            logging.error('Could not figure out the domain to query. Please specify this manually with -d')
             sys.exit(1)
 
         pdc = self.ad.dcs()[0]
