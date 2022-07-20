@@ -29,7 +29,7 @@ import json
 
 from uuid import UUID
 from dns import resolver
-from ldap3 import ALL_ATTRIBUTES, BASE
+from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
 from ldap3.utils.config import _ATTRIBUTES_EXCLUDED_FROM_CHECK
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError
 from ldap3.protocol.microsoft import security_descriptor_control
@@ -117,7 +117,7 @@ class ADDC(ADComputer):
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
-    def search(self, search_filter='(objectClass=*)', attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False, is_retry=False):
+    def search(self, search_filter='(objectClass=*)',attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False, is_retry=False,  search_scope=SUBTREE,):
         """
         Search for objects in LDAP or Global Catalog LDAP.
         """
@@ -152,6 +152,7 @@ class ADDC(ADComputer):
                                                         search_filter,
                                                         attributes=attributes,
                                                         paged_size=200,
+                                                        search_scope=search_scope,
                                                         controls=controls,
                                                         generator=generator)
         try:
@@ -358,6 +359,50 @@ class ADDC(ADComputer):
                               query_sd=acl)
         return entries
 
+    def get_gpos(self, include_properties=False, acl=False):
+        properties = ['distinguishedName', 'name', 'objectGUID', 'gPCFileSysPath', 'displayName']
+        if include_properties:
+            properties += ['description', 'whencreated']
+        if acl:
+            properties += ['nTSecurityDescriptor']
+        entries = self.search('(objectCategory=groupPolicyContainer)',
+                              properties,
+                              generator=True,
+                              query_sd=acl)
+        return entries
+
+    def get_ous(self, include_properties=False, acl=False):
+        properties = ['distinguishedName', 'name', 'objectGUID']
+        if include_properties:
+            properties += ['description', 'whencreated']
+        if acl:
+            properties += ['nTSecurityDescriptor']
+        entries = self.search('(objectCategory=organizationalUnit)',
+                              properties,
+                              generator=True,
+                              query_sd=acl)
+        return entries
+
+    def get_containers(self, include_properties=False, acl=False, dn=''):
+        properties = ['distinguishedName', 'name', 'objectGUID', 'isCriticalSystemObject','objectClass', 'objectCategory']
+        if include_properties:
+            properties += ['description', 'whencreated']
+        if acl:
+            properties += ['nTSecurityDescriptor']
+        entries = self.search('(&(objectCategory=container)(objectClass=container))',
+                              properties,
+                              generator=True,
+                              query_sd=acl,
+                              search_base=dn)
+        return entries
+
+    def get_GPLink(self, dn='*'):
+        properties = ['gPLink']
+        entries = self.search('(&(gPLink=*)(distinguishedname= %s))' % dn,
+                              properties,
+                              generator=True)
+        return entries
+
 
     def get_users(self, include_properties=False, acl=False):
 
@@ -456,6 +501,12 @@ class ADDC(ADComputer):
     def get_sessions(self):
         entries = self.search('(&(samAccountType=805306368)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(|(homedirectory=*)(scriptpath=*)(profilepath=*)))',
                               ['homedirectory', 'scriptpath', 'profilepath'])
+        return entries
+
+    def get_childobject(self, dn):
+        entries = self.search(attributes=['objectSid', 'objectClass', 'objectGUID', 'distinguishedName', 'sAMAccountName', 'sAMAccountType'],
+                              search_base=dn, search_scope=LEVEL)
+                              
         return entries
 
     def get_trusts(self):
