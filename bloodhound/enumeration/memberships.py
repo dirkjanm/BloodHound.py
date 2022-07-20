@@ -676,7 +676,7 @@ class MembershipEnumerator(object):
             # Create cache entry for links
             link_output = {
                 "ObjectIdentifier": container['ObjectIdentifier'],
-                "ObjectType": 'OU'
+                "ObjectType": 'container'
             }
             self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
 
@@ -704,7 +704,7 @@ class MembershipEnumerator(object):
             self.result_q.put(None)
         self.result_q.join()
 
-        logging.debug('Finished writing OU')
+        logging.debug('Finished writing containers')
 
     def parse_gmsa(self, user, entry):
         """
