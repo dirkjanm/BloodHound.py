@@ -34,6 +34,7 @@ from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
 from impacket import smb3structs
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
+from bloodhound.ad.structures import LDAP_SID
 from impacket.smb3 import SMB3
 from impacket.smb import SMB
 from impacket.smbconnection import SessionError
