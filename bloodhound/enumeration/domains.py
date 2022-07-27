@@ -127,6 +127,14 @@ class DomainEnumerator(object):
             "IsDeleted": False,
         }
 
+        for childentry in self.addc.get_childobject(domain["Properties"]["distinguishedname"]):
+            resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            object = {
+                "ObjectIdentifier":resolved_childentry['objectid'],
+                "ObjectType":resolved_childentry['type']
+            }
+            domain["ChildObjects"].append(object)
+
         if 'acl' in collect:
             resolver = AceResolver(self.addomain, self.addomain.objectresolver)
             _, aces = parse_binary_acl(domain, 'domain', ADUtils.get_entry_property(domain_object, 'nTSecurityDescriptor'), self.addc.objecttype_guid_map)
@@ -141,6 +149,13 @@ class DomainEnumerator(object):
 
             logging.info('Found %u trusts', num_entries)
 
+        for gplink in self.addc.get_GPLink(domain["Properties"]["distinguishedname"]):
+                gplink_dn, enforced = ADUtils.get_entry_property(gplink, 'gPLink').split('://')[1].split(';')
+                enforced = int(enforced[0])
+                link = dict()
+                link['IsEnforced'] = bool(enforced)
+                link['GUID'] = self.addomain.dncache[gplink_dn.upper()]['ObjectIdentifier']
+                domain['Links'].append(link)
         # Single domain only
         datastruct['meta']['count'] = 1
         datastruct['data'].append(domain)

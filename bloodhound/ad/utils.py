@@ -211,6 +211,16 @@ class ADUtils(object):
                     else:
                         # Foreign security principal
                         resolved['objectid'] = ename
+            elif ADUtils.get_entry_property(entry, 'objectGUID'):
+                resolved['objectid'] = ADUtils.get_entry_property(entry, 'objectGUID', '').upper()[1:-1]
+                resolved['principal'] = ('%s@%s' % (ADUtils.get_entry_property(entry, 'name', ''), domain)).upper()
+                object_class = ADUtils.get_entry_property(entry, 'objectClass', '')
+                if 'organizationalUnit' in object_class:
+                    resolved['type'] = 'OU'
+                elif 'container' in object_class:
+                    resolved['type'] = 'Container'
+                else:
+                    resolved['type'] = 'Base'
             else:
                 resolved['type'] = 'Base'
         else:
