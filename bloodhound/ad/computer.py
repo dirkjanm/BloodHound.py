@@ -138,6 +138,7 @@ class ADComputer(object):
         props['unconstraineddelegation'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000
         props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
         props['trustedtoauth'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x01000000 == 0x01000000
+        props['samaccountname'] = ADUtils.get_entry_property(entry, 'sAMAccountName')
 
         if 'objectprops' in collect or 'acl' in collect:
             props['haslaps'] = ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) != 0

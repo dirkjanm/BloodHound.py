@@ -77,7 +77,7 @@ class OutputWorker(object):
             # Loop file if it gets too big
             if num_computers % MAX_ENTRIES == 0 and num_computers > 0:
                 logging.debug('Rotating output file %s', computers_filename)
-                computers_out.write('],"meta":{"methods":0,"type":"computers","count":%d, "version":4}}' % current_num_computers)
+                computers_out.write('],"meta":{"methods":0,"type":"computers","count":%d, "version":5}}' % current_num_computers)
                 computers_out.close()
                 filenumber += 1
                 new_filename = computers_filename.replace('.json', '_%02d.json' % filenumber)
@@ -88,7 +88,7 @@ class OutputWorker(object):
 
         logging.debug('Write worker is done, closing files')
         # Write metadata manually
-        computers_out.write('],"meta":{"methods":0,"type":"computers","count":%d, "version":4}}' % current_num_computers)
+        computers_out.write('],"meta":{"methods":0,"type":"computers","count":%d, "version":5}}' % current_num_computers)
         computers_out.close()
         result_q.task_done()
 
@@ -137,7 +137,7 @@ class OutputWorker(object):
             # Loop file if it gets too big
             if num_members % MAX_ENTRIES == 0 and num_members > 0:
                 logging.debug('Rotating output file %s', filename)
-                membership_out.write('],"meta":{"methods":0,"type":"%s","count":%d, "version":4}}' % (enumtype, current_num_members))
+                membership_out.write('],"meta":{"methods":0,"type":"%s","count":%d, "version":5}}' % (enumtype, current_num_members))
                 membership_out.close()
                 filenumber += 1
                 new_filename = filename.replace('.json', '_%02d.json' % filenumber)
@@ -147,6 +147,6 @@ class OutputWorker(object):
 
         logging.info('Found %d %s', num_members, enumtype)
         # Write metadata manually
-        membership_out.write('],"meta":{"methods":0,"type":"%s","count":%d, "version":4}}' % (enumtype, current_num_members))
+        membership_out.write('],"meta":{"methods":0,"type":"%s","count":%d, "version":5}}' % (enumtype, current_num_members))
         membership_out.close()
         result_q.task_done()

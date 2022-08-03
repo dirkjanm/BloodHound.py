@@ -5,7 +5,7 @@
 
 BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/BloodHoundAD/BloodHound), based on [Impacket](https://github.com/CoreSecurity/impacket/).
 
-This version of BloodHound.py is **only compatible with BloodHound 4.1 or newer**. For the 3.x range, use version 1.1.1 via pypi. As of version 1.3, BloodHound.py only supports Python 3, Python 2 is no longer tested and may break in the future.
+This version of BloodHound.py is **only compatible with BloodHound 4.2 or newer**. For the 3.x range, use version 1.1.1 via pypi. As of version 1.3, BloodHound.py only supports Python 3, Python 2 is no longer tested and may break in the future.
 
 ## Limitations
 BloodHound.py currently has the following limitations:

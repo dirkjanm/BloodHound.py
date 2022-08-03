@@ -370,7 +370,7 @@ class ADDC(ADComputer):
             properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
                            'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory',
-                           'whencreated', 'unicodepwd']
+                           'whencreated', 'unicodepwd', 'scriptpath']
             if 'unixuserpassword' in self.objecttype_guid_map:
                 properties.append('unixuserpassword')
         if acl:
