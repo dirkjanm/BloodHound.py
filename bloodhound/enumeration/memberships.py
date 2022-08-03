@@ -309,6 +309,7 @@ class MembershipEnumerator(object):
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
                     "domainsid": self.addomain.domain_object.sid,
+                    "highvalue": is_highvalue(sid),
                     "name": resolved_entry['principal'],
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper()
                 },
