@@ -158,6 +158,8 @@ class MembershipEnumerator(object):
             props['whencreated'] = calendar.timegm(whencreated.timetuple())
         props['unixpassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'unixuserpassword'))
         props['unicodepassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'unicodepwd'))
+        props['logonscript'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'scriptpath'))
+        props['samaccountname'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'sAMAccountName'))
         # Non-default schema?
         # props['sfupassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'msSFU30Password'))
         props['sfupassword'] = None
