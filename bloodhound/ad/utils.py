@@ -95,7 +95,8 @@ class ADUtils(object):
         "S-1-5-32-577": ("RDS Management Servers", "GROUP"),
         "S-1-5-32-578": ("Hyper-V Administrators", "GROUP"),
         "S-1-5-32-579": ("Access Control Assistance Operators", "GROUP"),
-        "S-1-5-32-580": ("Access Control Assistance Operators", "GROUP")
+        "S-1-5-32-580": ("Access Control Assistance Operators", "GROUP"),
+        "S-1-5-32-582": ("Storage Replica Administrators", "GROUP")
     }
 
     FUNCTIONAL_LEVELS = {
