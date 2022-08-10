@@ -52,6 +52,10 @@ class ADAuthentication(object):
             else:
                 # Plain LDAP
                 server = Server("%s://%s:3268" % (protocol, hostname), get_info=ALL)
+        elif os.getenv('logonserver'):
+            #progromatic user context Domain Controller selection
+            hostname=os.getenv('logonserver').replace("\\\\","")
+            server = Server(hostname, use_ssl=True, get_info=ALL)
         else:
             server = Server("%s://%s" % (protocol, hostname), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
@@ -60,7 +64,11 @@ class ADAuthentication(object):
         else:
             ldappass = self.password
         ldaplogin = '%s\\%s' % (self.domain, self.username)
-        conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
+        if ldaplogin is None and ldaplogin is None:
+            #programatic user context atuh 
+            conn = Connection(server, authentication=SASL, sasl_mechanism=GSSAPI, auto_range=True, receive_timeout=60)
+        else:
+            conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
 
         # TODO: Kerberos auth for ldap
         if self.kdc is not None:
