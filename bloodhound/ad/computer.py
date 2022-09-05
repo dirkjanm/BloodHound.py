@@ -489,6 +489,7 @@ class ADComputer(object):
                     # Ignore local accounts (best effort, self.sid is only
                     # populated if we enumerated a group before)
                     if self.sid and sid.startswith(self.sid):
+                        index += 1
                         continue
                     registry_sessions.append({'user': sid})
                 index += 1
