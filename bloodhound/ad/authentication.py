@@ -25,6 +25,7 @@
 import logging
 from ldap3 import Server, Connection, NTLM, ALL
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
+from ldap3.core.exceptions import LDAPSocketOpenError
 
 """
 Active Directory authentication helper
@@ -74,14 +75,26 @@ class ADAuthentication(object):
             #     logging.warning('Kerberos login failed: %s' % e)
             #     return None
         else:
-            logging.debug('Authenticating to LDAP server')
-            if not conn.bind():
-                result = conn.result
-                if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
-                    logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
-                                    'Trying to connect over LDAPS instead...')
-                    return self.getLDAPConnection(hostname, baseDN, 'ldaps')
+            try:
+                logging.debug('Authenticating to LDAP server')
+                if not conn.bind():
+                    result = conn.result
+                    if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
+                        logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
+                                        'Trying to connect over LDAPS instead...')
+                        return self.getLDAPConnection(hostname, baseDN, 'ldaps')
+                    else:
+                        logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
+                        return None
+            except LDAPSocketOpenError:
+                if gc:
+                    logging.error('Could not connect to the global catalog server\n'
+                                  'Either specify a hostname with -gc or disable gc resolution with --disable-autogc')
                 else:
-                    logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
-                    return None
+                    logging.error('Could not connect to the ldap server\n'
+                                  'Specify a hostname with -dc')
+
+                return None
+
         return conn
+
