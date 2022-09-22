@@ -606,23 +606,24 @@ class AD(object):
         except resolver.NXDOMAIN:
             pass
 
-        try:
-            q = self.dnsresolver.query(query.replace('pdc','gc'), 'SRV', tcp=self.dns_tcp)
-            for r in q:
-                gc = str(r.target).rstrip('.')
-                logging.debug('Found Global Catalog server: %s' % gc)
-                if gc not in self._gcs:
-                    self._gcs.append(gc)
+        if options and not options.disable_autogc:
+            try:
+                q = self.dnsresolver.query(query.replace('pdc','gc'), 'SRV', tcp=self.dns_tcp)
+                for r in q:
+                    gc = str(r.target).rstrip('.')
+                    logging.debug('Found Global Catalog server: %s' % gc)
+                    if gc not in self._gcs:
+                        self._gcs.append(gc)
 
-        except resolver.NXDOMAIN:
-            # Only show warning if we don't already have a GC specified manually
-            if options and not options.global_catalog:
-                if not options.disable_autogc:
-                    logging.warning('Could not find a global catalog server, assuming the primary DC has this role\n'
-                                    'If this gives errors, either specify a hostname with -gc or disable gc resolution with --disable-autogc')
-                    self._gcs = self._dcs
-                else:
-                    logging.warning('Could not find a global catalog server. Please specify one with -gc')
+            except resolver.NXDOMAIN:
+                # Only show warning if we don't already have a GC specified manually
+                if options and not options.global_catalog:
+                    if not options.disable_autogc:
+                        logging.warning('Could not find a global catalog server, assuming the primary DC has this role\n'
+                                        'If this gives errors, either specify a hostname with -gc or disable gc resolution with --disable-autogc')
+                        self._gcs = self._dcs
+                    else:
+                        logging.warning('Could not find a global catalog server. Please specify one with -gc')
 
         if kerberos is True:
             try:
@@ -665,3 +666,4 @@ class ADDomain(object):
     def fromLDAP(identifier, sid=None):
         dns_name = ADUtils.ldap2domain(identifier)
         return ADDomain(name=dns_name, sid=sid, distinguishedname=identifier)
+
