@@ -27,6 +27,7 @@ from zipfile import ZipFile
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
+from bloodhound.enumeration.gpo import GpoEnumerator
 from bloodhound.enumeration.memberships import MembershipEnumerator
 from bloodhound.enumeration.domains import DomainEnumerator
 
@@ -90,6 +91,9 @@ class BloodHound(object):
         if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
             trusts_enum = DomainEnumerator(self.ad, self.pdc)
             trusts_enum.dump_domain(collect,timestamp=timestamp)
+        if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
+            gpo_enum = GpoEnumerator(self.ad, self.pdc)
+            gpo_enum.dump_gpos(collect,timestamp=timestamp)  
         if do_computer_enum:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0

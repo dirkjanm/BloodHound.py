@@ -218,7 +218,11 @@ class ADDC(ADComputer):
 
         return entries
 
-
+    def get_gpo(self):
+        entries = self.search('(objectCategory=groupPolicyContainer)',
+                              ['cn', 'displayName'])
+        return entries
+        
     def get_netbios_name(self, context):
         try:
             entries = self.search('(ncname=%s)' % context,
