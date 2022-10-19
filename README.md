@@ -9,7 +9,7 @@ This version of BloodHound.py is **only compatible with BloodHound 4.2 or newer*
 
 ## Limitations
 BloodHound.py currently has the following limitations:
-- Supports most, but not all BloodHound (SharpHound) features (see below for supported collection methods, mainly GPO based methods are missing)
+- Supports most, but not all BloodHound (SharpHound) features (see below for supported collection methods)
 - Kerberos authentication support is not yet complete
 
 ## Installation and usage
@@ -28,8 +28,9 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 - *LocalAdmin* - Performs local admin collection
 - *RDP* - Performs Remote Desktop Users collection
 - *DCOM* - Performs Distributed COM Users collection
+- *Container* - Performs container collection (GPO/Organizational Units/Default containers)
 - *PSRemote* - Performs Remote Management (PS Remoting) Users collection
-- *DCOnly* - Runs all collection methods that can be queried from the DC only, no connection to member hosts/servers needed. This is equal to Group,Acl,Trusts,ObjectProps
+- *DCOnly* - Runs all collection methods that can be queried from the DC only, no connection to member hosts/servers needed. This is equal to Group,Acl,Trusts,ObjectProps,Container
 - *Session* - Performs session collection
 - *Acl* - Performs ACL collection
 - *Trusts* - Performs domain trust enumeration

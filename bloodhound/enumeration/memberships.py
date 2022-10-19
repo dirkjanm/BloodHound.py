@@ -54,54 +54,9 @@ class MembershipEnumerator(object):
     def get_membership(self, member):
         """
         Attempt to resolve the membership (DN) of a group to an object
+        Moved to addomain logic since we need DN resolving in other files
         """
-        # New logic here
-        try:
-            linkentry = self.addomain.dncache[member.upper()]
-        except KeyError:
-            use_gc = ADUtils.ldap2domain(member) != self.addomain.domain
-            qobject = self.addomain.objectresolver.resolve_distinguishedname(member, use_gc=use_gc)
-            if qobject is None:
-                return None
-            resolved_entry = ADUtils.resolve_ad_entry(qobject)
-            linkentry = {
-                "ObjectIdentifier": resolved_entry['objectid'],
-                "ObjectType": resolved_entry['type'].capitalize()
-            }
-            self.addomain.dncache[member.upper()] = linkentry
-        return linkentry
-
-        # DEPRECATED
-        try:
-            resolved_entry = self.addomain.users[member]
-        except KeyError:
-            # Try if it is a group
-            try:
-                resolved_entry = self.addomain.groups[member]
-            except KeyError:
-                # Try if it is a computer
-                try:
-                    entry = self.addomain.computers[member]
-                    # Computers are stored as raw entries
-                    resolved_entry = ADUtils.resolve_ad_entry(entry)
-                except KeyError:
-                    use_gc = ADUtils.ldap2domain(member) != self.addomain.domain
-                    qobject = self.addomain.objectresolver.resolve_distinguishedname(member, use_gc=use_gc)
-                    if qobject is None:
-                        return None
-                    resolved_entry = ADUtils.resolve_ad_entry(qobject)
-                    # Store it in the cache
-                    if resolved_entry['type'] == 'User':
-                        self.addomain.users[member] = resolved_entry
-                    if resolved_entry['type'] == 'Group':
-                        self.addomain.groups[member] = resolved_entry
-                    # Computers are stored as raw entries
-                    if resolved_entry['type'] == 'Computer':
-                        self.addomain.computers[member] = qobject
-        return {
-            "ObjectIdentifier": resolved_entry['objectid'],
-            "ObjectType": resolved_entry['type'].capitalize()
-        }
+        return self.addomain.get_dn_from_cache_or_ldap(member)
 
     @staticmethod
     def get_primary_membership(entry):
@@ -325,6 +280,7 @@ class MembershipEnumerator(object):
             if with_properties:
                 group['Properties']['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', default=0) == 1
                 group['Properties']['description'] = ADUtils.get_entry_property(entry, 'description')
+                group['Properties']['samaccountname'] = ADUtils.get_entry_property(entry, 'sAMAccountName')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
                 group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
@@ -432,6 +388,285 @@ class MembershipEnumerator(object):
         self.result_q.join()
 
         logging.debug('Finished writing computers')
+
+    def enumerate_gpos(self, timestamp =""):
+        filename = timestamp + 'gpos.json'
+
+        with_properties = 'objectprops' in self.collect
+        acl = 'acl' in self.collect
+        entries = self.addc.get_gpos(include_properties=with_properties, acl=acl)
+
+        logging.debug('Writing GPOs to file: %s', filename)
+
+        # Use a separate queue for processing the results
+        self.result_q = queue.Queue()
+        results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'gpos', filename))
+        results_worker.daemon = True
+        results_worker.start()
+
+        if acl and not self.disable_pooling:
+            self.aclenumerator.init_pool()
+
+        for entry in entries:
+            resolved_entry = ADUtils.resolve_ad_entry(entry)
+            try:
+                guid = entry['attributes']['objectGUID'][1:-1].upper()
+            except KeyError:
+                #Somehow we found an OU without a guid?
+                logging.warning('Could not determine GUID for GPO %s', entry['attributes']['distinguishedName'])
+                continue
+            gpo = {
+                "ObjectIdentifier": guid,
+                "Properties": {
+                    "domain": self.addomain.domain.upper(),
+                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName').upper(), self.addomain.domain.upper()),
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                    "domainsid": self.addomain.domain_object.sid,
+                    "highvalue": False,
+                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath').upper(),
+                },
+                "IsDeleted": False,
+                "IsACLProtected": False,
+                "Aces": [],
+            }
+            
+            if with_properties:
+                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
+                whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+                gpo["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
+
+            # Create cache entry for links
+            link_output = {
+                "ObjectIdentifier": gpo['ObjectIdentifier'],
+                "ObjectType": "GPO",
+            }
+            self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
+
+            # If we are enumerating ACLs, we break out of the loop here
+            # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
+            if acl:
+                if self.disable_pooling:
+                    # Debug mode, don't run this pooled since it hides exceptions
+                    self.process_acldata(parse_binary_acl(gpo, 'gpo', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                else:
+                    # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(gpo, 'gpo', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
+            else:
+                # Write it to the queue -> write to file in separate thread
+                # this is solely for consistency with acl parsing, the performance improvement is probably minimal
+                self.result_q.put(gpo)
+
+            # self.write_default_groups()
+
+        # If we are parsing ACLs, close the parsing pool first
+        # then close the result queue and join it
+        if acl and not self.disable_pooling:
+            self.aclenumerator.pool.close()
+            self.aclenumerator.pool.join()
+            self.result_q.put(None)
+        else:
+            self.result_q.put(None)
+        self.result_q.join()
+
+        logging.debug('Finished writing GPO')
+
+    def enumerate_ous(self, timestamp =""):
+        filename = timestamp + 'ous.json'
+        with_properties = 'objectprops' in self.collect
+        acl = 'acl' in self.collect
+        entries = self.addc.get_ous(include_properties=with_properties, acl=acl)
+
+        logging.debug('Writing OU to file: %s', filename)
+
+        # Use a separate queue for processing the results
+        self.result_q = queue.Queue()
+        results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'ous', filename))
+        results_worker.daemon = True
+        results_worker.start()
+
+        if acl and not self.disable_pooling:
+            self.aclenumerator.init_pool()
+
+        for entry in entries:
+            resolved_entry = ADUtils.resolve_ad_entry(entry)
+            try:
+                guid = entry['attributes']['objectGUID'][1:-1].upper()
+            except KeyError:
+                #Somehow we found an OU without a guid?
+                logging.warning('Could not determine GUID for OU %s', entry['attributes']['distinguishedName'])
+                continue
+            ou = {
+                "ObjectIdentifier": guid,
+                "Properties": {
+                    "domain": self.addomain.domain.upper(),
+                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'name').upper(), self.addomain.domain.upper()),
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                    "domainsid": self.addomain.domain_object.sid,
+                    "highvalue": False,
+                    "blocksinheritance": False,
+                },
+                "IsDeleted": False,
+                "IsACLProtected": False,
+                "Aces": [],
+                "Links": [],
+                "ChildObjects": [],
+                "GPOChanges": {
+                    "AffectedComputers": [],
+                    "DcomUsers": [],
+                    "LocalAdmins": [],
+                    "PSRemoteUsers": [],
+                    "RemoteDesktopUsers": []
+                },
+            }
+
+            
+            if with_properties:
+                ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
+                whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+                ou["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
+            
+            for childentry in self.addc.get_childobjects(ou["Properties"]["distinguishedname"]):
+                resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+                out_object = {
+                    "ObjectIdentifier":resolved_childentry['objectid'],
+                    "ObjectType":resolved_childentry['type']
+                }
+                ou["ChildObjects"].append(out_object)
+            
+            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
+                link = dict()
+                link['IsEnforced'] = options == 2
+                try:
+                    link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                    ou['Links'].append(link)
+                except KeyError:
+                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
+            
+            # Create cache entry for links
+            link_output = {
+                "ObjectIdentifier": ou['ObjectIdentifier'],
+                "ObjectType": 'OU'
+            }
+            self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
+
+            # If we are enumerating ACLs, we break out of the loop here
+            # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
+            if acl:
+                if self.disable_pooling:
+                    # Debug mode, don't run this pooled since it hides exceptions
+                    self.process_acldata(parse_binary_acl(ou, 'organizational-unit', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                else:
+                    # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(ou, 'organizational-unit', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
+            else:
+                # Write it to the queue -> write to file in separate thread
+                # this is solely for consistency with acl parsing, the performance improvement is probably minimal
+                self.result_q.put(ou)
+
+            # self.write_default_groups()
+
+        # If we are parsing ACLs, close the parsing pool first
+        # then close the result queue and join it
+        if acl and not self.disable_pooling:
+            self.aclenumerator.pool.close()
+            self.aclenumerator.pool.join()
+            self.result_q.put(None)
+        else:
+            self.result_q.put(None)
+        self.result_q.join()
+
+        logging.debug('Finished writing OU')
+
+    def enumerate_containers(self, timestamp =""):
+        filename = timestamp + 'containers.json'
+        with_properties = 'objectprops' in self.collect
+        acl = 'acl' in self.collect
+        entries = self.addc.get_containers(include_properties=with_properties, acl=acl)
+
+        logging.debug('Writing containers to file: %s', filename)
+
+        # Use a separate queue for processing the results
+        self.result_q = queue.Queue()
+        results_worker = threading.Thread(target=OutputWorker.membership_write_worker, args=(self.result_q, 'containers', filename))
+        results_worker.daemon = True
+        results_worker.start()
+
+        if acl and not self.disable_pooling:
+            self.aclenumerator.init_pool()
+
+        for entry in entries:
+            if ADUtils.is_filtered_container(ADUtils.get_entry_property(entry, 'distinguishedName')):
+                continue
+            resolved_entry = ADUtils.resolve_ad_entry(entry)
+            try:
+                guid = entry['attributes']['objectGUID'][1:-1].upper()
+            except KeyError:
+                #Somehow we found an container without a guid?
+                logging.warning('Could not determine GUID for container %s', entry['attributes']['distinguishedName'])
+                continue
+            container = {
+                "ObjectIdentifier": guid,
+                "Properties": {
+                    "domain": self.addomain.domain.upper(),
+                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'name').upper(), self.addomain.domain.upper()),
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                    "domainsid": self.addomain.domain_object.sid,
+                    "highvalue": False,
+                },
+                "IsDeleted": False,
+                "IsACLProtected": False,
+                "Aces": [],
+                "ChildObjects": [],
+            }
+
+            
+            if with_properties:
+                container["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
+                whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+                container["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
+            
+            for childentry in self.addc.get_childobjects(container["Properties"]["distinguishedname"]):
+                if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
+                    continue
+                resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+                object = {
+                    "ObjectIdentifier":resolved_childentry['objectid'],
+                    "ObjectType":resolved_childentry['type']
+                }
+                container["ChildObjects"].append(object)
+            
+            # Create cache entry for links
+            link_output = {
+                "ObjectIdentifier": container['ObjectIdentifier'],
+                "ObjectType": 'container'
+            }
+            self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
+
+            # If we are enumerating ACLs, we break out of the loop here
+            # this is because parsing ACLs is computationally heavy and therefor is done in subprocesses
+            if acl:
+                if self.disable_pooling:
+                    # Debug mode, don't run this pooled since it hides exceptions
+                    self.process_acldata(parse_binary_acl(container, 'container', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                else:
+                    # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(container, 'container', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
+            else:
+                # Write it to the queue -> write to file in separate thread
+                # this is solely for consistency with acl parsing, the performance improvement is probably minimal
+                self.result_q.put(container)
+
+        # If we are parsing ACLs, close the parsing pool first
+        # then close the result queue and join it
+        if acl and not self.disable_pooling:
+            self.aclenumerator.pool.close()
+            self.aclenumerator.pool.join()
+            self.result_q.put(None)
+        else:
+            self.result_q.put(None)
+        self.result_q.join()
+
+        logging.debug('Finished writing containers')
 
     def parse_gmsa(self, user, entry):
         """
@@ -557,6 +792,10 @@ class MembershipEnumerator(object):
         }
         self.result_q.put(iugroup)
 
+    def do_container_collection(self, timestamp=""):
+        self.enumerate_gpos(timestamp)
+        self.enumerate_ous(timestamp)
+        self.enumerate_containers(timestamp)
 
     def enumerate_memberships(self, timestamp=""):
         """
@@ -564,6 +803,8 @@ class MembershipEnumerator(object):
         """
         self.enumerate_users(timestamp)
         self.enumerate_groups(timestamp)
+        if 'container' in self.collect:
+            self.do_container_collection()
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect
