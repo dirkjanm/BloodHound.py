@@ -701,7 +701,7 @@ class AD(object):
         try:
             linkentry = self.dncache[distinguishedname.upper()]
         except KeyError:
-            use_gc = ADUtils.ldap2domain(distinguishedname) != self.domain
+            use_gc = ADUtils.ldap2domain(distinguishedname).lower() != self.domain.lower()
             qobject = self.objectresolver.resolve_distinguishedname(distinguishedname, use_gc=use_gc)
             if qobject is None:
                 return None
