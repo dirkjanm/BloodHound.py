@@ -126,6 +126,9 @@ def main():
                         metavar='HOST',
                         action='store',
                         help='Override which GC to query (hostname)')
+    parser.add_argument('--disable-autogc',
+                        action='store_true',
+                        help='Don\'t automatically select a Global Catalog (use only if it gives errors)')
     parser.add_argument('-v',
                         action='store_true',
                         help='Enable verbose output')
