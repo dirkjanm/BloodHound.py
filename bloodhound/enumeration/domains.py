@@ -107,7 +107,7 @@ class DomainEnumerator(object):
                 "domain": self.addomain.domain.upper(),
                 "domainsid": ADUtils.get_entry_property(domain_object, 'objectSid'),
                 "distinguishedname": ADUtils.get_entry_property(domain_object, 'distinguishedName').upper(),
-                "description": ADUtils.get_entry_property(domain_object, 'description'),
+                "description": ADUtils.get_entry_property(domain_object, 'description', ''),
                 "functionallevel": functional_level,
                 "highvalue": True,
                 'whencreated': whencreated
@@ -126,14 +126,16 @@ class DomainEnumerator(object):
             },
             "IsDeleted": False,
         }
-
-        for childentry in self.addc.get_childobject(domain["Properties"]["distinguishedname"]):
-            resolved_childentry = ADUtils.resolve_ad_entry(childentry)
-            object = {
-                "ObjectIdentifier":resolved_childentry['objectid'],
-                "ObjectType":resolved_childentry['type']
-            }
-            domain["ChildObjects"].append(object)
+        if 'container' in collect:
+            for childentry in self.addc.get_childobjects(ADUtils.get_entry_property(domain_object, 'distinguishedName')):
+                if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
+                    continue
+                resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+                out_object = {
+                    "ObjectIdentifier": resolved_childentry['objectid'],
+                    "ObjectType": resolved_childentry['type'],
+                }
+                domain["ChildObjects"].append(out_object)
 
         if 'acl' in collect:
             resolver = AceResolver(self.addomain, self.addomain.objectresolver)
@@ -149,13 +151,17 @@ class DomainEnumerator(object):
 
             logging.info('Found %u trusts', num_entries)
 
-        for gplink in self.addc.get_GPLink(domain["Properties"]["distinguishedname"]):
-                gplink_dn, enforced = ADUtils.get_entry_property(gplink, 'gPLink').split('://')[1].split(';')
-                enforced = int(enforced[0])
+
+        if 'container' in collect:
+            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(domain_object, 'gPLink', '')):
                 link = dict()
-                link['IsEnforced'] = bool(enforced)
-                link['GUID'] = self.addomain.dncache[gplink_dn.upper()]['ObjectIdentifier']
-                domain['Links'].append(link)
+                link['IsEnforced'] = options == 2
+                try:
+                    link['GUID'] = self.addomain.get_dn_from_cache_or_ldap(gplink_dn.upper())['ObjectIdentifier']
+                    domain['Links'].append(link)
+                except KeyError:
+                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
+
         # Single domain only
         datastruct['meta']['count'] = 1
         datastruct['data'].append(domain)

@@ -121,12 +121,13 @@ def resolve_collection_methods(methods):
     Convert methods (string) to list of validated methods to resolve
     """
     valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon',
-                     'objectprops', 'experimental', 'acl', 'dcom', 'rdp', 'psremote', 'dconly']
+                     'objectprops', 'experimental', 'acl', 'dcom', 'rdp', 'psremote', 'dconly',
+                     'container']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
     # Similar to SharpHound, All is not really all, it excludes loggedon
-    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl', 'dcom', 'rdp', 'psremote']
+    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl', 'dcom', 'rdp', 'psremote', 'container']
     # DC only, does not collect to computers
-    dconly_methods = ['group', 'trusts', 'objectprops', 'acl']
+    dconly_methods = ['group', 'trusts', 'objectprops', 'acl', 'container']
     if ',' in methods:
         method_list = [method.lower() for method in methods.split(',')]
         validated_methods = []
@@ -182,7 +183,7 @@ def main():
                         default='Default',
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
                              'Trusts, Default (all previous), DCOnly (no computer connections), DCOM, RDP,'
-                             'PSRemote, LoggedOn, ObjectProps, ACL, All (all except LoggedOn). '
+                             'PSRemote, LoggedOn, Container, ObjectProps, ACL, All (all except LoggedOn). '
                              'You can specify more than one by separating them with a comma. (default: Default)')
     parser.add_argument('-u',
                         '--username',

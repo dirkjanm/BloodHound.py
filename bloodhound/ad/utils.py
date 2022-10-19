@@ -196,7 +196,7 @@ class ADUtils(object):
         resolved['objectid'] = ADUtils.get_entry_property(entry, 'objectSid', '')
         resolved['principal'] = ('%s@%s' % (account, domain)).upper()
         if not ADUtils.get_entry_property(entry, 'sAMAccountName'):
-            if 'ForeignSecurityPrincipals' in dn:
+            if 'ForeignSecurityPrincipals' in dn and not 'container' in ADUtils.get_entry_property(entry, 'objectClass', []):
                 resolved['principal'] = domain.upper()
                 resolved['type'] = 'foreignsecurityprincipal'
                 ename = ADUtils.get_entry_property(entry, 'name')
@@ -214,7 +214,7 @@ class ADUtils(object):
             elif ADUtils.get_entry_property(entry, 'objectGUID'):
                 resolved['objectid'] = ADUtils.get_entry_property(entry, 'objectGUID', '').upper()[1:-1]
                 resolved['principal'] = ('%s@%s' % (ADUtils.get_entry_property(entry, 'name', ''), domain)).upper()
-                object_class = ADUtils.get_entry_property(entry, 'objectClass', '')
+                object_class = ADUtils.get_entry_property(entry, 'objectClass', [])
                 if 'organizationalUnit' in object_class:
                     resolved['type'] = 'OU'
                 elif 'container' in object_class:
@@ -328,6 +328,29 @@ class ADUtils(object):
             data = repr(data)
         return data
 
+    @staticmethod
+    def is_filtered_container(containerdn):
+        if "CN=DOMAINUPDATES,CN=SYSTEM,DC=" in containerdn.upper():
+            return True
+        if "CN=POLICIES,CN=SYSTEM,DC=" in containerdn.upper() and (containerdn.upper().startswith('CN=USER') or containerdn.upper().startswith('CN=MACHINE')):
+            return True
+        return False
+
+    @staticmethod
+    def is_filtered_container_child(containerdn):
+        if "CN=PROGRAM DATA,DC=" in containerdn.upper():
+            return True
+        if "CN=SYSTEM,DC=" in containerdn.upper():
+            return True
+        return False
+
+    @staticmethod
+    def parse_gplink_string(linkstr):
+        if not linkstr:
+            return
+        for links in linkstr.split('[LDAP://')[1:]:
+            dn, options = links.rstrip('][').split(';')
+            yield dn, int(options)
 
 class AceResolver(object):
     """

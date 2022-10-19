@@ -54,54 +54,9 @@ class MembershipEnumerator(object):
     def get_membership(self, member):
         """
         Attempt to resolve the membership (DN) of a group to an object
+        Moved to addomain logic since we need DN resolving in other files
         """
-        # New logic here
-        try:
-            linkentry = self.addomain.dncache[member.upper()]
-        except KeyError:
-            use_gc = ADUtils.ldap2domain(member) != self.addomain.domain
-            qobject = self.addomain.objectresolver.resolve_distinguishedname(member, use_gc=use_gc)
-            if qobject is None:
-                return None
-            resolved_entry = ADUtils.resolve_ad_entry(qobject)
-            linkentry = {
-                "ObjectIdentifier": resolved_entry['objectid'],
-                "ObjectType": resolved_entry['type'].capitalize()
-            }
-            self.addomain.dncache[member.upper()] = linkentry
-        return linkentry
-
-        # DEPRECATED
-        try:
-            resolved_entry = self.addomain.users[member]
-        except KeyError:
-            # Try if it is a group
-            try:
-                resolved_entry = self.addomain.groups[member]
-            except KeyError:
-                # Try if it is a computer
-                try:
-                    entry = self.addomain.computers[member]
-                    # Computers are stored as raw entries
-                    resolved_entry = ADUtils.resolve_ad_entry(entry)
-                except KeyError:
-                    use_gc = ADUtils.ldap2domain(member) != self.addomain.domain
-                    qobject = self.addomain.objectresolver.resolve_distinguishedname(member, use_gc=use_gc)
-                    if qobject is None:
-                        return None
-                    resolved_entry = ADUtils.resolve_ad_entry(qobject)
-                    # Store it in the cache
-                    if resolved_entry['type'] == 'User':
-                        self.addomain.users[member] = resolved_entry
-                    if resolved_entry['type'] == 'Group':
-                        self.addomain.groups[member] = resolved_entry
-                    # Computers are stored as raw entries
-                    if resolved_entry['type'] == 'Computer':
-                        self.addomain.computers[member] = qobject
-        return {
-            "ObjectIdentifier": resolved_entry['objectid'],
-            "ObjectType": resolved_entry['type'].capitalize()
-        }
+        return self.addomain.get_dn_from_cache_or_ldap(member)
 
     @staticmethod
     def get_primary_membership(entry):
@@ -325,6 +280,7 @@ class MembershipEnumerator(object):
             if with_properties:
                 group['Properties']['admincount'] = ADUtils.get_entry_property(entry, 'adminCount', default=0) == 1
                 group['Properties']['description'] = ADUtils.get_entry_property(entry, 'description')
+                group['Properties']['samaccountname'] = ADUtils.get_entry_property(entry, 'sAMAccountName')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
                 group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
@@ -467,8 +423,7 @@ class MembershipEnumerator(object):
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "description" :ADUtils.get_entry_property(entry, 'description', 'null'),
-                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath'),
+                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath').upper(),
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
@@ -476,7 +431,7 @@ class MembershipEnumerator(object):
             }
             
             if with_properties:
-                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description'),
+                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
                 gpo["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
 
@@ -492,10 +447,10 @@ class MembershipEnumerator(object):
             if acl:
                 if self.disable_pooling:
                     # Debug mode, don't run this pooled since it hides exceptions
-                    self.process_acldata(parse_binary_acl(gpo, 'group-policy-container', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
+                    self.process_acldata(parse_binary_acl(gpo, 'gpo', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map))
                 else:
                     # Process ACLs in separate processes, then call the processing function to resolve entries and write them to file
-                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(gpo, 'group-policy-container', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
+                    self.aclenumerator.pool.apply_async(parse_binary_acl, args=(gpo, 'gpo', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True), self.addc.objecttype_guid_map), callback=self.process_acldata)
             else:
                 # Write it to the queue -> write to file in separate thread
                 # this is solely for consistency with acl parsing, the performance improvement is probably minimal
@@ -548,7 +503,6 @@ class MembershipEnumerator(object):
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "description" :ADUtils.get_entry_property(entry, 'description', 'null'),
                     "blocksinheritance": False,
                 },
                 "IsDeleted": False,
@@ -567,25 +521,26 @@ class MembershipEnumerator(object):
 
             
             if with_properties:
-                ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description'),
+                ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
                 ou["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
             
-            for childentry in self.addc.get_childobject(ou["Properties"]["distinguishedname"]):
+            for childentry in self.addc.get_childobjects(ou["Properties"]["distinguishedname"]):
                 resolved_childentry = ADUtils.resolve_ad_entry(childentry)
-                object = {
+                out_object = {
                     "ObjectIdentifier":resolved_childentry['objectid'],
                     "ObjectType":resolved_childentry['type']
                 }
-                ou["ChildObjects"].append(object)
+                ou["ChildObjects"].append(out_object)
             
-            for gplink in self.addc.get_GPLink(ou["Properties"]["distinguishedname"]):
-                gplink_dn, enforced = ADUtils.get_entry_property(gplink, 'gPLink').split('://')[1].split(';')
-                enforced = int(enforced[0])
+            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
                 link = dict()
-                link['IsEnforced'] = bool(enforced)
-                link['GUID'] = self.addomain.dncache[gplink_dn.upper()]['ObjectIdentifier']
-                ou['Links'].append(link)
+                link['IsEnforced'] = options == 2
+                try:
+                    link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                    ou['Links'].append(link)
+                except KeyError:
+                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
             
             # Create cache entry for links
             link_output = {
@@ -640,6 +595,8 @@ class MembershipEnumerator(object):
             self.aclenumerator.init_pool()
 
         for entry in entries:
+            if ADUtils.is_filtered_container(ADUtils.get_entry_property(entry, 'distinguishedName')):
+                continue
             resolved_entry = ADUtils.resolve_ad_entry(entry)
             try:
                 guid = entry['attributes']['objectGUID'][1:-1].upper()
@@ -664,11 +621,13 @@ class MembershipEnumerator(object):
 
             
             if with_properties:
-                container["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description'),
+                container["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
                 container["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
             
-            for childentry in self.addc.get_childobject(container["Properties"]["distinguishedname"]):
+            for childentry in self.addc.get_childobjects(container["Properties"]["distinguishedname"]):
+                if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
+                    continue
                 resolved_childentry = ADUtils.resolve_ad_entry(childentry)
                 object = {
                     "ObjectIdentifier":resolved_childentry['objectid'],
@@ -838,13 +797,12 @@ class MembershipEnumerator(object):
         """
         Run appropriate enumeration tasks
         """
-        self.enumerate_gpos(timestamp)
-        self.enumerate_ous(timestamp)
-        self.enumerate_containers(timestamp)
-        # import sys
-        # sys.exit(0)
         self.enumerate_users(timestamp)
         self.enumerate_groups(timestamp)
+        if 'container' in self.collect:
+            self.enumerate_gpos(timestamp)
+            self.enumerate_ous(timestamp)
+            self.enumerate_containers(timestamp)
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect

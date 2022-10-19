@@ -372,7 +372,7 @@ class ADDC(ADComputer):
         return entries
 
     def get_ous(self, include_properties=False, acl=False):
-        properties = ['distinguishedName', 'name', 'objectGUID']
+        properties = ['distinguishedName', 'name', 'objectGUID', 'gPLink']
         if include_properties:
             properties += ['description', 'whencreated']
         if acl:
@@ -395,14 +395,6 @@ class ADDC(ADComputer):
                               query_sd=acl,
                               search_base=dn)
         return entries
-
-    def get_GPLink(self, dn='*'):
-        properties = ['gPLink']
-        entries = self.search('(&(gPLink=*)(distinguishedname= %s))' % dn,
-                              properties,
-                              generator=True)
-        return entries
-
 
     def get_users(self, include_properties=False, acl=False):
 
@@ -457,7 +449,7 @@ class ADDC(ADComputer):
                 properties += ['nTSecurityDescriptor', 'ms-mcs-admpwdexpirationtime']
             else:
                 properties.append('nTSecurityDescriptor')
-        entries = self.search('(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2)))',
+        entries = self.search('(&(sAMAccountType=805306369))',
                               properties,
                               generator=True,
                               query_sd=acl)
@@ -503,9 +495,12 @@ class ADDC(ADComputer):
                               ['homedirectory', 'scriptpath', 'profilepath'])
         return entries
 
-    def get_childobject(self, dn):
-        entries = self.search(attributes=['objectSid', 'objectClass', 'objectGUID', 'distinguishedName', 'sAMAccountName', 'sAMAccountType'],
-                              search_base=dn, search_scope=LEVEL)
+    def get_childobjects(self, dn, use_resolver=True):
+        entries = self.search('(|(objectClass=container)(objectClass=organizationalUnit)(sAMAccountType=805306369)(objectClass=group)(&(objectCategory=person)(objectClass=user)))',
+                              attributes=['objectSid', 'objectClass', 'objectGUID', 'distinguishedName', 'sAMAccountName', 'sAMAccountType'],
+                              search_base=dn,
+                              search_scope=LEVEL,
+                              use_resolver=use_resolver)
                               
         return entries
 
@@ -700,6 +695,23 @@ class AD(object):
             if domain.upper() == name.upper():
                 return entry
         return None
+
+
+    def get_dn_from_cache_or_ldap(self, distinguishedname):
+        try:
+            linkentry = self.dncache[distinguishedname.upper()]
+        except KeyError:
+            use_gc = ADUtils.ldap2domain(distinguishedname) != self.domain
+            qobject = self.objectresolver.resolve_distinguishedname(distinguishedname, use_gc=use_gc)
+            if qobject is None:
+                return None
+            resolved_entry = ADUtils.resolve_ad_entry(qobject)
+            linkentry = {
+                "ObjectIdentifier": resolved_entry['objectid'],
+                "ObjectType": resolved_entry['type'].capitalize()
+            }
+            self.dncache[distinguishedname.upper()] = linkentry
+        return linkentry
 
 """
 Active Directory Domain

@@ -137,7 +137,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             writeprivs = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP)
             if writeprivs:
                 # GenericWrite
-                if entrytype in ['user', 'group', 'computer'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
+                if entrytype in ['user', 'group', 'computer', 'gpo'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                 if entrytype == 'group' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteMember']):
                     relations.append(build_relation(sid, 'AddMember', '', inherited=is_inherited))
@@ -201,7 +201,8 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
 
             if mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP):
                 # Genericwrite is only for properties, don't skip after
-                relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
+                if entrytype in ['user', 'group', 'computer', 'gpo']:
+                    relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
 
             if mask.has_priv(ACCESS_MASK.WRITE_OWNER):
                 relations.append(build_relation(sid, 'WriteOwner', inherited=is_inherited))
