@@ -80,6 +80,12 @@ class BloodHound(object):
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
             membership_enum.enumerate_memberships(timestamp=timestamp)
+        elif 'container' in collect:
+            # Fetch domains for later, computers if needed
+            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
+            # Initialize enumerator
+            membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
+            membership_enum.do_container_collection(timestamp=timestamp)
         elif do_computer_enum:
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins

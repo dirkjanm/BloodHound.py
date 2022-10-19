@@ -792,6 +792,10 @@ class MembershipEnumerator(object):
         }
         self.result_q.put(iugroup)
 
+    def do_container_collection(self, timestamp=""):
+        self.enumerate_gpos(timestamp)
+        self.enumerate_ous(timestamp)
+        self.enumerate_containers(timestamp)
 
     def enumerate_memberships(self, timestamp=""):
         """
@@ -800,9 +804,7 @@ class MembershipEnumerator(object):
         self.enumerate_users(timestamp)
         self.enumerate_groups(timestamp)
         if 'container' in self.collect:
-            self.enumerate_gpos(timestamp)
-            self.enumerate_ous(timestamp)
-            self.enumerate_containers(timestamp)
+            self.do_container_collection()
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect

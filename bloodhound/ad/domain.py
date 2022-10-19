@@ -121,7 +121,9 @@ class ADDC(ADComputer):
         """
         Search for objects in LDAP or Global Catalog LDAP.
         """
-        if self.ldap is None:
+        if self.ldap is None and not use_resolver:
+            self.ldap_connect(resolver=use_resolver)
+        if self.resolverldap is None and use_resolver:
             self.ldap_connect(resolver=use_resolver)
         if search_base is None:
             search_base = self.ad.baseDN
