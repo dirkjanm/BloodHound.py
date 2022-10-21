@@ -38,6 +38,8 @@ from bloodhound.ad.structures import LDAP_SID
 from impacket.smb3 import SMB3
 from impacket.smb import SMB
 from impacket.smbconnection import SessionError
+from impacket import smb
+from impacket.smb3structs import SMB2_DIALECT_21
 # Try to import exceptions here, if this does not succeed, then impacket version is too old
 try:
     HostnameValidationExceptions = (SMB3.HostnameValidationException, SMB.HostnameValidationException)
@@ -257,23 +259,36 @@ class ADComputer(object):
         try:
             self.rpc = transport.DCERPCTransportFactory(binding)
             self.rpc.set_connect_timeout(1.0)
-            if hasattr(self.rpc, 'set_credentials'):
+
+            # Set name/host explicitly
+            self.rpc.setRemoteName(self.hostname)
+            self.rpc.setRemoteHost(self.addr)
+
+            # Use Kerberos if we have a TGT
+            if hasattr(self.rpc, 'set_kerberos') and self.ad.auth.tgt:
+                self.rpc.set_kerberos(True, self.ad.auth.kdc)
+                if hasattr(self.rpc, 'set_credentials'):
+                    self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
+                                             domain=self.ad.auth.domain,
+                                             lmhash=self.ad.auth.lm_hash,
+                                             nthash=self.ad.auth.nt_hash,
+                                             aesKey=self.ad.auth.aeskey,
+                                             TGT=self.ad.auth.tgt)
+            # Else set the required stuff for NTLM
+            elif hasattr(self.rpc, 'set_credentials'):
                 self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
                                          domain=self.ad.auth.domain,
                                          lmhash=self.ad.auth.lm_hash,
                                          nthash=self.ad.auth.nt_hash,
-                                         aesKey=self.ad.auth.aes_key)
+                                         aesKey=self.ad.auth.aeskey)
 
             # Use strict validation if possible
             if hasattr(self.rpc, 'set_hostname_validation'):
                 self.rpc.set_hostname_validation(True, False, self.hostname)
 
-            # TODO: check Kerberos support
-            # if hasattr(self.rpc, 'set_kerberos'):
-                # self.rpc.set_kerberos(True, self.ad.auth.kdc)
             # Uncomment to force SMB2 (especially for development to prevent encryption)
             # will break clients only supporting SMB1 ofc
-            # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_21)
+            self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_21)
 
             # Re-use the SMB connection if possible
             if self.smbconnection:
@@ -289,6 +304,8 @@ class ADComputer(object):
             try:
                 dce.connect()
             except HostnameValidationExceptions as exc:
+                logging.debug(traceback.format_exc())
+
                 logging.info('Ignoring host %s since its hostname does not match: %s', self.hostname, str(exc))
                 self.permanentfailure = True
                 return None
@@ -309,7 +326,7 @@ class ADComputer(object):
 
             # Hostname validation
             authname = self.smbconnection.getServerName()
-            if authname.lower() != self.hostname.split('.')[0].lower():
+            if authname and authname.lower() != self.hostname.split('.')[0].lower():
                 logging.info('Ignoring host %s since its reported name %s does not match', self.hostname, authname)
                 self.permanentfailure = True
                 return None

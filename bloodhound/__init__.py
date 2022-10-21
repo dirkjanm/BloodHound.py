@@ -105,23 +105,6 @@ class BloodHound(object):
         minutes, seconds = divmod(int(end_time-start_time),60)
         logging.info('Done in %02dM %02dS' % (minutes, seconds))
 
-
-def kerberize():
-    # If the kerberos credential cache is known, use that.
-    krb5cc = os.getenv('KRB5CCNAME')
-
-    # Otherwise, guess it.
-    if krb5cc is None:
-        krb5cc = '/tmp/krb5cc_%u' % os.getuid()
-
-    if os.path.isfile(krb5cc):
-        logging.debug('Using kerberos credential cache: %s', krb5cc)
-        if os.getenv('KRB5CCNAME') is None:
-            os.environ['KRB5CCNAME'] = krb5cc
-    else:
-        logging.error('Could not find kerberos credential cache file')
-        sys.exit(1)
-
 def resolve_collection_methods(methods):
     """
     Convert methods (string) to list of validated methods to resolve
@@ -191,69 +174,82 @@ def main():
                              'Trusts, Default (all previous), DCOnly (no computer connections), DCOM, RDP,'
                              'PSRemote, LoggedOn, Container, ObjectProps, ACL, All (all except LoggedOn). '
                              'You can specify more than one by separating them with a comma. (default: Default)')
-    parser.add_argument('-u',
-                        '--username',
-                        action='store',
-                        help='Username. Format: username[@domain]; If the domain is unspecified, the current domain is used.')
-    parser.add_argument('-p',
-                        '--password',
-                        action='store',
-                        help='Password')
-    parser.add_argument('-k',
-                        '--kerberos',
-                        action='store_true',
-                        help='Use kerberos')
-    parser.add_argument('--hashes',
-                        action='store',
-                        help='LM:NLTM hashes')
-    parser.add_argument('-ns',
-                        '--nameserver',
-                        action='store',
-                        help='Alternative name server to use for queries')
-    parser.add_argument('--dns-tcp',
-                        action='store_true',
-                        help='Use TCP instead of UDP for DNS queries')
-    parser.add_argument('--dns-timeout',
-                        action='store',
-                        type=int,
-                        default=3,
-                        help='DNS query timeout in seconds (default: 3)')
     parser.add_argument('-d',
                         '--domain',
                         action='store',
                         help='Domain to query.')
-    parser.add_argument('-dc',
+    parser.add_argument('-v',
+                        action='store_true',
+                        help='Enable verbose output')
+    helptext = 'Specify one or more authentication options. \n' \
+               'By default Kerberos authentication is used and NTLM is used as fallback. \n' \
+               'Kerberos tickets are automatically requested if a password or hashes are specified.'
+    auopts = parser.add_argument_group('authentication options', description=helptext)
+    auopts.add_argument('-u',
+                        '--username',
+                        action='store',
+                        help='Username. Format: username[@domain]; If the domain is unspecified, the current domain is used.')
+    auopts.add_argument('-p',
+                        '--password',
+                        action='store',
+                        help='Password')
+    auopts.add_argument('-k',
+                        '--kerberos',
+                        action='store_true',
+                        help='Use kerberos')
+    auopts.add_argument('--hashes',
+                        action='store',
+                        help='LM:NLTM hashes')
+    auopts.add_argument('-no-pass', action="store_true", help='don\'t ask for password (useful for -k)')
+    auopts.add_argument('-aesKey',
+                        action="store",
+                        metavar="hex key",
+                        help='AES key to use for Kerberos Authentication (128 or 256 bits)')
+    auopts.add_argument('--no-ntlm',
+                        action='store_true',
+                        help='Do not use NTLM authentication as fallback')
+    coopts = parser.add_argument_group('collection options')
+    coopts.add_argument('-ns',
+                        '--nameserver',
+                        action='store',
+                        help='Alternative name server to use for queries')
+    coopts.add_argument('--dns-tcp',
+                        action='store_true',
+                        help='Use TCP instead of UDP for DNS queries')
+    coopts.add_argument('--dns-timeout',
+                        action='store',
+                        type=int,
+                        default=3,
+                        help='DNS query timeout in seconds (default: 3)')
+    coopts.add_argument('-dc',
                         '--domain-controller',
                         metavar='HOST',
                         action='store',
                         help='Override which DC to query (hostname)')
-    parser.add_argument('-gc',
+    coopts.add_argument('-gc',
                         '--global-catalog',
                         metavar='HOST',
                         action='store',
                         help='Override which GC to query (hostname)')
-    parser.add_argument('-w',
+    coopts.add_argument('-w',
                         '--workers',
                         action='store',
                         type=int,
                         default=10,
                         help='Number of workers for computer enumeration (default: 10)')
-    parser.add_argument('-v',
-                        action='store_true',
-                        help='Enable verbose output')
-    parser.add_argument('--disable-pooling',
+    coopts.add_argument('--disable-pooling',
                         action='store_true',
                         help='Don\'t use subprocesses for ACL parsing (only for debugging purposes)')
-    parser.add_argument('--disable-autogc',
+    coopts.add_argument('--disable-autogc',
                         action='store_true',
                         help='Don\'t automatically select a Global Catalog (use only if it gives errors)')
-    parser.add_argument('--zip',
+    coopts.add_argument('--zip',
                         action='store_true',
                         help='Compress the JSON output files into a zip archive')
-    parser.add_argument('--computerfile',
+    coopts.add_argument('--computerfile',
                         action='store',
                         help='File containing computer FQDNs to use as allowlist for any computer based methods')
-    parser.add_argument('--cachefile',
+    coopts.add_argument('--cachefile',
                         action='store',
                         help='Cache file (experimental)')
 
@@ -263,11 +259,7 @@ def main():
     if args.v is True:
         logger.setLevel(logging.DEBUG)
 
-    if args.kerberos is True:
-        logging.debug('Authentication: kerberos')
-        kerberize()
-        auth = ADAuthentication()
-    elif args.username is not None and args.password is not None:
+    if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
     elif args.username is not None and args.password is None and args.hashes is None:
@@ -276,13 +268,23 @@ def main():
     elif args.username is None and (args.password is not None or args.hashes is not None):
         logging.error('Authentication: password or hashes provided without username')
         sys.exit(1)
-    elif args.hashes is not None and args.username is not None:
-        logging.debug('Authentication: NTLM hashes')
-        lm, nt = args.hashes.split(":")
-        auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain)
+    elif (args.hashes is not None or args.aesKey is not None) and args.username is not None:
+        if args.hashes:
+            logging.debug('Authentication: NTLM hashes')
+            lm, nt = args.hashes.split(":")
+            auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain)
+            if args.aesKey:
+                logging.debug('Authentication: Kerberos AES')
+                auth.set_aeskey(args.aesKey)
+        else:
+            logging.debug('Authentication: Kerberos AES')
+            auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey)
     else:
-        parser.print_help()
-        sys.exit(1)
+        if not args.kerberos:
+            parser.print_help()
+            sys.exit(1)
+        else:
+            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout)
 
@@ -293,7 +295,7 @@ def main():
     logging.debug('Resolved collection methods: %s', ', '.join(list(collect)))
 
     logging.debug('Using DNS to retrieve domain information')
-    ad.dns_resolve(kerberos=args.kerberos, domain=args.domain, options=args)
+    ad.dns_resolve(domain=args.domain, options=args)
 
     # Override the detected DC / GC if specified
     if args.domain_controller:
@@ -310,6 +312,17 @@ def main():
                           args.global_catalog)
             sys.exit(1)
         ad.override_gc(args.global_catalog)
+
+
+    if args.kerberos is True:
+        logging.debug('Authentication: Kerberos ccache')
+        # kerberize()
+        if not auth.load_ccache():
+            logging.debug('Could not load ticket from ccache, trying to request a TGT instead')
+            auth.get_tgt()
+    else:
+        auth.get_tgt()
+
     # For adding timestamp prefix to the outputfiles 
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y%m%d%H%M%S') + "_"
     bloodhound = BloodHound(ad)
