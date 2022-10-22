@@ -29,7 +29,7 @@ import json
 
 from uuid import UUID
 from dns import resolver
-from ldap3 import ALL_ATTRIBUTES, BASE
+from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
 from ldap3.utils.config import _ATTRIBUTES_EXCLUDED_FROM_CHECK
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError
 from ldap3.protocol.microsoft import security_descriptor_control
@@ -117,7 +117,7 @@ class ADDC(ADComputer):
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
-    def search(self, search_filter='(objectClass=*)', attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False, is_retry=False):
+    def search(self, search_filter='(objectClass=*)', attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False, is_retry=False, search_scope=SUBTREE):
         """
         Search for objects in LDAP or Global Catalog LDAP.
         """
@@ -152,6 +152,7 @@ class ADDC(ADComputer):
                                                         search_filter,
                                                         attributes=attributes,
                                                         paged_size=200,
+                                                        search_scope=search_scope,
                                                         controls=controls,
                                                         generator=generator)
         try:
@@ -220,9 +221,9 @@ class ADDC(ADComputer):
 
     def get_gpo(self):
         entries = self.search('(objectCategory=groupPolicyContainer)',
-                              ['cn', 'displayName'])
+                              ['cn', 'displayName', 'distinguishedName', 'name', 'objectGUID', 'gPCFileSysPath', 'description', 'whencreated'])
         return entries
-        
+
     def get_netbios_name(self, context):
         try:
             entries = self.search('(ncname=%s)' % context,

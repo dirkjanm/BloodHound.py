@@ -27,6 +27,9 @@ import logging
 import codecs
 import json
 import calendar
+from os import access
+from re import X
+from turtle import position
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.trusts import ADDomainTrust
 from bloodhound.enumeration.acls import parse_binary_acl
@@ -100,13 +103,19 @@ class GpoEnumerator(object):
         datastruct['meta']['count'] = count
         gpos = self.addc.get_gpo()
         for gpo in gpos:
-            disp = gpo["attributes"]
-            display = disp["displayName"].upper()
-            objectidentifier = disp["cn"].upper()
+            attributes = gpo["attributes"]
+            display = attributes["displayName"].upper()
+            objectidentifier = attributes["objectGUID"].upper()
             objectidentifier = str(objectidentifier)
             objectidentifier = objectidentifier.replace('{', '')
             objectidentifier = objectidentifier.replace('}', '')
+            gpcpath = attributes["gPCFileSysPath"]
+            description = attributes["description"]
+            if len(description) == 0:
+                description = "Null"
             distin = gpo["dn"]
+            whencreatedgpo = attributes["whenCreated"]
+            whencreatedgpo = calendar.timegm(whencreatedgpo.timetuple())
             domain = {
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
@@ -114,9 +123,10 @@ class GpoEnumerator(object):
                     "distinguishedname": distin,
                     "domainsid": ADUtils.get_entry_property(domain_object, 'objectSid'),
                     "highvalue": False,
-                    "description": ADUtils.get_entry_property(domain_object, 'description'),
+                    "description": description,
+                    "whencreated": whencreatedgpo,
+                    "gpcpath": gpcpath,
                 },
-                "Trusts": [],
                 "Aces": [],
                 "ObjectIdentifier": objectidentifier,
                 "IsDeleted": False,
@@ -125,18 +135,12 @@ class GpoEnumerator(object):
             if 'acl' in collect:
                 resolver = AceResolver(self.addomain, self.addomain.objectresolver)
                 _, aces = parse_binary_acl(domain, 'domain', ADUtils.get_entry_property(domain_object, 'nTSecurityDescriptor'), self.addc.objecttype_guid_map)
-                domain['Aces'] = resolver.resolve_aces(aces)
-
-            if 'trusts' in collect:
-                num_entries = 0
-                for entry in entries:
-                    num_entries += 1
-                    trust = ADDomainTrust(ADUtils.get_entry_property(entry, 'name'), ADUtils.get_entry_property(entry, 'trustDirection'), ADUtils.get_entry_property(entry, 'trustType'), ADUtils.get_entry_property(entry, 'trustAttributes'), ADUtils.get_entry_property(entry, 'securityIdentifier'))
-                    domain['Trusts'].append(trust.to_output())
-
-                logging.info('Found %u trusts', num_entries)
-            
-
+                acces = []
+                for value in aces:
+                    if len(value["sid"]) > 16:
+                        acces.append(value)
+                domain['Aces'] = resolver.resolve_aces(acces)
+                
             datastruct['data'].append(domain)
         
         json.dump(datastruct, out, indent=indent_level)
