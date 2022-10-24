@@ -539,7 +539,7 @@ class MembershipEnumerator(object):
                 try:
                     link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
                     ou['Links'].append(link)
-                except KeyError:
+                except TypeError:
                     logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
             
             # Create cache entry for links
