@@ -804,7 +804,7 @@ class MembershipEnumerator(object):
         self.enumerate_users(timestamp)
         self.enumerate_groups(timestamp)
         if 'container' in self.collect:
-            self.do_container_collection()
+            self.do_container_collection(timestamp)
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect
