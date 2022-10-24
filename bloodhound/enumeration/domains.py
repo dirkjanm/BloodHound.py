@@ -159,7 +159,7 @@ class DomainEnumerator(object):
                 try:
                     link['GUID'] = self.addomain.get_dn_from_cache_or_ldap(gplink_dn.upper())['ObjectIdentifier']
                     domain['Links'].append(link)
-                except KeyError:
+                except TypeError:
                     logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
 
         # Single domain only
