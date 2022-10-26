@@ -161,16 +161,16 @@ class ComputerEnumerator(MembershipEnumerator):
                     # For every session, resolve the SAM name in the GC if needed
                     domain = self.addomain.domain
                     try:
-                        users = self.addomain.samcache.get(samname)
+                        users = self.addomain.samcache.get(ses['user'])
                     except KeyError:
                         # Look up the SAM name in the GC
                         entries = self.addomain.objectresolver.resolve_samname(ses['user'], use_gc=use_gc)
                         if entries is not None:
                             users = [user['attributes']['objectSid'] for user in entries]
                         if entries is None or users == []:
-                            logging.warning('Failed to resolve SAM name %s in current forest', samname)
+                            logging.warning('Failed to resolve SAM name %s in current forest', ses['user'])
                             continue
-                        self.addomain.samcache.put(samname, users)
+                        self.addomain.samcache.put(ses['user'], users)
 
                     # Resolve the IP to obtain the host the session is from
                     try:
