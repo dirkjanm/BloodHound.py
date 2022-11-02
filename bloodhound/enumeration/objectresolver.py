@@ -24,7 +24,6 @@
 import logging
 import threading
 from ldap3.utils.conv import escape_filter_chars
-from bloodhound.ad.utils import ADUtils
 
 class ObjectResolver(object):
     """

@@ -29,6 +29,7 @@ import re
 import dns
 from dns import resolver, reversename
 from bloodhound.ad.structures import LDAP_SID
+from impacket.dcerpc.v5 import transport, wkst
 
 """
 """
@@ -152,6 +153,35 @@ class ADUtils(object):
             pass
         except:
             logging.warning('DNS lookup failed: %s' % addr)
+            pass
+
+        return result
+
+    @staticmethod
+    def rpc_get_hostname(ip, adauth):
+        result = ip
+
+        binding = r'ncacn_np:%s[\PIPE\wkssvc]' % ip
+        rpctransportWkst = transport.DCERPCTransportFactory(binding)
+        if hasattr(rpctransportWkst, 'set_credentials'):
+            rpctransportWkst.set_credentials(adauth.username, adauth.password, 
+                                adauth.domain, adauth.lm_hash, adauth.nt_hash, adauth.aes_key)
+            rpctransportWkst.set_kerberos(False, adauth.kdc) # not supported yet
+        dce = rpctransportWkst.get_dce_rpc()
+
+        try:
+            dce.connect()
+            dce.bind(wkst.MSRPC_UUID_WKST)
+            resp = wkst.hNetrWkstaGetInfo(dce, 100)
+
+            result = resp['WkstaInfo']['WkstaInfo100']['wki100_computername'][:-1]
+            domain_name = resp['WkstaInfo']['WkstaInfo100']['wki100_langroup'][:-1]
+            if '.' in domain_name: # not workgroup
+                result = '.'.join([result, domain_name])
+
+            dce.disconnect()
+        except:
+            logging.warning('WkstaGetInfo failed: %s' % ip)
             pass
 
         return result

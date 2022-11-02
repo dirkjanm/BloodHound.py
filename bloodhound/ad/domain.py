@@ -30,7 +30,6 @@ import json
 from uuid import UUID
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
-from ldap3.utils.config import _ATTRIBUTES_EXCLUDED_FROM_CHECK
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError
 from ldap3.protocol.microsoft import security_descriptor_control
 # from impacket.krb5.kerberosv5 import KerberosError

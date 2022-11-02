@@ -28,10 +28,9 @@ import calendar
 import time
 import re
 from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, scmr, tsch, rrp
-from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY, RPC_C_AUTHN_LEVEL_PKT_PRIVACY
+from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
-from impacket import smb3structs
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
 from bloodhound.ad.structures import LDAP_SID
@@ -243,9 +242,7 @@ class ADComputer(object):
         # We ping the host here, this adds a small overhead for setting up an extra socket
         # but saves us from constructing RPC Objects for non-existing hosts. Also RPC over
         # SMB does not support setting a connection timeout, so we catch this here.
-        if ADUtils.tcp_ping(addr, 445) is False:
-            return False
-        return True
+        return ADUtils.tcp_ping(addr, 445)
 
 
     def dce_rpc_connect(self, binding, uuid, integrity=False):
