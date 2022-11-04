@@ -539,7 +539,7 @@ class MembershipEnumerator(object):
                 try:
                     link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
                     ou['Links'].append(link)
-                except KeyError:
+                except TypeError:
                     logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
             
             # Create cache entry for links
@@ -804,7 +804,7 @@ class MembershipEnumerator(object):
         self.enumerate_users(timestamp)
         self.enumerate_groups(timestamp)
         if 'container' in self.collect:
-            self.do_container_collection()
+            self.do_container_collection(timestamp)
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect
