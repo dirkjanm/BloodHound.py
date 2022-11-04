@@ -304,8 +304,6 @@ class ADComputer(object):
             try:
                 dce.connect()
             except HostnameValidationExceptions as exc:
-                logging.debug(traceback.format_exc())
-
                 logging.info('Ignoring host %s since its hostname does not match: %s', self.hostname, str(exc))
                 self.permanentfailure = True
                 return None
