@@ -41,7 +41,7 @@ class BloodHound(object):
         self.sessions = []
 
 
-    def connect(self):
+    def connect(self, dc_ip=None):
         if len(self.ad.dcs()) == 0:
             logging.error('Could not find a domain controller. Consider specifying a domain and/or DNS server.')
             sys.exit(1)
@@ -60,7 +60,7 @@ class BloodHound(object):
             logging.debug('Using kerberos realm: %s', self.ad.realm())
 
         # Create a domain controller object
-        self.pdc = ADDC(pdc, self.ad)
+        self.pdc = ADDC(pdc, self.ad, override_ip=dc_ip)
         # Create an object resolver
         self.ad.create_objectresolver(self.pdc)
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
@@ -227,6 +227,11 @@ def main():
                         metavar='HOST',
                         action='store',
                         help='Override which DC to query (hostname)')
+    parser.add_argument('-dc-ip',
+                        '--domain-controller-ipaddress',
+                        action='store',
+                        default=None,
+                        help='Override which DC IP address to query (if the dc has an interface you cannot hit)')
     parser.add_argument('-gc',
                         '--global-catalog',
                         metavar='HOST',
@@ -313,7 +318,7 @@ def main():
     # For adding timestamp prefix to the outputfiles 
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y%m%d%H%M%S') + "_"
     bloodhound = BloodHound(ad)
-    bloodhound.connect()
+    bloodhound.connect(args.domain_controller_ipaddress)
     bloodhound.run(collect=collect,
                    num_workers=args.workers,
                    disable_pooling=args.disable_pooling,
