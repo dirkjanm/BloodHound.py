@@ -87,15 +87,25 @@ class ADAuthentication(object):
             ldappass = self.lm_hash + ':' + self.nt_hash
         else:
             ldappass = self.password
-        ldaplogin = '%s\\%s' % (self.domain, self.username)
+        ldaplogin = '%s\\%s' % (self.userdomain, self.username)
         conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
-
-        if self.tgt is not None:
+        bound = False
+        if self.tgt is not None and self.auth_method in ('kerberos', 'auto'):
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=SASL, sasl_mechanism=KERBEROS)
-            bound = self.ldap_kerberos(conn, hostname)
-        else:
+            logging.debug('Authenticating to LDAP server with Kerberos')
+            try:
+                bound = self.ldap_kerberos(conn, hostname)
+            except Exception as exc:
+                if self.auth_method == 'auto':
+                    logging.debug(traceback.format_exc())
+                    logging.info('Kerberos auth to LDAP failed, trying NTLM')
+                    bound = False
+                else:
+                    logging.debug('Kerberos auth to LDAP failed, no authentication methods left')
+
+        if not bound:
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM)
-            logging.debug('Authenticating to LDAP server')
+            logging.debug('Authenticating to LDAP server with NTLM')
             bound = conn.bind()
 
         if not bound:
