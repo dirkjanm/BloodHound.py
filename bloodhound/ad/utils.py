@@ -160,6 +160,10 @@ class ADUtils(object):
 
     @staticmethod
     def rpc_get_hostname(ip, adauth):
+        '''
+        Authenticated hostname resolution. Requires admin rights.
+        Currently not in use - does not respect authentication stack
+        '''
         result = ip
 
         binding = r'ncacn_np:%s[\PIPE\wkssvc]' % ip
@@ -189,16 +193,19 @@ class ADUtils(object):
 
     @staticmethod
     def get_ntlm_hostname(ip):
+        '''
+        Unauthenticated hostname resolution with NTLM challenge/response
+        '''
         def parse_info(info):
             if not info:
                 return info
-            if 'dns_host' in info.keys:
-                return info['dns_host']
-            elif 'name' in info.keys:
+            if 'dns_host' in info:
+                return info['dns_host'].lower()
+            elif 'name' in info:
                 result = info['name']
-                if 'dns_domain' in info.keys and '.' in info['dns_domain']:
+                if 'dns_domain' in info and '.' in info['dns_domain']:
                     result = '.'.join((result, info['dns_domain']))
-                return result
+                return result.lower()
             return None
         
         try:

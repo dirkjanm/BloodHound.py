@@ -145,6 +145,7 @@ class SMB1:
             sessionData.fromString(sessionResponse['Data'])
             self._respToken = SPNEGO_NegTokenResp(sessionData['SecurityBlob'])
             ntlmChallenge = ntlm.NTLMAuthChallenge(self._respToken['ResponseToken'])
+            self._session.close()
             return ntlmChallenge
 
     def send(self, negoPacket):
@@ -264,7 +265,7 @@ class SMB3:
         sessionSetupResponse = SMB2SessionSetup_Response(self._answer['Data'])
         self._respToken = SPNEGO_NegTokenResp(sessionSetupResponse['Buffer'])
         ntlmChallenge = ntlm.NTLMAuthChallenge(self._respToken['ResponseToken'])
-
+        self._NetBIOSSession.close()
         return ntlmChallenge
 
     def send(self, packet):

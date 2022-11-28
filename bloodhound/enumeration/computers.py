@@ -177,11 +177,12 @@ class ComputerEnumerator(MembershipEnumerator):
                     except KeyError:
                         target = ADUtils.ip2host(ses['source'], self.addomain.dnsresolver, self.addomain.dns_tcp)
 
-                        if target == ses['source']: # not resolved using dns
+                        # not resolved using dns - resolve using SMB/RPC NTLM
+                        if target == ses['source']:
                             target = ADUtils.get_ntlm_hostname(ses['source'])
 
-                        if target == ses['source']: # not resolved yet!
-                            target = ADUtils.rpc_get_hostname(ses['source'], self.addomain.auth)
+                        # if target == ses['source']: # not resolved yet!
+                        #     target = ADUtils.rpc_get_hostname(ses['source'], self.addomain.auth)
 
                         # Even if the result is the IP (aka could not resolve PTR) we still cache
                         # it since this result is unlikely to change during this run
