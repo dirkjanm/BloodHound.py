@@ -566,3 +566,6 @@ class SamCache(SidCache):
     Identical to the SidCache in behaviour
     """
     pass
+
+class CollectionException(Exception):
+    pass

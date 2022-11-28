@@ -33,7 +33,7 @@ from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError
 from ldap3.protocol.microsoft import security_descriptor_control
 # from impacket.krb5.kerberosv5 import KerberosError
-from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
+from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache, CollectionException
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
 from future.utils import itervalues, iteritems, native_str
@@ -281,6 +281,14 @@ class ADDC(ADComputer):
                 self.ad.nbdomains[nbentry['attributes']['nETBIOSName']] = entry
             except IndexError:
                 pass
+
+        if entriesNum == 0:
+            # Raise exception if we somehow managed to authenticate but the domain is wrong
+            # prevents confusing exceptions later
+            actualdn = self.ldap.server.info.other['defaultNamingContext'][0]
+            actualdomain = ADUtils.ldap2domain(actualdn)
+            logging.error('Could not find the requested domain %s on this DC, LDAP server reports is domain as %s (you may want to try that?)', self.ad.domain, actualdomain)
+            raise CollectionException("Specified domain was not found in LDAP")
 
         logging.info('Found %u domains', entriesNum)
 
