@@ -66,7 +66,7 @@ class BloodHound(object):
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None):
+    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None, exclude_dcs=False):
         start_time = time.time()
         if cachefile:
             self.ad.load_cachefile(cachefile)
@@ -99,8 +99,8 @@ class BloodHound(object):
         if do_computer_enum:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
-            computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc, computerfile=computerfile)
-            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp, )
+            computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc, computerfile=computerfile, exclude_dcs=exclude_dcs)
+            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp)
         end_time = time.time()
         minutes, seconds = divmod(int(end_time-start_time),60)
         logging.info('Done in %02dM %02dS' % (minutes, seconds))
@@ -239,6 +239,9 @@ def main():
                         type=int,
                         default=10,
                         help='Number of workers for computer enumeration (default: 10)')
+    coopts.add_argument('--exclude-dcs',
+                        action='store_true',
+                        help='Skip DCs during computer enumeration')
     coopts.add_argument('--disable-pooling',
                         action='store_true',
                         help='Don\'t use subprocesses for ACL parsing (only for debugging purposes)')
@@ -337,7 +340,8 @@ def main():
                    disable_pooling=args.disable_pooling,
                    timestamp=timestamp,
                    computerfile=args.computerfile,
-                   cachefile=args.cachefile)
+                   cachefile=args.cachefile,
+                   exclude_dcs=args.exclude_dcs)
     #If args --zip is true, the compress output  
     if args.zip:
         logging.info("Compressing output into " + timestamp + "bloodhound.zip")

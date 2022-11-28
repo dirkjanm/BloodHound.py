@@ -258,6 +258,14 @@ class ADUtils(object):
         return 'Unknown'
 
     @staticmethod
+    def is_dc(entry):
+        """
+        Check whether the computer object is a Domain Controller
+        """
+        uac = ADUtils.get_entry_property(entry, 'userAccountControl', default=0)
+        return uac & 0x00002000 == 0x00002000
+
+    @staticmethod
     def resolve_ad_entry(entry):
         """
         Translate an LDAP entry into a dictionary containing the

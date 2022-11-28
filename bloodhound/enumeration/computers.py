@@ -43,7 +43,7 @@ class ComputerEnumerator(MembershipEnumerator):
     This class extends the MembershipEnumerator class just to inherit the
     membership lookup functions which are also needed for computers.
     """
-    def __init__(self, addomain, addc, collect, do_gc_lookup=True, computerfile=""):
+    def __init__(self, addomain, addc, collect, do_gc_lookup=True, computerfile="", exclude_dcs=False):
         """
         Computer enumeration. Enumerates all computers in the given domain.
         Every domain enumerated will get its own instance of this class.
@@ -56,6 +56,7 @@ class ComputerEnumerator(MembershipEnumerator):
         self.do_gc_lookup = do_gc_lookup
         # Store collection methods specified
         self.collect = collect
+        self.exclude_dcs = exclude_dcs
         if computerfile:
             logging.info('Limiting enumeration to FQDNs in %s', computerfile)
             with codecs.open(computerfile, 'r', 'utf-8') as cfile:
@@ -114,7 +115,7 @@ class ComputerEnumerator(MembershipEnumerator):
         logging.debug('Querying computer: %s', hostname)
         c = ADComputer(hostname=hostname, samname=samname, ad=self.addomain, addc=self.addc, objectsid=objectsid)
         c.primarygroup = self.get_primary_membership(entry)
-        if hostname and c.try_connect():
+        if hostname and (not self.exclude_dcs or not ADUtils.is_dc(entry)) and c.try_connect():
             try:
 
                 if 'session' in self.collect:
