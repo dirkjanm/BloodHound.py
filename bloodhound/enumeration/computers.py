@@ -31,7 +31,6 @@ from impacket.dcerpc.v5.rpcrt import DCERPCException
 from bloodhound.enumeration.outputworker import OutputWorker
 from bloodhound.enumeration.memberships import MembershipEnumerator
 from bloodhound.ad.computer import ADComputer
-from bloodhound.ad.structures import LDAP_SID
 from bloodhound.ad.utils import ADUtils
 from future.utils import itervalues, iteritems, native_str
 
@@ -176,8 +175,15 @@ class ComputerEnumerator(MembershipEnumerator):
                     try:
                         target = self.addomain.dnscache.get(ses['source'])
                     except KeyError:
-                        # TODO: also use discovery based on port 445 connections similar to sharphound
                         target = ADUtils.ip2host(ses['source'], self.addomain.dnsresolver, self.addomain.dns_tcp)
+
+                        # not resolved using dns - resolve using SMB/RPC NTLM
+                        if target == ses['source']:
+                            target = ADUtils.get_ntlm_hostname(ses['source'])
+
+                        # if target == ses['source']: # not resolved yet!
+                        #     target = ADUtils.rpc_get_hostname(ses['source'], self.addomain.auth)
+
                         # Even if the result is the IP (aka could not resolve PTR) we still cache
                         # it since this result is unlikely to change during this run
                         self.addomain.dnscache.put_single(ses['source'], target)

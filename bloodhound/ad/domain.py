@@ -30,11 +30,10 @@ import json
 from uuid import UUID
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
-from ldap3.utils.config import _ATTRIBUTES_EXCLUDED_FROM_CHECK
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError
 from ldap3.protocol.microsoft import security_descriptor_control
 # from impacket.krb5.kerberosv5 import KerberosError
-from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache
+from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache, CollectionException
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
 from future.utils import itervalues, iteritems, native_str
@@ -67,7 +66,7 @@ class ADDC(ADComputer):
         for r in q:
             ip = r.address
 
-        ldap = self.ad.auth.getLDAPConnection(hostname=ip,
+        ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip,
                                               baseDN=self.ad.baseDN, protocol=protocol)
         if resolver:
             self.resolverldap = ldap
@@ -113,7 +112,7 @@ class ADDC(ADComputer):
                 except (resolver.NXDOMAIN, resolver.Timeout):
                     continue
 
-        self.gcldap = self.ad.auth.getLDAPConnection(hostname=ip, gc=True,
+        self.gcldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip, gc=True,
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
@@ -282,6 +281,14 @@ class ADDC(ADComputer):
                 self.ad.nbdomains[nbentry['attributes']['nETBIOSName']] = entry
             except IndexError:
                 pass
+
+        if entriesNum == 0:
+            # Raise exception if we somehow managed to authenticate but the domain is wrong
+            # prevents confusing exceptions later
+            actualdn = self.ldap.server.info.other['defaultNamingContext'][0]
+            actualdomain = ADUtils.ldap2domain(actualdn)
+            logging.error('Could not find the requested domain %s on this DC, LDAP server reports is domain as %s (you may want to try that?)', self.ad.domain, actualdomain)
+            raise CollectionException("Specified domain was not found in LDAP")
 
         logging.info('Found %u domains', entriesNum)
 
@@ -619,7 +626,7 @@ class AD(object):
     def save_cachefile(self, cachefile):
         pass
 
-    def dns_resolve(self, domain=None, kerberos=True, options=None):
+    def dns_resolve(self, domain=None, options=None):
         logging.debug('Querying domain controller information from DNS')
 
         basequery = '_ldap._tcp.pdc._msdcs'
@@ -672,17 +679,27 @@ class AD(object):
                 else:
                     logging.warning('Could not find a global catalog server. Please specify one with -gc')
 
-        if kerberos is True:
-            try:
-                q = self.dnsresolver.query('_kerberos._tcp.dc._msdcs', 'SRV', tcp=self.dns_tcp)
-                for r in q:
-                    kdc = str(r.target).rstrip('.')
-                    logging.debug('Found KDC: %s' % str(r.target).rstrip('.'))
-                    if kdc not in self._kdcs:
-                        self._kdcs.append(kdc)
-                        self.auth.kdc = self._kdcs[0]
-            except resolver.NXDOMAIN:
-                pass
+        try:
+            kquery = query.replace('pdc','dc').replace('_ldap','_kerberos')
+            q = self.dnsresolver.query(kquery, 'SRV', tcp=self.dns_tcp)
+            # TODO: Get the additional records here to get the DC ip immediately
+            for r in q:
+                kdc = str(r.target).rstrip('.')
+                logging.debug('Found KDC for enumeration domain: %s' % str(r.target).rstrip('.'))
+                if kdc not in self._kdcs:
+                    self._kdcs.append(kdc)
+                    self.auth.kdc = self._kdcs[0]
+        except resolver.NXDOMAIN:
+            pass
+
+        if self.auth.userdomain.lower() != ad_domain.lower():
+            # Resolve KDC for user auth domain
+            kquery = '_kerberos._tcp.dc._msdcs.%s' % self.auth.userdomain
+            q = self.dnsresolver.query(kquery, 'SRV', tcp=self.dns_tcp)
+            for r in q:
+                kdc = str(r.target).rstrip('.')
+                logging.debug('Found KDC for user: %s' % str(r.target).rstrip('.'))
+                self.auth.userdomain_kdc = kdc
 
         return True
 

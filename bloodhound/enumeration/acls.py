@@ -23,15 +23,10 @@
 ####################
 from __future__ import unicode_literals
 import logging
-import threading
 from multiprocessing import Pool
-from ldap3.utils.conv import escape_filter_chars
 from impacket.uuid import string_to_bin, bin_to_string
-from bloodhound.ad.utils import ADUtils
 from bloodhound.lib import cstruct
 from io import BytesIO
-import binascii
-import pprint
 from future.utils import iteritems, native_str
 
 # Extended rights and property GUID mapping, converted to binary so we don't have to do this

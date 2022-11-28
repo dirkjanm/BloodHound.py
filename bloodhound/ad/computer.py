@@ -28,16 +28,17 @@ import calendar
 import time
 import re
 from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, scmr, tsch, rrp
-from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY, RPC_C_AUTHN_LEVEL_PKT_PRIVACY
+from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
-from impacket import smb3structs
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
 from bloodhound.ad.structures import LDAP_SID
 from impacket.smb3 import SMB3
 from impacket.smb import SMB
 from impacket.smbconnection import SessionError
+from impacket import smb
+from impacket.smb3structs import SMB2_DIALECT_21
 # Try to import exceptions here, if this does not succeed, then impacket version is too old
 try:
     HostnameValidationExceptions = (SMB3.HostnameValidationException, SMB.HostnameValidationException)
@@ -65,6 +66,7 @@ class ADComputer(object):
         self.registry_sessions = []
         self.addr = None
         self.smbconnection = None
+        self.TGS = None
         # The SID of the local domain
         self.sid = None
         # The SID within the domain
@@ -72,6 +74,8 @@ class ADComputer(object):
         self.primarygroup = None
         if addc:
             self.aceresolver = AceResolver(ad, ad.objectresolver)
+            # Which auth methods to try for this host
+            self.auth_method = self.ad.auth.auth_method
         # Did connecting to this host fail before?
         self.permanentfailure = False
         # Process invalid hosts
@@ -243,9 +247,7 @@ class ADComputer(object):
         # We ping the host here, this adds a small overhead for setting up an extra socket
         # but saves us from constructing RPC Objects for non-existing hosts. Also RPC over
         # SMB does not support setting a connection timeout, so we catch this here.
-        if ADUtils.tcp_ping(addr, 445) is False:
-            return False
-        return True
+        return ADUtils.tcp_ping(addr, 445)
 
 
     def dce_rpc_connect(self, binding, uuid, integrity=False):
@@ -257,20 +259,55 @@ class ADComputer(object):
         try:
             self.rpc = transport.DCERPCTransportFactory(binding)
             self.rpc.set_connect_timeout(1.0)
-            if hasattr(self.rpc, 'set_credentials'):
+
+            # Set name/host explicitly
+            self.rpc.setRemoteName(self.hostname)
+            self.rpc.setRemoteHost(self.addr)
+
+            # Use Kerberos if we have a TGT
+            if hasattr(self.rpc, 'set_kerberos') and self.ad.auth.tgt and self.auth_method in ('auto', 'kerberos'):
+                self.rpc.set_kerberos(True, self.ad.auth.kdc)
+                if not self.TGS:
+                    try:
+                        self.TGS = self.ad.auth.get_tgs_for_smb(self.hostname)
+                    except Exception as exc:
+                        logging.debug(traceback.format_exc())
+                        if self.auth_method == 'auto':
+                            logging.warning('Failed to get service ticket for %s, falling back to NTLM auth', self.hostname)
+                            self.auth_method = 'ntlm'
+                        else:
+                            logging.warning('Failed to get service ticket for %s, skipping host', self.hostname)
+                if hasattr(self.rpc, 'set_credentials'):
+                    if self.auth_method == 'auto':
+                        # Set all we have
+                        self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
+                                                 domain=self.ad.auth.userdomain,
+                                                 lmhash=self.ad.auth.lm_hash,
+                                                 nthash=self.ad.auth.nt_hash,
+                                                 aesKey=self.ad.auth.aeskey,
+                                                 TGS=self.TGS)
+                    elif self.auth_method == 'kerberos':
+                        # Kerberos only
+                        self.rpc.set_credentials(self.ad.auth.username, '',
+                                                 domain=self.ad.auth.userdomain,
+                                                 TGS=self.TGS)
+                    else:
+                        # NTLM fallback triggered
+                        self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
+                                                 domain=self.ad.auth.userdomain,
+                                                 lmhash=self.ad.auth.lm_hash,
+                                                 nthash=self.ad.auth.nt_hash)
+            # Else set the required stuff for NTLM
+            elif hasattr(self.rpc, 'set_credentials'):
                 self.rpc.set_credentials(self.ad.auth.username, self.ad.auth.password,
-                                         domain=self.ad.auth.domain,
+                                         domain=self.ad.auth.userdomain,
                                          lmhash=self.ad.auth.lm_hash,
-                                         nthash=self.ad.auth.nt_hash,
-                                         aesKey=self.ad.auth.aes_key)
+                                         nthash=self.ad.auth.nt_hash)
 
             # Use strict validation if possible
             if hasattr(self.rpc, 'set_hostname_validation'):
                 self.rpc.set_hostname_validation(True, False, self.hostname)
 
-            # TODO: check Kerberos support
-            # if hasattr(self.rpc, 'set_kerberos'):
-                # self.rpc.set_kerberos(True, self.ad.auth.kdc)
             # Uncomment to force SMB2 (especially for development to prevent encryption)
             # will break clients only supporting SMB1 ofc
             # self.rpc.preferred_dialect(smb3structs.SMB2_DIALECT_21)
@@ -296,6 +333,19 @@ class ADComputer(object):
                 if ('STATUS_PIPE_NOT_AVAILABLE' in str(exc) or 'STATUS_OBJECT_NAME_NOT_FOUND' in str(exc)) and 'winreg' in binding.lower():
                     # This can happen, silently ignore
                     return None
+                if 'STATUS_MORE_PROCESSING_REQUIRED' in str(exc):
+                    if self.auth_method == 'kerberos':
+                        logging.warning('Kerberos auth failed and no more auth methods to try.')
+                    elif self.auth_method == 'auto':
+                        logging.debug('Kerberos auth failed. Falling back to NTLM')
+                        self.auth_method = 'ntlm'
+                        # Close connection and retry
+                        try:
+                            self.rpc.get_smb_connection().close()
+                        except:
+                            pass
+                        # Try again!
+                        return self.dce_rpc_connect(binding, uuid, integrity)
                 # Else, just log it
                 logging.debug(traceback.format_exc())
                 logging.warning('DCE/RPC connection failed: %s', str(exc))
@@ -309,13 +359,11 @@ class ADComputer(object):
 
             # Hostname validation
             authname = self.smbconnection.getServerName()
-            if authname.lower() != self.hostname.split('.')[0].lower():
+            if authname and authname.lower() != self.hostname.split('.')[0].lower():
                 logging.info('Ignoring host %s since its reported name %s does not match', self.hostname, authname)
                 self.permanentfailure = True
                 return None
 
-# Implement encryption?
-#            dce.set_auth_level(NTLM_AUTH_PKT_PRIVACY)
             dce.bind(uuid)
         except DCERPCException as e:
             logging.debug(traceback.format_exc())

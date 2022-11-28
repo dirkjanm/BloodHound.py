@@ -23,7 +23,6 @@
 ####################
 
 import logging
-import traceback
 import codecs
 import json
 

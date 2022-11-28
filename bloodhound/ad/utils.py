@@ -29,6 +29,8 @@ import re
 import dns
 from dns import resolver, reversename
 from bloodhound.ad.structures import LDAP_SID
+from bloodhound.ad.dumpntlm import DumpNtlm
+from impacket.dcerpc.v5 import transport, wkst
 
 """
 """
@@ -155,6 +157,82 @@ class ADUtils(object):
             pass
 
         return result
+
+    @staticmethod
+    def rpc_get_hostname(ip, adauth):
+        '''
+        Authenticated hostname resolution. Requires admin rights.
+        Currently not in use - does not respect authentication stack
+        '''
+        result = ip
+
+        binding = r'ncacn_np:%s[\PIPE\wkssvc]' % ip
+        rpctransportWkst = transport.DCERPCTransportFactory(binding)
+        if hasattr(rpctransportWkst, 'set_credentials'):
+            rpctransportWkst.set_credentials(adauth.username, adauth.password, 
+                                adauth.domain, adauth.lm_hash, adauth.nt_hash, adauth.aes_key)
+            rpctransportWkst.set_kerberos(False, adauth.kdc) # not supported yet
+        dce = rpctransportWkst.get_dce_rpc()
+
+        try:
+            dce.connect()
+            dce.bind(wkst.MSRPC_UUID_WKST)
+            resp = wkst.hNetrWkstaGetInfo(dce, 100)
+
+            result = resp['WkstaInfo']['WkstaInfo100']['wki100_computername'][:-1]
+            domain_name = resp['WkstaInfo']['WkstaInfo100']['wki100_langroup'][:-1]
+            if '.' in domain_name: # not workgroup
+                result = '.'.join([result, domain_name])
+
+            dce.disconnect()
+        except:
+            logging.warning('WkstaGetInfo failed: %s' % ip)
+            pass
+
+        return result
+
+    @staticmethod
+    def get_ntlm_hostname(ip):
+        '''
+        Unauthenticated hostname resolution with NTLM challenge/response
+        '''
+        def parse_info(info):
+            if not info:
+                return info
+            if 'dns_host' in info:
+                return info['dns_host'].lower()
+            elif 'name' in info:
+                result = info['name']
+                if 'dns_domain' in info and '.' in info['dns_domain']:
+                    result = '.'.join((result, info['dns_domain']))
+                return result.lower()
+            return None
+        
+        try:
+            ntlm_dumper = DumpNtlm(ip, ip, 445)
+            hostname = parse_info(ntlm_dumper.GetInfo())
+            if hostname:
+                return hostname
+        except:
+            pass
+
+        try:
+            ntlm_dumper = DumpNtlm(ip, ip, 139)
+            hostname = parse_info(ntlm_dumper.GetInfo())
+            if hostname:
+                return hostname
+        except:
+            pass
+
+        try:
+            ntlm_dumper = DumpNtlm(ip, ip, 135)
+            hostname = parse_info(ntlm_dumper.GetInfo())
+            if hostname:
+                return hostname
+        except:
+            pass
+
+        return ip
 
     # Translate the binary SID from LDAP into human-readable form
     @staticmethod
@@ -494,4 +572,7 @@ class SamCache(SidCache):
     Cache for mapping SAM names to principals.
     Identical to the SidCache in behaviour
     """
+    pass
+
+class CollectionException(Exception):
     pass
