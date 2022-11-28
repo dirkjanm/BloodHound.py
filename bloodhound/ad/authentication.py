@@ -24,6 +24,8 @@
 
 import logging
 import os
+import traceback
+from bloodhound.ad.utils import CollectionException
 from binascii import unhexlify
 from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
@@ -44,16 +46,23 @@ Active Directory authentication helper
 """
 class ADAuthentication(object):
     def __init__(self, username='', password='', domain='',
-                 lm_hash='', nt_hash='', aeskey='', kdc=None):
+                 lm_hash='', nt_hash='', aeskey='', kdc=None, auth_method='auto'):
         self.username = username
-        self.domain = domain
+        # Assume user domain and enum domain are same
+        self.domain = domain.lower()
+        self.userdomain = domain.lower()
+        # If not, override userdomain
         if '@' in self.username:
-            self.username, self.domain = self.username.rsplit('@', 1)
+            self.username, self.userdomain = self.username.lower().rsplit('@', 1)
         self.password = password
         self.lm_hash = lm_hash
         self.nt_hash = nt_hash
         self.aeskey = aeskey
+        # KDC for domain we query
         self.kdc = kdc
+        # KDC for domain of the user - fill with domain first, will be resolved later
+        self.userdomain_kdc = self.domain
+        self.auth_method = auth_method
 
         # Kerberos
         self.tgt = None
@@ -97,7 +106,7 @@ class ADAuthentication(object):
                 return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
             else:
                 logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
-                return None
+                raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
         return conn
 
     def ldap_kerberos(self, connection, hostname):
@@ -130,7 +139,7 @@ class ADAuthentication(object):
 
         authenticator = Authenticator()
         authenticator['authenticator-vno'] = 5
-        authenticator['crealm'] = self.domain
+        authenticator['crealm'] = self.userdomain
         seq_set(authenticator, 'cname', username.components_to_asn1)
         now = datetime.datetime.utcnow()
 
@@ -167,15 +176,60 @@ class ADAuthentication(object):
         """
         username = Principal(self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
         logging.info('Getting TGT for user')
-        tgt, cipher, _, session_key = getKerberosTGT(username, self.password, self.domain,
-                                                     unhexlify(self.lm_hash), unhexlify(self.nt_hash),
-                                                     self.aeskey,
-                                                     self.kdc)
-        TGT = dict()
-        TGT['KDC_REP'] = tgt
-        TGT['cipher'] = cipher
-        TGT['sessionKey'] = session_key
-        self.tgt = TGT
+
+        try:
+            tgt, cipher, _, session_key = getKerberosTGT(username, self.password, self.userdomain,
+                                                         unhexlify(self.lm_hash), unhexlify(self.nt_hash),
+                                                         self.aeskey,
+                                                         self.userdomain_kdc)
+        except Exception as exc:
+            logging.debug(traceback.format_exc())
+            if self.auth_method == 'auto':
+                logging.warning('Failed to get Kerberos TGT. Falling back to NTLM authentication. Error: %s', str(exc))
+                return
+            else:
+                # No other auth methods, so raise exception
+                logging.error('Failed to get Kerberos TGT.')
+                raise
+
+        if self.userdomain != self.domain:
+            # Try to get inter-realm TGT
+            username = Principal(self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
+            servername = Principal('krbtgt/%s' % self.domain, type=constants.PrincipalNameType.NT_SRV_INST.value)
+            # Get referral TGT
+            tgs, cipher, _, sessionkey = getKerberosTGS(servername, self.userdomain, self.userdomain_kdc,
+                                                                    tgt, cipher, session_key)
+            # Get foreign domain TGT
+            servername = Principal('krbtgt/%s' % self.domain, type=constants.PrincipalNameType.NT_SRV_INST.value)
+            tgs, cipher, _, sessionkey = getKerberosTGS(servername, self.domain, self.kdc,
+                                                                    tgs, cipher, sessionkey)
+            # Store this as our TGT
+            self.tgt = {
+                'KDC_REP': tgs,
+                'cipher': cipher,
+                'sessionKey': sessionkey
+            }
+        else:
+            TGT = dict()
+            TGT['KDC_REP'] = tgt
+            TGT['cipher'] = cipher
+            TGT['sessionKey'] = session_key
+            self.tgt = TGT
+
+    def get_tgs_for_smb(self, hostname):
+        """
+        Get a TGS for use with SMB Connection. We do this here to make sure the realms are correct,
+        since impacket doesn't support cross-realm TGT usage and we don't want it to do its own Kerberos
+        """
+        username = Principal(self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
+        servername = Principal('cifs/%s' % hostname, type=constants.PrincipalNameType.NT_SRV_INST.value)
+        tgs, cipher, _, sessionkey = getKerberosTGS(servername, self.domain, self.kdc,
+                                                                self.tgt['KDC_REP'], self.tgt['cipher'], self.tgt['sessionKey'])
+        return {
+            'KDC_REP': tgs,
+            'cipher': cipher,
+            'sessionKey': sessionkey
+        }
 
     def load_ccache(self):
         """

@@ -205,9 +205,11 @@ def main():
                         action="store",
                         metavar="hex key",
                         help='AES key to use for Kerberos Authentication (128 or 256 bits)')
-    auopts.add_argument('--no-ntlm',
-                        action='store_true',
-                        help='Do not use NTLM authentication as fallback')
+    auopts.add_argument('--auth-method',
+                        choices=('auto','ntlm','kerberos'),
+                        default='auto',
+                        action='store',
+                        help='Authentication methods. Force Kerberos or NTLM only or use auto for Kerberos with NTLM fallback')
     coopts = parser.add_argument_group('collection options')
     coopts.add_argument('-ns',
                         '--nameserver',
@@ -261,30 +263,30 @@ def main():
 
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
+        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
     elif args.username is not None and args.password is None and args.hashes is None:
         args.password = getpass.getpass()
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
+        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
     elif args.username is None and (args.password is not None or args.hashes is not None):
         logging.error('Authentication: password or hashes provided without username')
         sys.exit(1)
     elif (args.hashes is not None or args.aesKey is not None) and args.username is not None:
         if args.hashes:
-            logging.debug('Authentication: NTLM hashes')
+            logging.debug('Authentication: NT hash')
             lm, nt = args.hashes.split(":")
-            auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain)
+            auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method)
             if args.aesKey:
                 logging.debug('Authentication: Kerberos AES')
                 auth.set_aeskey(args.aesKey)
         else:
             logging.debug('Authentication: Kerberos AES')
-            auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey)
+            auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method)
     else:
         if not args.kerberos:
             parser.print_help()
             sys.exit(1)
         else:
-            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain)
+            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout)
 
@@ -305,6 +307,9 @@ def main():
                           args.domain_controller)
             sys.exit(1)
         ad.override_dc(args.domain_controller)
+        if not auth.kdc:
+            logging.debug('Using supplied domain controller as KDC')
+            auth.kdc = args.domain_controller
     if args.global_catalog:
         if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', args.global_catalog):
             logging.error('The specified global catalog server %s looks like an IP address, but requires a hostname (FQDN).\n'\
@@ -313,15 +318,15 @@ def main():
             sys.exit(1)
         ad.override_gc(args.global_catalog)
 
-
-    if args.kerberos is True:
-        logging.debug('Authentication: Kerberos ccache')
-        # kerberize()
-        if not auth.load_ccache():
-            logging.debug('Could not load ticket from ccache, trying to request a TGT instead')
+    if args.auth_method in ('auto', 'kerberos'):
+        if args.kerberos is True:
+            logging.debug('Authentication: Kerberos ccache')
+            # kerberize()
+            if not auth.load_ccache():
+                logging.debug('Could not load ticket from ccache, trying to request a TGT instead')
+                auth.get_tgt()
+        else:
             auth.get_tgt()
-    else:
-        auth.get_tgt()
 
     # For adding timestamp prefix to the outputfiles 
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y%m%d%H%M%S') + "_"

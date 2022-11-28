@@ -685,12 +685,21 @@ class AD(object):
             # TODO: Get the additional records here to get the DC ip immediately
             for r in q:
                 kdc = str(r.target).rstrip('.')
-                logging.debug('Found KDC: %s' % str(r.target).rstrip('.'))
+                logging.debug('Found KDC for enumeration domain: %s' % str(r.target).rstrip('.'))
                 if kdc not in self._kdcs:
                     self._kdcs.append(kdc)
                     self.auth.kdc = self._kdcs[0]
         except resolver.NXDOMAIN:
             pass
+
+        if self.auth.userdomain.lower() != ad_domain.lower():
+            # Resolve KDC for user auth domain
+            kquery = '_kerberos._tcp.dc._msdcs.%s' % self.auth.userdomain
+            q = self.dnsresolver.query(kquery, 'SRV', tcp=self.dns_tcp)
+            for r in q:
+                kdc = str(r.target).rstrip('.')
+                logging.debug('Found KDC for user: %s' % str(r.target).rstrip('.'))
+                self.auth.userdomain_kdc = kdc
 
         return True
 
