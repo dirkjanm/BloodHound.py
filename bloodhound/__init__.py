@@ -22,6 +22,7 @@
 #
 ####################
 
+import yaml
 import os, sys, logging, argparse, getpass, time, re, datetime
 from zipfile import ZipFile
 from bloodhound.ad.domain import AD, ADDC
@@ -257,12 +258,32 @@ def main():
     coopts.add_argument('--cachefile',
                         action='store',
                         help='Cache file (experimental)')
+    coopts.add_argument('--configfile',
+                        action='store',
+                        help='Config file (yaml)')
 
 
     args = parser.parse_args()
 
     if args.v is True:
         logger.setLevel(logging.DEBUG)
+
+    if args.configfile:
+        logging.debug('Reading config file: %s', args.configfile)
+        with open(args.configfile, "r", encoding="utf-8") as config_fd:
+            settings = yaml.safe_load(config_fd)
+        if 'username' in settings:
+            args.username = settings['username']
+        if 'password' in settings:
+            args.password = settings['password']
+        if 'domain' in settings:
+            args.domain = settings['domain']
+        if 'domain_controller' in settings:
+            args.domain_controller = settings['domain_controller']
+        if 'nameserver' in settings:
+            args.nameserver = settings['nameserver']
+        logging.debug('settings: %s', settings)
+        logging.debug('args: %s', args)
 
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
