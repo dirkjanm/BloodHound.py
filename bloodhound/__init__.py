@@ -282,8 +282,6 @@ def main():
             args.domain_controller = settings['domain_controller']
         if 'nameserver' in settings:
             args.nameserver = settings['nameserver']
-        logging.debug('settings: %s', settings)
-        logging.debug('args: %s', args)
 
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
