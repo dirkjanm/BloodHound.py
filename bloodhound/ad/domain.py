@@ -408,7 +408,7 @@ class ADDC(ADComputer):
     def get_users(self, include_properties=False, acl=False):
 
         properties = ['sAMAccountName', 'distinguishedName', 'sAMAccountType',
-                      'objectSid', 'primaryGroupID', 'isDeleted']
+                      'objectSid', 'primaryGroupID', 'isDeleted', 'objectClass']
         if 'ms-DS-GroupMSAMembership'.lower() in self.objecttype_guid_map:
             properties.append('msDS-GroupMSAMembership')
 
@@ -422,11 +422,22 @@ class ADDC(ADComputer):
         if acl:
             properties.append('nTSecurityDescriptor')
 
-        # Query for GMSA only if server supports it
+        # Query for MSA only if server supports it
         if 'msDS-GroupManagedServiceAccount' in self.ldap.server.schema.object_classes:
-            query = '(|(&(objectCategory=person)(objectClass=user))(objectClass=msDS-GroupManagedServiceAccount))'
+            gmsa_filter = '(objectClass=msDS-GroupManagedServiceAccount)'
         else:
             logging.debug('No support for GMSA, skipping in query')
+            gmsa_filter = ''
+
+        if 'msDS-ManagedServiceAccount' in self.ldap.server.schema.object_classes:
+            smsa_filter = '(objectClass=msDS-ManagedServiceAccount)'
+        else:
+            logging.debug('No support for SMSA, skipping in query')
+            smsa_filter = ''
+
+        if gmsa_filter or smsa_filter:
+            query = '(|(&(objectCategory=person)(objectClass=user)){}{})'.format(gmsa_filter, smsa_filter)
+        else:
             query = '(&(objectCategory=person)(objectClass=user))'
         entries = self.search(query,
                               properties,
@@ -458,7 +469,24 @@ class ADDC(ADComputer):
                 properties += ['nTSecurityDescriptor', 'ms-mcs-admpwdexpirationtime']
             else:
                 properties.append('nTSecurityDescriptor')
-        entries = self.search('(&(sAMAccountType=805306369))',
+
+        # Exclude MSA only if server supports it
+        if 'msDS-GroupManagedServiceAccount' in self.ldap.server.schema.object_classes:
+            gmsa_filter = '(!(objectClass=msDS-GroupManagedServiceAccount))'
+        else:
+            gmsa_filter = ''
+
+        if 'msDS-ManagedServiceAccount' in self.ldap.server.schema.object_classes:
+            smsa_filter = '(!(objectClass=msDS-ManagedServiceAccount))'
+        else:
+            smsa_filter = ''
+
+        if gmsa_filter or smsa_filter:
+            query = '(&(sAMAccountType=805306369){}{})'.format(gmsa_filter, smsa_filter)
+        else:
+            query = '(&(sAMAccountType=805306369))'
+
+        entries = self.search(query,
                               properties,
                               generator=True,
                               query_sd=acl)
