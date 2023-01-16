@@ -630,6 +630,7 @@ class AD(object):
         logging.debug('Querying domain controller information from DNS')
 
         basequery = '_ldap._tcp.pdc._msdcs'
+        ad_domain = None
 
         if domain is not None:
             logging.debug('Using domain hint: %s' % str(domain))
@@ -691,6 +692,13 @@ class AD(object):
                     self.auth.kdc = self._kdcs[0]
         except resolver.NXDOMAIN:
             pass
+
+        # Fix for below in case domain was not found via DNS
+        if not ad_domain:
+            if domain:
+                ad_domain = domain
+            else:
+                ad_domain = 'unknown'
 
         if self.auth.userdomain.lower() != ad_domain.lower():
             # Resolve KDC for user auth domain
