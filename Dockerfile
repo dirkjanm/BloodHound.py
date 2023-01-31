@@ -36,5 +36,9 @@ RUN apk update && \
     python setup.py install && \
     apk del .build-deps
 
+# Enable MD4
+RUN sed -i 's/default = default_sect/default = default_sect\nlegacy = legacy_sect/g' /etc/ssl/openssl.cnf
+RUN sed -i 's/# activate = 1/activate = 1\n\n[legacy_sect]\nactivate = 1/' /etc/ssl/openssl.cnf
+
 ENTRYPOINT /bin/bash
 
