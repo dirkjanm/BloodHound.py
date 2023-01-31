@@ -1,0 +1,3 @@
+impacket
+ldap3
+dnspython
