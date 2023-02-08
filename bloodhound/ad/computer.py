@@ -33,7 +33,6 @@ from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
-from bloodhound.enumeration.objectresolver import ObjectResolver
 from bloodhound.ad.structures import LDAP_SID
 from impacket.smb3 import SMB3
 from impacket.smb import SMB

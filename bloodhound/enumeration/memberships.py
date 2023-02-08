@@ -30,7 +30,6 @@ from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.computer import ADComputer
 from bloodhound.ad.structures import LDAP_SID
 from bloodhound.enumeration.acls import AclEnumerator, parse_binary_acl
-from bloodhound.enumeration.objectresolver import ObjectResolver
 from bloodhound.enumeration.outputworker import OutputWorker
 
 class MembershipEnumerator(object):
