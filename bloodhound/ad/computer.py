@@ -33,6 +33,7 @@ from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
+from bloodhound.enumeration.objectresolver import ObjectResolver
 from bloodhound.ad.structures import LDAP_SID
 from impacket.smb3 import SMB3
 from impacket.smb import SMB
@@ -172,6 +173,7 @@ class ADComputer(object):
                 props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
             props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
             delegatehosts = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
+            delegatehosts_cache = []
             for host in delegatehosts:
                 try:
                     target = host.split('/')[1]
@@ -179,11 +181,24 @@ class ADComputer(object):
                     logging.warning('Invalid delegation target: %s', host)
                     continue
                 try:
-                    sid = self.ad.computersidcache.get(target.lower())
-                    data['AllowedToDelegate'].append(sid)
+                    object_sid = self.ad.computersidcache.get(target.lower())
+                    data['AllowedToDelegate'].append({
+                        'ObjectIdentifier': object_sid,
+                        'ObjectType': ADUtils.resolve_ad_entry(
+                            self.addomain.objectresolver.resolve_sid(object_sid)
+                        )['type'],
+                    })
                 except KeyError:
-                    if '.' in target:
-                        data['AllowedToDelegate'].append(target.upper())
+                    object_sam = target.upper().split(".")[0]
+                    if object_sam in delegatehosts_cache: continue
+                    delegatehosts_cache.append(object_sam)
+                    object_entry = self.ad.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
+                    if object_entry:
+                        object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                        data['AllowedToDelegate'].append({
+                            'ObjectIdentifier': object_resolved['objectid'],
+                            'ObjectType': object_resolved['type'],
+                        })
             if len(delegatehosts) > 0:
                 props['allowedtodelegate'] = delegatehosts
 

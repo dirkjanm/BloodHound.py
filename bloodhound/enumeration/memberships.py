@@ -30,6 +30,7 @@ from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.computer import ADComputer
 from bloodhound.ad.structures import LDAP_SID
 from bloodhound.enumeration.acls import AclEnumerator, parse_binary_acl
+from bloodhound.enumeration.objectresolver import ObjectResolver
 from bloodhound.enumeration.outputworker import OutputWorker
 
 class MembershipEnumerator(object):
@@ -166,6 +167,7 @@ class MembershipEnumerator(object):
             if with_properties:
                 MembershipEnumerator.add_user_properties(user, entry)
                 if 'allowedtodelegate' in user['Properties']:
+                    delegatehosts_cache = []
                     for host in user['Properties']['allowedtodelegate']:
                         try:
                             target = host.split('/')[1]
@@ -173,11 +175,24 @@ class MembershipEnumerator(object):
                             logging.warning('Invalid delegation target: %s', host)
                             continue
                         try:
-                            sid = self.addomain.computersidcache.get(target.lower())
-                            user['AllowedToDelegate'].append(sid)
+                            object_sid = self.addomain.computersidcache.get(target.lower())
+                            user['AllowedToDelegate'].append({
+                                'ObjectIdentifier': object_sid,
+                                'ObjectType': ADUtils.resolve_ad_entry(
+                                    self.addomain.objectresolver.resolve_sid(object_sid)
+                                )['type'],
+                            })
                         except KeyError:
-                            if '.' in target:
-                                user['AllowedToDelegate'].append(target.upper())
+                            object_sam = target.upper().split(".")[0]
+                            if object_sam in delegatehosts_cache: continue
+                            delegatehosts_cache.append(object_sam)
+                            object_entry = self.addomain.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
+                            if object_entry:
+                                object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                                user['AllowedToDelegate'].append({
+                                    'ObjectIdentifier': object_resolved['objectid'],
+                                    'ObjectType': object_resolved['type'],
+                                })
                 # Parse SID history
                 if len(user['Properties']['sidhistory']) > 0:
                     for historysid in user['Properties']['sidhistory']:
