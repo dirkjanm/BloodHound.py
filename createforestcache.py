@@ -135,6 +135,11 @@ def main():
     parser.add_argument('--cachefile',
                         action='store',
                         help='Cache file name')
+    parser.add_argument('-op',
+                        '--outputprefix',
+                        metavar='HOST',
+                        action='store',
+                        help='String to prepend to output file names')
 
     args = parser.parse_args()
 
@@ -183,7 +188,7 @@ def main():
     bloodhound = BloodHound(ad)
     bloodhound.connect()
     bloodhound.run(timestamp=timestamp,
-                   cachefile=args.cachefile)
+                   cachefile=args.cachefile, fileNamePrefix=args.outputprefix)
 
 if __name__ == '__main__':
     main()
