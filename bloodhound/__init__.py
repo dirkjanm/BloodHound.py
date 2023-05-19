@@ -351,19 +351,31 @@ def main():
                    fileNamePrefix=args.outputprefix)
     #If args --zip is true, the compress output  
     if args.zip:
-        logging.info("Compressing output into " + args.outputprefix + "_" + timestamp + "bloodhound.zip")
+        logging.info("Compressing output into " + timestamp + "bloodhound.zip")
         # Get a list of files in the current dir
         list_of_files = os.listdir(os.getcwd())
         # Create handle to zip file with timestamp prefix
-        with ZipFile(args.outputprefix + "_" +timestamp + "bloodhound.zip",'w') as zip:
-            # For each of those files we fetched
-            for each_file in list_of_files:
-                # If the files starts with the current timestamp and ends in json
-                if each_file.startswith(timestamp) and each_file.endswith("json"):
-                    # Write it to the zip
-                    zip.write(each_file)
-                    # Remove it from disk
-                    os.remove(each_file)
+        if(args.outputprefix!=None):
+            with ZipFile(args.outputprefix + "_" + timestamp + "bloodhound.zip",'w') as zip:
+                # For each of those files we fetched
+                for each_file in list_of_files:
+                    # If the files starts with the current timestamp and ends in json
+                    if each_file.startswith(args.outputprefix) and each_file.endswith("json"):
+                        # Write it to the zip
+                        zip.write(each_file)
+                        # Remove it from disk
+                        os.remove(each_file)
+        else:
+            with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
+                # For each of those files we fetched
+                for each_file in list_of_files:
+                    # If the files starts with the current timestamp and ends in json
+                    if each_file.startswith(timestamp) and each_file.endswith("json"):
+                        # Write it to the zip
+                        zip.write(each_file)
+                        # Remove it from disk
+                        os.remove(each_file)
+
 
 
 if __name__ == '__main__':
