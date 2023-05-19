@@ -66,7 +66,7 @@ class BloodHound(object):
 #        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None, exclude_dcs=False):
+    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None, exclude_dcs=False, fileNamePrefix=""):
         start_time = time.time()
         if cachefile:
             self.ad.load_cachefile(cachefile)
@@ -79,7 +79,7 @@ class BloodHound(object):
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
-            membership_enum.enumerate_memberships(timestamp=timestamp)
+            membership_enum.enumerate_memberships(timestamp=timestamp, fileNamePrefix=fileNamePrefix)
         elif 'container' in collect:
             # Fetch domains for later, computers if needed
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
@@ -95,12 +95,12 @@ class BloodHound(object):
             self.pdc.get_domains('acl' in collect)
         if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
             trusts_enum = DomainEnumerator(self.ad, self.pdc)
-            trusts_enum.dump_domain(collect,timestamp=timestamp)
+            trusts_enum.dump_domain(collect,timestamp=timestamp,fileNamePrefix=fileNamePrefix)
         if do_computer_enum:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
             computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc, computerfile=computerfile, exclude_dcs=exclude_dcs)
-            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp)
+            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp, fileNamePrefix=fileNamePrefix)
         end_time = time.time()
         minutes, seconds = divmod(int(end_time-start_time),60)
         logging.info('Done in %02dM %02dS' % (minutes, seconds))
@@ -257,6 +257,12 @@ def main():
     coopts.add_argument('--cachefile',
                         action='store',
                         help='Cache file (experimental)')
+    coopts.add_argument('-op',
+                        '--outputprefix',
+                        metavar='PREFIX_NAME',
+                        action='store',
+                        help='String to prepend to output file names')
+
 
 
     args = parser.parse_args()
@@ -341,14 +347,15 @@ def main():
                    timestamp=timestamp,
                    computerfile=args.computerfile,
                    cachefile=args.cachefile,
-                   exclude_dcs=args.exclude_dcs)
+                   exclude_dcs=args.exclude_dcs,
+                   fileNamePrefix=args.outputprefix)
     #If args --zip is true, the compress output  
     if args.zip:
-        logging.info("Compressing output into " + timestamp + "bloodhound.zip")
+        logging.info("Compressing output into " + args.outputprefix + "_" + timestamp + "bloodhound.zip")
         # Get a list of files in the current dir
         list_of_files = os.listdir(os.getcwd())
         # Create handle to zip file with timestamp prefix
-        with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
+        with ZipFile(args.outputprefix + "_" +timestamp + "bloodhound.zip",'w') as zip:
             # For each of those files we fetched
             for each_file in list_of_files:
                 # If the files starts with the current timestamp and ends in json
