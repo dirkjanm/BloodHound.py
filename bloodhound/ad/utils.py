@@ -169,7 +169,7 @@ class ADUtils(object):
         binding = r'ncacn_np:%s[\PIPE\wkssvc]' % ip
         rpctransportWkst = transport.DCERPCTransportFactory(binding)
         if hasattr(rpctransportWkst, 'set_credentials'):
-            rpctransportWkst.set_credentials(adauth.username, adauth.password, 
+            rpctransportWkst.set_credentials(adauth.username, adauth.password,
                                 adauth.domain, adauth.lm_hash, adauth.nt_hash, adauth.aes_key)
             rpctransportWkst.set_kerberos(False, adauth.kdc) # not supported yet
         dce = rpctransportWkst.get_dce_rpc()
@@ -207,7 +207,7 @@ class ADUtils(object):
                     result = '.'.join((result, info['dns_domain']))
                 return result.lower()
             return None
-        
+
         try:
             ntlm_dumper = DumpNtlm(ip, ip, 445)
             hostname = parse_info(ntlm_dumper.GetInfo())
@@ -434,8 +434,8 @@ class ADUtils(object):
     def parse_gplink_string(linkstr):
         if not linkstr:
             return
-        for links in linkstr.split('[LDAP://')[1:]:
-            dn, options = links.rstrip('][').split(';')
+        for links in linkstr.split('LDAP://')[1:]:
+            dn, options = links.rstrip('][ ').split(';')
             yield dn, int(options)
 
 class AceResolver(object):
