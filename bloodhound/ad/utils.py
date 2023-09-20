@@ -31,6 +31,7 @@ from dns import resolver, reversename
 from bloodhound.ad.structures import LDAP_SID
 from bloodhound.ad.dumpntlm import DumpNtlm
 from impacket.dcerpc.v5 import transport, wkst
+from ldap3 import Server, Connection, ALL
 
 """
 """
@@ -119,6 +120,16 @@ class ADUtils(object):
     def domain2ldap(domain):
         return 'DC=' + ',DC='.join(str(domain).rstrip('.').split('.'))
 
+    def searchAffectedComputers(self, domainName, user, password):
+        affectedComputers = []
+        server = Server(domainName)
+        conn = Connection(server, user, password, auto_bind=True)
+        search_base = self.domain2ldap(domainName)
+        conn.search(search_base=search_base, search_filter="(&(samaccounttype=805306369)(!(objectclass=msDS-GroupManagedServiceAccount))(!(objectclass=msDS-ManagedServiceAccount)))")
+        for resp in conn.response:
+            if 'dn' in resp.keys():
+                affectedComputers.append(resp['dn'])
+        return affectedComputers
 
     @staticmethod
     def ldap2domain(ldap):
