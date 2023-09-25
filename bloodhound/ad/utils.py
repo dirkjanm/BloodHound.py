@@ -31,7 +31,6 @@ from dns import resolver, reversename
 from bloodhound.ad.structures import LDAP_SID
 from bloodhound.ad.dumpntlm import DumpNtlm
 from impacket.dcerpc.v5 import transport, wkst
-from ldap3 import Server, Connection, ALL
 
 """
 """
