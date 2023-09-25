@@ -381,7 +381,7 @@ class ADDC(ADComputer):
         return entries
 
     def get_ous(self, include_properties=False, acl=False):
-        properties = ['distinguishedName', 'name', 'objectGUID', 'gPLink']
+        properties = ['distinguishedName', 'name', 'objectGUID', 'gPLink', 'gpOptions']
         if include_properties:
             properties += ['description', 'whencreated']
         if acl:
