@@ -120,15 +120,14 @@ class ADUtils(object):
     def domain2ldap(domain):
         return 'DC=' + ',DC='.join(str(domain).rstrip('.').split('.'))
 
-    def searchAffectedComputers(self, domainName, user, password):
+    def searchAffectedComputers(self, addc):
         affectedComputers = []
-        server = Server(domainName)
-        conn = Connection(server, user, password, auto_bind=True)
-        search_base = self.domain2ldap(domainName)
-        conn.search(search_base=search_base, search_filter="(&(samaccounttype=805306369)(!(objectclass=msDS-GroupManagedServiceAccount))(!(objectclass=msDS-ManagedServiceAccount)))")
-        for resp in conn.response:
+        # querying DC with the active LDAP connection
+        addc.ldap.search(search_base=self.domain2ldap(addc.ad.domain), search_filter="(&(samaccounttype=805306369)(!(objectclass=msDS-GroupManagedServiceAccount))(!(objectclass=msDS-ManagedServiceAccount)))")
+        for resp in addc.ldap.response:
             if 'dn' in resp.keys():
                 affectedComputers.append(resp['dn'])
+
         return affectedComputers
 
     @staticmethod
