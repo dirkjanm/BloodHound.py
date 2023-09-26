@@ -98,6 +98,7 @@ class DomainEnumerator(object):
             functional_level = 'Unknown'
 
         whencreated = ADUtils.get_entry_property(domain_object, 'whencreated', default=0)
+        distinguishedName = ADUtils.get_entry_property(domain_object, 'distinguishedName').upper()
         if not isinstance(whencreated, int):
             whencreated = calendar.timegm(whencreated.timetuple())
         domain = {
@@ -106,7 +107,7 @@ class DomainEnumerator(object):
                 "name": self.addomain.domain.upper(),
                 "domain": self.addomain.domain.upper(),
                 "domainsid": ADUtils.get_entry_property(domain_object, 'objectSid'),
-                "distinguishedname": ADUtils.get_entry_property(domain_object, 'distinguishedName').upper(),
+                "distinguishedname": distinguishedName,
                 "description": ADUtils.get_entry_property(domain_object, 'description', ''),
                 "functionallevel": functional_level,
                 "highvalue": True,
@@ -118,6 +119,8 @@ class DomainEnumerator(object):
             "Links": [],
             "ChildObjects": [],
             "GPOChanges": {
+                "Enforced": {},
+                "Unenforced": {},
                 "AffectedComputers": [],
                 "DcomUsers": [],
                 "LocalAdmins": [],
@@ -126,6 +129,15 @@ class DomainEnumerator(object):
             },
             "IsDeleted": False,
         }
+        
+        # getting affected computers through LDAP
+        adutils = ADUtils()
+        affectedComputers = adutils.searchAffectedComputers(self.addc, distinguishedName)
+
+        if len(affectedComputers) != 0:
+            logging.info("Found %s affected computers", len(affectedComputers))
+            domain["GPOChanges"]["AffectedComputers"] = affectedComputers
+                
         if 'container' in collect:
             for childentry in self.addc.get_childobjects(ADUtils.get_entry_property(domain_object, 'distinguishedName')):
                 if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
@@ -155,7 +167,15 @@ class DomainEnumerator(object):
         if 'container' in collect:
             for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(domain_object, 'gPLink', '')):
                 link = dict()
+                
+                extractedProps = ADUtils.extractProps(gplink_dn, self.addomain.domain.upper())
+
                 link['IsEnforced'] = options == 2
+                if link['IsEnforced']:
+                    domain["GPOChanges"]["Enforced"] = extractedProps
+                else:
+                    domain["GPOChanges"]["Unenforced"] = extractedProps
+
                 try:
                     link['GUID'] = self.addomain.get_dn_from_cache_or_ldap(gplink_dn.upper())['ObjectIdentifier']
                     domain['Links'].append(link)
