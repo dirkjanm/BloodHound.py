@@ -26,10 +26,6 @@ import logging
 import queue
 import threading
 import calendar
-import re
-import os
-import smbclient
-import smbprotocol
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.computer import ADComputer
 from bloodhound.ad.structures import LDAP_SID
@@ -474,91 +470,6 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing GPO')
 
-    def extractProps(self, gplink_dn):
-        # defining properties to extract
-        propNames = ["PasswordPolicies", "LockoutPolicies", "SMBSigning", "LDAPSigning", "LMAuthenticationLevel"]
-        passwordPolicies = ["MinimumPasswordAge", "MaximumPasswordAge", "MinimumPasswordLength", "PasswordComplexity", "PasswordHistorySize", "ClearTextPassword"]
-        lockoutPolicies = ["LockoutDuration", "LockoutBadCount", "ResetLockoutCount", "ForceLogoffWhenHourExpire"]
-        SMBSigning = ["RequiresServerSMBSigning", "EnablesServerSMBSigning", "RequiresClientSMBSigning", "EnablesClientSMBSigning"]
-        LDAPSigning = ["RequiresLDAPClientSigning"]
-        LMAuthenticationLevel = ["LmCompatibilityLevel"]
-        propss = [passwordPolicies, lockoutPolicies, SMBSigning, LDAPSigning, LMAuthenticationLevel]
-        domainName = self.addomain.domain.lower()
-        extractedProps = {}
-
-        # decreasing logs from the smbclient package
-        logger = logging.getLogger()
-        logger.setLevel(level=logging.WARNING)
-
-        # fetching template file, where the properties are stored
-        gpoId = re.search("\{[a-fA-F0-9]{8}-([a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}\}", gplink_dn).group()
-        templatePath = os.path.join("\\\\", domainName, "sysvol", domainName, "Policies", gpoId, "MACHINE", "Microsoft", "Windows NT", "SecEdit", "GptTmpl.inf")
-        try:
-            with smbclient.open_file(templatePath, encoding='utf-16-le') as tf:
-                file = tf.read()
-
-                # password and lockout policies
-                propIndex = 0
-                for props in propss[:2]:
-                    extractedProps[propNames[propIndex]] = {}
-                    for prop in props:
-                        # searching props by pattern
-                        pattern = prop + "(\s)*=(\s)*(\d)+"
-                        s = re.search(pattern, file)
-                        if not s is None:
-                            # adding values to the output dict
-                            extractedProps[propNames[propIndex]][prop] = s.group().split("=")[1].strip()
-                    propIndex += 1
-
-                # SMB signings
-                patterns = []
-                patterns.append(r"LanManServer.*\\RequireSecuritySignature *= *\d+ *, *(\d)")
-                patterns.append(r"LanManServer.*\\EnableSecuritySignature *= *\d+ *, *(\d)")
-                patterns.append(r"LanmanWorkstation.*\\RequireSecuritySignature *= *\d+ *, *(\d)")
-                patterns.append(r"LanmanWorkstation.*\\EnableSecuritySignature *= *\d+ *, *(\d)")
-                
-                currentSigning = 0
-                extractedProps["SMBSigning"] = {}
-                for pattern in patterns:
-                    s = re.search(pattern, file)
-                    if not s is None:
-                        activationState = s.group().split("=")[1].split(",")[1].strip()
-                        extractedProps["SMBSigning"][SMBSigning[currentSigning]] = False if activationState == 0 else True
-                    currentSigning += 1
-
-                # LDAP signings
-                patterns = []
-                patterns.append(r"CurrentControlSet.*\\LDAPClientIntegrity *= *\d+ *, *(\d)")
-                
-                currentSigning = 0
-                extractedProps["LDAPSigning"] = {}
-                for pattern in patterns:
-                    s = re.search(pattern, file)
-                    if not s is None:
-                        activationState = s.group().split("=")[1].split(",")[1].strip()
-                        extractedProps["LDAPSigning"][LDAPSigning[currentSigning]] = True if activationState == 2 else False
-                    currentSigning += 1
-                
-
-                # LM authentication level
-                patterns = []
-                patterns.append(r"\\LmCompatibilityLevel *= *\d+ *, *(\d)")
-                
-                currentSigning = 0
-                extractedProps["LMAuthenticationLevel"] = {}
-                for pattern in patterns:
-                    s = re.search(pattern, file)
-                    if not s is None:
-                        activationState = s.group().split("=")[1].split(",")[1].strip()
-                        extractedProps["LMAuthenticationLevel"][LMAuthenticationLevel[currentSigning]] = int(activationState)
-                    currentSigning += 1
-
-        # if the template file does not exist
-        except smbprotocol.exceptions.SMBOSError as e:
-            pass
-
-        return extractedProps
-
     def enumerate_ous(self, timestamp =""):
         filename = timestamp + 'ous.json'
         with_properties = 'objectprops' in self.collect
@@ -578,6 +489,7 @@ class MembershipEnumerator(object):
 
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
+            distinguishedName = ADUtils.get_entry_property(entry, 'distinguishedName').upper()
             try:
                 guid = entry['attributes']['objectGUID'][1:-1].upper()
             except KeyError:
@@ -589,7 +501,7 @@ class MembershipEnumerator(object):
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
                     "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'name').upper(), self.addomain.domain.upper()),
-                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                    "distinguishedname": distinguishedName,
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
                     "blocksinheritance": False,
@@ -612,7 +524,7 @@ class MembershipEnumerator(object):
 
             # getting affected computers through LDAP
             adutils = ADUtils()
-            affectedComputers = adutils.searchAffectedComputers(self.addc)
+            affectedComputers = adutils.searchAffectedComputers(self.addc, distinguishedName)
 
             if ADUtils.get_entry_property(entry, 'gpOptions') == 1:
                 ou["Properties"]["blocksinheritance"] = True
@@ -637,7 +549,7 @@ class MembershipEnumerator(object):
             for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
                 link = dict()
 
-                extractedProps = self.extractProps(gplink_dn)
+                extractedProps = ADUtils.extractProps(gplink_dn, self.addomain.domain.upper())
                 
                 link['IsEnforced'] = options == 2
                 if link['IsEnforced']:

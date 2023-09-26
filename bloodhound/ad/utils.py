@@ -26,6 +26,9 @@ import logging
 import socket
 import threading
 import re
+import os
+import smbclient
+import smbprotocol
 import dns
 from dns import resolver, reversename
 from bloodhound.ad.structures import LDAP_SID
@@ -119,10 +122,10 @@ class ADUtils(object):
     def domain2ldap(domain):
         return 'DC=' + ',DC='.join(str(domain).rstrip('.').split('.'))
 
-    def searchAffectedComputers(self, addc):
+    def searchAffectedComputers(self, addc, distinguishedName):
         affectedComputers = []
         # querying DC with the active LDAP connection
-        addc.ldap.search(search_base=self.domain2ldap(addc.ad.domain), search_filter="(&(samaccounttype=805306369)(!(objectclass=msDS-GroupManagedServiceAccount))(!(objectclass=msDS-ManagedServiceAccount)))")
+        addc.ldap.search(search_base=distinguishedName, search_filter="(&(samaccounttype=805306369)(!(objectclass=msDS-GroupManagedServiceAccount))(!(objectclass=msDS-ManagedServiceAccount)))")
         for resp in addc.ldap.response:
             if 'dn' in resp.keys():
                 affectedComputers.append(resp['dn'])
@@ -446,6 +449,91 @@ class ADUtils(object):
         for links in linkstr.split('[LDAP://')[1:]:
             dn, options = links.rstrip('][').split(';')
             yield dn, int(options)
+            
+    @staticmethod
+    def extractProps(gplink_dn, domainName):
+        # defining properties to extract
+        propNames = ["PasswordPolicies", "LockoutPolicies", "SMBSigning", "LDAPSigning", "LMAuthenticationLevel"]
+        passwordPolicies = ["MinimumPasswordAge", "MaximumPasswordAge", "MinimumPasswordLength", "PasswordComplexity", "PasswordHistorySize", "ClearTextPassword"]
+        lockoutPolicies = ["LockoutDuration", "LockoutBadCount", "ResetLockoutCount", "ForceLogoffWhenHourExpire"]
+        SMBSigning = ["RequiresServerSMBSigning", "EnablesServerSMBSigning", "RequiresClientSMBSigning", "EnablesClientSMBSigning"]
+        LDAPSigning = ["RequiresLDAPClientSigning"]
+        LMAuthenticationLevel = ["LmCompatibilityLevel"]
+        propss = [passwordPolicies, lockoutPolicies, SMBSigning, LDAPSigning, LMAuthenticationLevel]
+        extractedProps = {}
+
+        # decreasing logs from the smbclient package
+        logger = logging.getLogger()
+        logger.setLevel(level=logging.WARNING)
+
+        # fetching template file, where the properties are stored
+        gpoId = re.search("\{[a-fA-F0-9]{8}-([a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}\}", gplink_dn).group()
+        templatePath = os.path.join("\\\\", domainName, "sysvol", domainName, "Policies", gpoId, "MACHINE", "Microsoft", "Windows NT", "SecEdit", "GptTmpl.inf")
+        try:
+            with smbclient.open_file(templatePath, encoding='utf-16-le') as tf:
+                file = tf.read()
+
+                # password and lockout policies
+                propIndex = 0
+                for props in propss[:2]:
+                    extractedProps[propNames[propIndex]] = {}
+                    for prop in props:
+                        # searching props by pattern
+                        pattern = prop + "(\s)*=(\s)*(\d)+"
+                        s = re.search(pattern, file)
+                        if not s is None:
+                            # adding values to the output dict
+                            extractedProps[propNames[propIndex]][prop] = s.group().split("=")[1].strip()
+                    propIndex += 1
+
+                # SMB signings
+                patterns = []
+                patterns.append(r"LanManServer.*\\RequireSecuritySignature *= *\d+ *, *(\d)")
+                patterns.append(r"LanManServer.*\\EnableSecuritySignature *= *\d+ *, *(\d)")
+                patterns.append(r"LanmanWorkstation.*\\RequireSecuritySignature *= *\d+ *, *(\d)")
+                patterns.append(r"LanmanWorkstation.*\\EnableSecuritySignature *= *\d+ *, *(\d)")
+                
+                currentSigning = 0
+                extractedProps["SMBSigning"] = {}
+                for pattern in patterns:
+                    s = re.search(pattern, file)
+                    if not s is None:
+                        activationState = s.group().split("=")[1].split(",")[1].strip()
+                        extractedProps["SMBSigning"][SMBSigning[currentSigning]] = False if activationState == 0 else True
+                    currentSigning += 1
+
+                # LDAP signings
+                patterns = []
+                patterns.append(r"CurrentControlSet.*\\LDAPClientIntegrity *= *\d+ *, *(\d)")
+                
+                currentSigning = 0
+                extractedProps["LDAPSigning"] = {}
+                for pattern in patterns:
+                    s = re.search(pattern, file)
+                    if not s is None:
+                        activationState = s.group().split("=")[1].split(",")[1].strip()
+                        extractedProps["LDAPSigning"][LDAPSigning[currentSigning]] = True if activationState == 2 else False
+                    currentSigning += 1
+                
+
+                # LM authentication level
+                patterns = []
+                patterns.append(r"\\LmCompatibilityLevel *= *\d+ *, *(\d)")
+                
+                currentSigning = 0
+                extractedProps["LMAuthenticationLevel"] = {}
+                for pattern in patterns:
+                    s = re.search(pattern, file)
+                    if not s is None:
+                        activationState = s.group().split("=")[1].split(",")[1].strip()
+                        extractedProps["LMAuthenticationLevel"][LMAuthenticationLevel[currentSigning]] = int(activationState)
+                    currentSigning += 1
+
+        # if the template file does not exist
+        except smbprotocol.exceptions.SMBOSError as e:
+            pass
+
+        return extractedProps
 
 class AceResolver(object):
     """
