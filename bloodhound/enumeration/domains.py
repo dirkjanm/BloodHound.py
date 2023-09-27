@@ -133,10 +133,7 @@ class DomainEnumerator(object):
         # getting affected computers through LDAP
         adutils = ADUtils()
         affectedComputers = adutils.searchAffectedComputers(self.addc, distinguishedName)
-
-        if len(affectedComputers) != 0:
-            logging.info("Found %s affected computers", len(affectedComputers))
-            domain["GPOChanges"]["AffectedComputers"] = affectedComputers
+        domain["GPOChanges"]["AffectedComputers"] = affectedComputers
                 
         if 'container' in collect:
             for childentry in self.addc.get_childobjects(ADUtils.get_entry_property(domain_object, 'distinguishedName')):

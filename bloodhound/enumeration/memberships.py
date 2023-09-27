@@ -489,7 +489,6 @@ class MembershipEnumerator(object):
 
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
-            distinguishedName = ADUtils.get_entry_property(entry, 'distinguishedName').upper()
             try:
                 guid = entry['attributes']['objectGUID'][1:-1].upper()
             except KeyError:
@@ -501,7 +500,7 @@ class MembershipEnumerator(object):
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
                     "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'name').upper(), self.addomain.domain.upper()),
-                    "distinguishedname": distinguishedName,
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
                     "blocksinheritance": False,
@@ -525,13 +524,10 @@ class MembershipEnumerator(object):
             # getting affected computers through LDAP
             adutils = ADUtils()
             affectedComputers = adutils.searchAffectedComputers(self.addc, distinguishedName)
+            ou["GPOChanges"]["AffectedComputers"] = affectedComputers
 
             if ADUtils.get_entry_property(entry, 'gpOptions') == 1:
                 ou["Properties"]["blocksinheritance"] = True
-
-            if len(affectedComputers) != 0:
-                logging.info("Found %s affected computers", len(affectedComputers))
-                ou["GPOChanges"]["AffectedComputers"] = affectedComputers
                 
             if with_properties:
                 ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')

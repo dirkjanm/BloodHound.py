@@ -129,7 +129,7 @@ class ADUtils(object):
         for resp in addc.ldap.response:
             if 'dn' in resp.keys():
                 affectedComputers.append(resp['dn'])
-
+                
         return affectedComputers
 
     @staticmethod
@@ -493,41 +493,35 @@ class ADUtils(object):
                 patterns.append(r"LanmanWorkstation.*\\RequireSecuritySignature *= *\d+ *, *(\d)")
                 patterns.append(r"LanmanWorkstation.*\\EnableSecuritySignature *= *\d+ *, *(\d)")
                 
-                currentSigning = 0
                 extractedProps["SMBSigning"] = {}
                 for pattern in patterns:
                     s = re.search(pattern, file)
                     if not s is None:
                         activationState = s.group().split("=")[1].split(",")[1].strip()
-                        extractedProps["SMBSigning"][SMBSigning[currentSigning]] = False if activationState == 0 else True
-                    currentSigning += 1
+                        extractedProps["SMBSigning"][SMBSigning[patterns.index(pattern)]] = False if activationState == 0 else True
 
                 # LDAP signings
                 patterns = []
                 patterns.append(r"CurrentControlSet.*\\LDAPClientIntegrity *= *\d+ *, *(\d)")
                 
-                currentSigning = 0
                 extractedProps["LDAPSigning"] = {}
                 for pattern in patterns:
                     s = re.search(pattern, file)
                     if not s is None:
                         activationState = s.group().split("=")[1].split(",")[1].strip()
-                        extractedProps["LDAPSigning"][LDAPSigning[currentSigning]] = True if activationState == 2 else False
-                    currentSigning += 1
+                        extractedProps["LDAPSigning"][LDAPSigning[patterns.index(pattern)]] = True if activationState == 2 else False
                 
 
                 # LM authentication level
                 patterns = []
                 patterns.append(r"\\LmCompatibilityLevel *= *\d+ *, *(\d)")
                 
-                currentSigning = 0
                 extractedProps["LMAuthenticationLevel"] = {}
                 for pattern in patterns:
                     s = re.search(pattern, file)
                     if not s is None:
                         activationState = s.group().split("=")[1].split(",")[1].strip()
-                        extractedProps["LMAuthenticationLevel"][LMAuthenticationLevel[currentSigning]] = int(activationState)
-                    currentSigning += 1
+                        extractedProps["LMAuthenticationLevel"][LMAuthenticationLevel[patterns.index(pattern)]] = int(activationState)
 
         # if the template file does not exist
         except smbprotocol.exceptions.SMBOSError as e:
