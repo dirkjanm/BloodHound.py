@@ -221,6 +221,7 @@ def main():
     parser.add_argument('-d',
                         '--domain',
                         action='store',
+                        default='',
                         help='Domain to query.')
     parser.add_argument('-dc',
                         '--domain-controller',
