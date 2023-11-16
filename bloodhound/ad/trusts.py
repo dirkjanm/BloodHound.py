@@ -84,9 +84,16 @@ class ADDomainTrust(object):
             self.domainsid = ''
 
     def has_flag(self, flag):
+        if self.flags is None or self.trust_flags.get(flag) is None:
+            return False  # Handle the case where either self.flags or trust_flags[flag] is None
+    
         return self.flags & self.trust_flags[flag] == self.trust_flags[flag]
 
     def to_output(self):
+        trusttype = 'Unknown'
+        is_transitive = False
+        sid_filtering = True
+
         if self.has_flag('WITHIN_FOREST'):
             trusttype = 'ParentChild'
             is_transitive = True
@@ -100,15 +107,16 @@ class ADDomainTrust(object):
             is_transitive = False
             sid_filtering = True
         else:
-            trusttype = 'Unknown'
             is_transitive = not self.has_flag('NON_TRANSITIVE')
-            sid_filtering = True
+
+        # Check if self.direction exists in self.trust_dir before accessing it
+        trust_direction = self.trust_dir.get(self.direction, 'UnknownTrustDirection')
 
         out = {
             "TargetDomainName": self.destination_domain.upper(),
             "TargetDomainSid": self.domainsid,
             "IsTransitive": is_transitive,
-            "TrustDirection": self.trust_dir[self.direction],
+            "TrustDirection": trust_direction,
             "TrustType": trusttype,
             "SidFilteringEnabled": sid_filtering
         }
