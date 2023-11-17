@@ -258,6 +258,9 @@ def main():
     coopts.add_argument('--cachefile',
                         action='store',
                         help='Cache file (experimental)')
+    coopts.add_argument('--ldap-channel-binding',
+                        action='store_true',
+                        help='Use LDAP Channel Binding (will force ldaps protocol to be used)')
 
 
     args = parser.parse_args()
@@ -267,10 +270,10 @@ def main():
 
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
+        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
     elif args.username is not None and args.password is None and args.hashes is None:
         args.password = getpass.getpass()
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
+        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
     elif args.username is None and (args.password is not None or args.hashes is not None):
         logging.error('Authentication: password or hashes provided without username')
         sys.exit(1)
@@ -278,19 +281,19 @@ def main():
         if args.hashes:
             logging.debug('Authentication: NT hash')
             lm, nt = args.hashes.split(":")
-            auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method)
+            auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
             if args.aesKey:
                 logging.debug('Authentication: Kerberos AES')
                 auth.set_aeskey(args.aesKey)
         else:
             logging.debug('Authentication: Kerberos AES')
-            auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method)
+            auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
     else:
         if not args.kerberos:
             parser.print_help()
             sys.exit(1)
         else:
-            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
+            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout)
 

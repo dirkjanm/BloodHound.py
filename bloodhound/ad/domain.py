@@ -54,7 +54,7 @@ class ADDC(ADComputer):
         # Initialize GUID map
         self.objecttype_guid_map = dict()
 
-    def ldap_connect(self, protocol='ldap', resolver=False):
+    def ldap_connect(self, protocol='ldaps', resolver=False):
         """
         Connect to the LDAP service
         """
