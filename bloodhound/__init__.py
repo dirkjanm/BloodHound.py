@@ -177,6 +177,7 @@ def main():
     parser.add_argument('-d',
                         '--domain',
                         action='store',
+                        default='',
                         help='Domain to query.')
     parser.add_argument('-v',
                         action='store_true',
