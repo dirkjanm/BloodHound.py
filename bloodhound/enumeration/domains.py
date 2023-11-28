@@ -44,9 +44,11 @@ class DomainEnumerator(object):
         self.addomain = addomain
         self.addc = addc
 
-    def dump_domain(self, collect, timestamp="", filename='domains.json'):
-
-        filename = timestamp + filename
+    def dump_domain(self, collect, timestamp="", filename='domains.json', fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + filename
+        else:
+            filename = timestamp + filename
         """
         Dump trusts. This is currently the only domain info we support, so
         this function handles the entire domain dumping.
