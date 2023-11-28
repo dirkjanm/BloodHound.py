@@ -135,7 +135,6 @@ def main():
     parser.add_argument('--cachefile',
                         action='store',
                         help='Cache file name')
-
     args = parser.parse_args()
 
     if args.v is True:

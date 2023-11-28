@@ -63,7 +63,7 @@ class ComputerEnumerator(MembershipEnumerator):
                 for line in cfile:
                     self.allowlist.append(line.strip().lower())
 
-    def enumerate_computers(self, computers, num_workers=10, timestamp=""):
+    def enumerate_computers(self, computers, num_workers=10, timestamp="", fileNamePrefix=""):
         """
             Enumerates the computers in the domain. Is threaded, you can specify the number of workers.
             Will spawn threads to resolve computers and enumerate the information.
@@ -71,7 +71,10 @@ class ComputerEnumerator(MembershipEnumerator):
         process_queue = queue.Queue()
 
         result_q = queue.Queue()
-        results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, timestamp + 'computers.json'))
+        if (fileNamePrefix != None):
+            results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, fileNamePrefix + '_' + timestamp + 'computers.json'))
+        else:
+            results_worker = threading.Thread(target=OutputWorker.write_worker, args=(result_q, timestamp + 'computers.json'))
         results_worker.daemon = True
         results_worker.start()
         logging.info('Starting computer enumeration with %d workers', num_workers)
