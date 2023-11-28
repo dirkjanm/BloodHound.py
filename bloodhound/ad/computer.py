@@ -83,38 +83,47 @@ class ADComputer(object):
             self.hostname = '%s.%s' % (samname[:-1].upper(), self.ad.domain.upper())
         else:
             self.hostname = hostname
+        # Group RID to name mapping
+        self.groupmapping = {}
 
     def get_bloodhound_data(self, entry, collect, skip_acl=False):
         data = {
             'ObjectIdentifier': self.objectsid,
             'AllowedToAct': [],
             'PrimaryGroupSID': self.primarygroup,
-            'LocalAdmins': {
-                'Collected': 'localadmin' in collect and not self.permanentfailure,
-                'FailureReason': None,
-                'Results': self.admins,
-            },
-            'PSRemoteUsers': {
-                'Collected': 'psremote' in collect and not self.permanentfailure,
-                'FailureReason': None,
-                'Results': self.psremote
-            },
+            'ContainedBy': None,
+            'DumpSMSAPassword': [],
             'Properties': {
                 'name': self.hostname.upper(),
                 'domainsid': self.ad.domain_object.sid,
                 'domain': self.ad.domain.upper(),
+                'highvalue': False,
                 'distinguishedname': ADUtils.get_entry_property(entry, 'distinguishedName').upper()
             },
-            'RemoteDesktopUsers': {
-                'Collected': 'rdp' in collect and not self.permanentfailure,
-                'FailureReason': None,
-                'Results': self.rdp
-            },
-            'DcomUsers': {
-                'Collected': 'dcom' in collect and not self.permanentfailure,
-                'FailureReason': None,
-                'Results': self.dcom
-            },
+            # Old format - to be removed
+            # 'LocalAdmins': {
+            #     'Collected': 'localadmin' in collect and not self.permanentfailure,
+            #     'FailureReason': None,
+            #     'Results': self.admins,
+            # },
+            # 'PSRemoteUsers': {
+            #     'Collected': 'psremote' in collect and not self.permanentfailure,
+            #     'FailureReason': None,
+            #     'Results': self.psremote
+            # },
+            # 'RemoteDesktopUsers': {
+            #     'Collected': 'rdp' in collect and not self.permanentfailure,
+            #     'FailureReason': None,
+            #     'Results': self.rdp
+            # },
+            # 'DcomUsers': {
+            #     'Collected': 'dcom' in collect and not self.permanentfailure,
+            #     'FailureReason': None,
+            #     'Results': self.dcom
+            # },
+            # New groups format, filed in below
+            'LocalGroups': [],
+            'UserRights': [],
             'AllowedToDelegate': [],
             'Sessions': {
                 'Collected': 'session' in collect and not self.permanentfailure,
@@ -200,6 +209,31 @@ class ADComputer(object):
                     continue
                 if delegated['RightName'] == 'GenericAll':
                     data['AllowedToAct'].append({'ObjectIdentifier': delegated['PrincipalSID'], 'ObjectType': delegated['PrincipalType']})
+
+        # new local groups logic
+        lgroups = {
+            'localadmin': (544, self.admins),
+            'psremote': (580, self.psremote),
+            'rdp': (555, self.rdp),
+            'dcom': (562, self.dcom),
+        }
+        for collection, cdata in lgroups.items():
+            rid, results = cdata
+            if not (collection in collect and not self.permanentfailure):
+                # Skip groups we didn't collect
+                continue
+            if self.primarygroup.endswith('-516'):
+                # We ignore this on domain controllers for now
+                continue
+            obj = {
+                "ObjectIdentifier": "{0}-{1}".format(self.objectsid, rid),
+                "Name": "{0}@{1}".format(self.groupmapping.get(rid, 'UNKNOWN'), self.hostname.upper()),
+                'Results': results,
+                "LocalNames": [], # not sure what this does
+                "Collected": True,
+                "FailureReason": None # not in use at the moment in bhpy
+            }
+            data['LocalGroups'].append(obj)
 
         # Run ACL collection if this was not already done centrally
         if 'acl' in collect and not skip_acl:
@@ -696,13 +730,14 @@ class ADComputer(object):
             resp = samr.hSamrConnect(dce)
             serverHandle = resp['ServerHandle']
             # Attempt to get the SID from this computer to filter local accounts later
-            try:
-                resp = samr.hSamrLookupDomainInSamServer(dce, serverHandle, self.samname[:-1])
-                self.sid = resp['DomainId'].formatCanonical()
-            # This doesn't always work (for example on DCs)
-            except DCERPCException as e:
-                # Make it a string which is guaranteed not to match a SID
-                self.sid = 'UNKNOWN'
+            if not self.sid:
+                try:
+                    resp = samr.hSamrLookupDomainInSamServer(dce, serverHandle, self.samname[:-1])
+                    self.sid = resp['DomainId'].formatCanonical()
+                # This doesn't always work (for example on DCs)
+                except DCERPCException as e:
+                    # Make it a string which is guaranteed not to match a SID
+                    self.sid = 'UNKNOWN'
 
 
             # Enumerate the domains known to this computer
@@ -730,27 +765,36 @@ class ADComputer(object):
                 if 'STATUS_NO_SUCH_ALIAS' in str(error):
                     logging.debug('No group with RID %d exists', group_rid)
                     return
-            resp = samr.hSamrGetMembersInAlias(dce,
-                                               aliasHandle=resp['AliasHandle'])
-            for member in resp['Members']['Sids']:
-                sid_string = member['SidPointer'].formatCanonical()
 
-                logging.debug('Found %d SID: %s', group_rid, sid_string)
-                if not sid_string.startswith(self.sid):
-                    # If the sid is known, we can add the admin value directly
-                    try:
-                        siddata = self.ad.sidcache.get(sid_string)
-                        if siddata is None:
+            aliashandle = resp['AliasHandle']
+            resp = samr.hSamrQueryInformationAlias(dce, aliasHandle=aliashandle)
+
+            info = resp['Buffer']['General']
+            self.groupmapping[group_rid] = info['Name'].upper()
+
+            if info['MemberCount'] > 0:
+                # Only query if we have members
+                resp = samr.hSamrGetMembersInAlias(dce,
+                                                   aliasHandle=aliashandle)
+                for member in resp['Members']['Sids']:
+                    sid_string = member['SidPointer'].formatCanonical()
+
+                    logging.debug('Found %d SID: %s', group_rid, sid_string)
+                    if not sid_string.startswith(self.sid):
+                        # If the sid is known, we can add the admin value directly
+                        try:
+                            siddata = self.ad.sidcache.get(sid_string)
+                            if siddata is None:
+                                unresolved.append(sid_string)
+                            else:
+                                logging.debug('Sid is cached: %s', siddata['principal'])
+                                resultlist.append({'ObjectIdentifier': sid_string,
+                                                   'ObjectType': siddata['type'].capitalize()})
+                        except KeyError:
+                            # Append it to the list of unresolved SIDs
                             unresolved.append(sid_string)
-                        else:
-                            logging.debug('Sid is cached: %s', siddata['principal'])
-                            resultlist.append({'ObjectIdentifier': sid_string,
-                                               'ObjectType': siddata['type'].capitalize()})
-                    except KeyError:
-                        # Append it to the list of unresolved SIDs
-                        unresolved.append(sid_string)
-                else:
-                    logging.debug('Ignoring local group %s', sid_string)
+                    else:
+                        logging.debug('Ignoring local group %s', sid_string)
         except DCERPCException as e:
             if 'rpc_s_access_denied' in str(e):
                 logging.debug('Access denied while enumerating groups on %s, likely a patched OS', self.hostname)

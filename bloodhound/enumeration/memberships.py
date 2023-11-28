@@ -80,15 +80,15 @@ class MembershipEnumerator(object):
         # Is user enabled? Checked by seeing if the UAC flag 2 (ACCOUNT_DISABLED) is not set
         props['enabled'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 2 == 0
         props['lastlogon'] = ADUtils.win_timestamp_to_unix(
-            ADUtils.get_entry_property(entry, 'lastLogon', default=0, raw=True)
+            ADUtils.get_entry_property(entry, 'lastLogon', default=-1, raw=True)
         )
         props['lastlogontimestamp'] = ADUtils.win_timestamp_to_unix(
-            ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=0, raw=True)
+            ADUtils.get_entry_property(entry, 'lastlogontimestamp', default=-1, raw=True)
         )
         if props['lastlogontimestamp'] == 0:
             props['lastlogontimestamp'] = -1
         props['pwdlastset'] = ADUtils.win_timestamp_to_unix(
-            ADUtils.get_entry_property(entry, 'pwdLastSet', default=0, raw=True)
+            ADUtils.get_entry_property(entry, 'pwdLastSet', default=-1, raw=True)
         )
         props['dontreqpreauth'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00400000 == 0x00400000
         props['pwdneverexpires'] = ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00010000 == 0x00010000
@@ -148,10 +148,12 @@ class MembershipEnumerator(object):
                 "AllowedToDelegate": [],
                 "ObjectIdentifier": ADUtils.get_entry_property(entry, 'objectSid'),
                 "PrimaryGroupSID": MembershipEnumerator.get_primary_membership(entry),
+                "ContainedBy": None,
                 "Properties": {
                     "name": resolved_entry['principal'],
                     "domain": self.addomain.domain.upper(),
                     "domainsid": self.addomain.domain_object.sid,
+                    "highvalue": False,
                     "distinguishedname":ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "unconstraineddelegation": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x00080000 == 0x00080000,
                     "trustedtoauth": ADUtils.get_entry_property(entry, 'userAccountControl', default=0) & 0x01000000 == 0x01000000,
@@ -270,6 +272,7 @@ class MembershipEnumerator(object):
                     "name": resolved_entry['principal'],
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper()
                 },
+                "ContainedBy": None,
                 "Members": [],
                 "Aces": [],
                 "IsDeleted": ADUtils.get_entry_property(entry, 'isDeleted', default=False)
@@ -615,6 +618,7 @@ class MembershipEnumerator(object):
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
+                "ContainedBy": None,
                 "Aces": [],
                 "ChildObjects": [],
             }
@@ -705,11 +709,13 @@ class MembershipEnumerator(object):
                 "domain": domainname,
                 "domainsid": self.addomain.domain_object.sid,
                 "name": "NT AUTHORITY@%s" % domainname,
+                "highvalue": False,
             },
             "Aces": [],
             "SPNTargets": [],
             "HasSIDHistory": [],
             "IsDeleted": False,
+            "ContainedBy": None,
             "IsACLProtected": False,
         }
         self.result_q.put(user)
@@ -727,6 +733,7 @@ class MembershipEnumerator(object):
         group = {
             "IsDeleted": False,
             "IsACLProtected": False,
+            "ContainedBy": None,
             "ObjectIdentifier": "%s-S-1-5-9" % rootdomain,
             "Properties": {
                 "domain": rootdomain.upper(),
@@ -751,6 +758,7 @@ class MembershipEnumerator(object):
         evgroup = {
             "IsDeleted": False,
             "IsACLProtected": False,
+            "ContainedBy": None,
             "ObjectIdentifier": "%s-S-1-1-0" % domainname,
             "Properties": {
                 "domain": domainname,
@@ -766,6 +774,7 @@ class MembershipEnumerator(object):
         augroup = {
             "IsDeleted": False,
             "IsACLProtected": False,
+            "ContainedBy": None,
             "ObjectIdentifier": "%s-S-1-5-11" % domainname,
             "Properties": {
                 "domain": domainname,
@@ -781,6 +790,7 @@ class MembershipEnumerator(object):
         iugroup = {
             "IsDeleted": False,
             "IsACLProtected": False,
+            "ContainedBy": None,
             "ObjectIdentifier": "%s-S-1-5-4" % domainname,
             "Properties": {
                 "domain": domainname,
