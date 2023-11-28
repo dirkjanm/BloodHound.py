@@ -311,18 +311,17 @@ class ADUtils(object):
                 resolved['type'] = 'Base'
         else:
             accountType = ADUtils.get_entry_property(entry, 'sAMAccountType')
+            object_class = ADUtils.get_entry_property(entry, 'objectClass', [])
             if accountType in [268435456, 268435457, 536870912, 536870913]:
                 resolved['type'] = 'Group'
-            elif ADUtils.get_entry_property(entry, 'msDS-GroupMSAMembership', default=b'', raw=True) != b'':
+            elif accountType in [805306368] or \
+                 'msDS-GroupManagedServiceAccount' in object_class or \
+                 'msDS-ManagedServiceAccount' in object_class:
                 resolved['type'] = 'User'
-                short_name = account.rstrip('$')
-                resolved['principal'] = ('%s@%s' % (short_name, domain)).upper()
             elif accountType in [805306369]:
                 resolved['type'] = 'Computer'
                 short_name = account.rstrip('$')
                 resolved['principal'] = ('%s.%s' % (short_name, domain)).upper()
-            elif accountType in [805306368]:
-                resolved['type'] = 'User'
             elif accountType in [805306370]:
                 resolved['type'] = 'trustaccount'
             else:
