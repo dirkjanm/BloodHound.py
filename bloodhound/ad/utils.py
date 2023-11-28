@@ -433,8 +433,8 @@ class ADUtils(object):
     def parse_gplink_string(linkstr):
         if not linkstr:
             return
-        for links in linkstr.split('[LDAP://')[1:]:
-            dn, options = links.rstrip('][').split(';')
+        for links in linkstr.split('LDAP://')[1:]:
+            dn, options = links.rstrip('][ ').split(';')
             yield dn, int(options)
 
 class AceResolver(object):
