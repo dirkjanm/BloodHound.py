@@ -71,7 +71,7 @@ class MembershipEnumerator(object):
         return '%s-%d' % ('-'.join(entry['attributes']['objectSid'].split('-')[:-1]), primarygroupid)
 
     @staticmethod
-    def add_user_properties(user, entry):
+    def add_user_properties(user, entry, fileNamePrefix):
         """
         Resolve properties for user objects
         """
@@ -119,8 +119,11 @@ class MembershipEnumerator(object):
         # props['sfupassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'msSFU30Password'))
         props['sfupassword'] = None
 
-    def enumerate_users(self, timestamp=""):
-        filename = timestamp + 'users.json'
+    def enumerate_users(self, timestamp="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'users.json'
+        else:
+            filename = timestamp + 'users.json'
 
         # Should we include extra properties in the query?
         with_properties = 'objectprops' in self.collect
@@ -166,7 +169,7 @@ class MembershipEnumerator(object):
             }
 
             if with_properties:
-                MembershipEnumerator.add_user_properties(user, entry)
+                MembershipEnumerator.add_user_properties(user, entry, fileNamePrefix)
                 if 'allowedtodelegate' in user['Properties']:
                     for host in user['Properties']['allowedtodelegate']:
                         try:
@@ -226,7 +229,7 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing users')
 
-    def enumerate_groups(self, timestamp=""):
+    def enumerate_groups(self, timestamp="", fileNamePrefix=""):
 
         highvalue = ["S-1-5-32-544", "S-1-5-32-550", "S-1-5-32-549", "S-1-5-32-551", "S-1-5-32-548"]
 
@@ -240,8 +243,10 @@ class MembershipEnumerator(object):
         # Should we include extra properties in the query?
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
-
-        filename = timestamp + 'groups.json'
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'groups.json'
+        else:
+            filename = timestamp + 'groups.json'
         entries = self.addc.get_groups(include_properties=with_properties, acl=acl)
 
         logging.debug('Writing groups to file: %s', filename)
@@ -327,13 +332,15 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing groups')
 
-    def enumerate_computers_dconly(self,timestamp =""):
+    def enumerate_computers_dconly(self,timestamp ="", fileNamePrefix=""):
         '''
         Enumerate computer objects. This function is only used if no
         collection was requested that required connecting to computers anyway.
         '''
-        filename = timestamp + 'computers.json'
-
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'computers.json'
+        else:
+            filename = timestamp + 'computers.json'
         # Should we include extra properties in the query?
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
@@ -392,8 +399,11 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing computers')
 
-    def enumerate_gpos(self, timestamp =""):
-        filename = timestamp + 'gpos.json'
+    def enumerate_gpos(self, timestamp ="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'gpos.json'
+        else:
+            filename = timestamp + 'gpos.json'
 
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
@@ -473,8 +483,11 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing GPO')
 
-    def enumerate_ous(self, timestamp =""):
-        filename = timestamp + 'ous.json'
+    def enumerate_ous(self, timestamp ="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'ous.json'
+        else:
+            filename = timestamp + 'ous.json'
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
         entries = self.addc.get_ous(include_properties=with_properties, acl=acl)
@@ -580,8 +593,11 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing OU')
 
-    def enumerate_containers(self, timestamp =""):
-        filename = timestamp + 'containers.json'
+    def enumerate_containers(self, timestamp ="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'containers.json'
+        else:
+            filename = timestamp + 'containers.json'
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
         entries = self.addc.get_containers(include_properties=with_properties, acl=acl)
@@ -802,21 +818,21 @@ class MembershipEnumerator(object):
         }
         self.result_q.put(iugroup)
 
-    def do_container_collection(self, timestamp=""):
-        self.enumerate_gpos(timestamp)
-        self.enumerate_ous(timestamp)
-        self.enumerate_containers(timestamp)
+    def do_container_collection(self, timestamp="", fileNamePrefix=""):
+        self.enumerate_gpos(timestamp, fileNamePrefix)
+        self.enumerate_ous(timestamp, fileNamePrefix)
+        self.enumerate_containers(timestamp, fileNamePrefix)
 
-    def enumerate_memberships(self, timestamp=""):
+    def enumerate_memberships(self, timestamp="", fileNamePrefix=""):
         """
         Run appropriate enumeration tasks
         """
-        self.enumerate_users(timestamp)
-        self.enumerate_groups(timestamp)
+        self.enumerate_users(timestamp, fileNamePrefix)
+        self.enumerate_groups(timestamp, fileNamePrefix)
         if 'container' in self.collect:
-            self.do_container_collection(timestamp)
+            self.do_container_collection(timestamp, fileNamePrefix)
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect
                 or 'experimental' in self.collect):
-            self.enumerate_computers_dconly(timestamp)
+            self.enumerate_computers_dconly(timestamp, fileNamePrefix)
