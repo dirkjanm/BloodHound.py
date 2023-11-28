@@ -60,13 +60,16 @@ class ObjectResolver(object):
                                                           attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             return distinguishedname
 
-    def resolve_samname(self, samname, use_gc=True):
+    def resolve_samname(self, samname, use_gc=True, allow_filter=False):
         """
         Resolve a SAM name in the GC. This can give multiple results.
         Returns a list of LDAP entries
         """
         out = []
-        safename = escape_filter_chars(samname)
+        if not allow_filter:
+            safename = escape_filter_chars(samname)
+        else:
+            safename = samname
         with self.lock:
             if use_gc:
                 if not self.addc.gcldap:
