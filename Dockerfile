@@ -32,6 +32,7 @@ RUN apk update && \
 	apk add --no-cache bash && \
     pip3 install --upgrade setuptools && \
     pip install git+https://github.com/SecureAuthCorp/impacket && \
+    pip install pycryptodome && \
     cd /tmp/ && \
     python setup.py install && \
     apk del .build-deps
