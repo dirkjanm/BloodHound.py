@@ -301,7 +301,10 @@ class MembershipEnumerator(object):
                 group['Properties']['description'] = ADUtils.get_entry_property(entry, 'description')
                 group['Properties']['samaccountname'] = ADUtils.get_entry_property(entry, 'sAMAccountName')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-                group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
+                if isinstance(whencreated, int):
+                    group['Properties']['whencreated'] = whencreated
+                else:
+                    group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
             for member in entry['attributes']['member']:
                 resolved_member = self.get_membership(member)
@@ -457,7 +460,10 @@ class MembershipEnumerator(object):
             if with_properties:
                 gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-                gpo["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
+                if isinstance(whencreated, int):
+                    gpo['Properties']['whencreated'] = whencreated
+                else:
+                    gpo['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
             # Create cache entry for links
             link_output = {
@@ -550,7 +556,10 @@ class MembershipEnumerator(object):
             if with_properties:
                 ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-                ou["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
+                if isinstance(whencreated, int):
+                    ou['Properties']['whencreated'] = whencreated
+                else:
+                    ou['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
             
             for childentry in self.addc.get_childobjects(ou["Properties"]["distinguishedname"]):
                 resolved_childentry = ADUtils.resolve_ad_entry(childentry)
