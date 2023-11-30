@@ -55,7 +55,7 @@ class BloodHound(object):
         logging.debug('Using base DN: %s', self.ad.baseDN)
 
         if len(self.ad.kdcs()) > 0:
-            kdc = self.ad.kdcs()[0]
+            kdc = self.ad.auth.kdc
             logging.debug('Using kerberos KDC: %s', kdc)
             logging.debug('Using kerberos realm: %s', self.ad.realm())
 
@@ -274,7 +274,7 @@ def main():
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
-    elif args.username is not None and args.password is None and args.hashes is None and args.no_pass is None:
+    elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and args.no_pass is not None:
         args.password = getpass.getpass()
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
     elif args.username is None and (args.password is not None or args.hashes is not None):
@@ -313,9 +313,9 @@ def main():
                           args.domain_controller)
             sys.exit(1)
         ad.override_dc(args.domain_controller)
-        if not auth.kdc:
-            logging.debug('Using supplied domain controller as KDC')
-            auth.kdc = args.domain_controller
+        logging.debug('Using supplied domain controller as KDC')
+        auth.set_kdc(args.domain_controller)
+
     if args.global_catalog:
         if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', args.global_catalog):
             logging.error('The specified global catalog server %s looks like an IP address, but requires a hostname (FQDN).\n'\

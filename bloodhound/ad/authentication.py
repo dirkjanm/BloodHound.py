@@ -70,6 +70,12 @@ class ADAuthentication(object):
     def set_aeskey(self, aeskey):
         self.aeskey = aeskey
 
+    def set_kdc(self, kdc):
+        # Set KDC
+        self.kdc = kdc
+        if self.userdomain == self.domain:
+            # Also set it for user domain if this is equal
+            self.userdomain_kdc = kdc
 
     def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
         if gc:
@@ -209,6 +215,20 @@ class ADAuthentication(object):
             # Get referral TGT
             tgs, cipher, _, sessionkey = getKerberosTGS(servername, self.userdomain, self.userdomain_kdc,
                                                                     tgt, cipher, session_key)
+            # See if this is a ticket for the correct domain
+            refneeded = True
+            while refneeded:
+                decoded_tgs = decoder.decode(tgs, asn1Spec = TGS_REP())[0]
+                next_realm = str(decoded_tgs['ticket']['sname']['name-string'][1])
+                if next_realm.upper() == self.domain.upper():
+                    refneeded = False
+                else:
+                    # Get next referral TGT
+                    logging.debug('Following referral across trust to get next TGT')
+                    servername = Principal('krbtgt/%s' % self.domain, type=constants.PrincipalNameType.NT_SRV_INST.value)
+                    tgs, cipher, _, sessionkey = getKerberosTGS(servername, next_realm, next_realm,
+                                                                            tgs, cipher, sessionkey)
+
             # Get foreign domain TGT
             servername = Principal('krbtgt/%s' % self.domain, type=constants.PrincipalNameType.NT_SRV_INST.value)
             tgs, cipher, _, sessionkey = getKerberosTGS(servername, self.domain, self.kdc,
@@ -250,7 +270,11 @@ class ADAuthentication(object):
 
         # Otherwise, guess it.
         if krb5cc is None:
-            krb5cc = '/tmp/krb5cc_%u' % os.getuid()
+            try:
+                krb5cc = '/tmp/krb5cc_%u' % os.getuid()
+            except AttributeError:
+                # This fails on Windows
+                krb5cc = 'nonexistingfile'
 
         if os.path.isfile(krb5cc):
             logging.debug('Using kerberos credential cache: %s', krb5cc)

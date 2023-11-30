@@ -736,6 +736,8 @@ class AD(object):
                 kdc = str(r.target).rstrip('.')
                 logging.debug('Found KDC for user: %s' % str(r.target).rstrip('.'))
                 self.auth.userdomain_kdc = kdc
+        else:
+            self.auth.userdomain_kdc = self.auth.kdc
 
         return True
 
