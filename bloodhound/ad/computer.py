@@ -31,6 +31,7 @@ from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, sc
 from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
+from impacket.nmb import NetBIOSTimeout, NetBIOSError
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
 from bloodhound.ad.structures import LDAP_SID
@@ -325,6 +326,8 @@ class ADComputer(object):
                             self.auth_method = 'ntlm'
                         else:
                             logging.warning('Failed to get service ticket for %s, skipping host', self.hostname)
+                            self.permanentfailure = True
+                            return None
                 if hasattr(self.rpc, 'set_credentials'):
                     if self.auth_method == 'auto':
                         # Set all we have
@@ -865,6 +868,9 @@ class ADComputer(object):
                     resp = e.get_packet()
                 else:
                     raise
+            except NetBIOSTimeout as e:
+                logging.warning('Connection timed out while resolving sids')
+                continue
 
             domains = []
             for entry in resp['ReferencedDomains']['Domains']:
@@ -886,5 +892,7 @@ class ADComputer(object):
                     self.ad.sidcache.put(sid_string, resolved_entry)
                 else:
                     logging.warning('Resolved name is empty [%s]', entry)
-
-        dce.disconnect()
+        try:
+            dce.disconnect()
+        except NetBIOSError:
+            pass
