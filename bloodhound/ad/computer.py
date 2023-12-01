@@ -194,7 +194,7 @@ class ADComputer(object):
                     data['AllowedToDelegate'].append({
                         'ObjectIdentifier': object_sid,
                         'ObjectType': ADUtils.resolve_ad_entry(
-                            self.addomain.objectresolver.resolve_sid(object_sid)
+                            self.ad.objectresolver.resolve_sid(object_sid)
                         )['type'],
                     })
                 except KeyError:
