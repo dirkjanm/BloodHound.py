@@ -218,6 +218,12 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             if mask.has_priv(ACCESS_MASK.WRITE_DACL):
                 relations.append(build_relation(sid, 'WriteDacl', inherited=is_inherited))
 
+            # Self add, also possible ad ACCESS_ALLOWED_ACE
+            if mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_SELF) and \
+                sid != "S-1-5-32-544" and not sid.endswith('-512') and not sid.endswith('-519'):
+                if entrytype == 'group':
+                    relations.append(build_relation(sid, 'AddSelf', '', inherited=is_inherited))
+
     # pprint.pprint(entry)
         # pprint.pprint(relations)
     return entry, relations
