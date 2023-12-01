@@ -56,20 +56,13 @@ class ADDomainTrust(object):
                   'UPLEVEL':0x02,
                   'MIT':0x03}
 
-    # BloodHound trust types - deprecated
+    # BloodHound trust types - undeprecated again
     bh_trust_type = {
         'ParentChild': 0,
         'CrossLink': 1,
         'Forest': 2,
         'External': 3,
         'Unknown':4
-    }
-    # BH4.1 mapping
-    trust_dir = {
-        0: 'Disabled',
-        1: 'Inbound',
-        2: 'Outbound',
-        3: 'Bidirectional'
     }
     def __init__(self, destination, direction, trust_type, flags, domainsid):
         self.destination_domain = destination
@@ -101,7 +94,8 @@ class ADDomainTrust(object):
         elif self.has_flag('FOREST_TRANSITIVE'):
             trusttype = 'Forest'
             is_transitive = True
-            sid_filtering = True
+            # SID filtering is disabled if this flag is set
+            sid_filtering = not self.has_flag('TREAT_AS_EXTERNAL')
         elif self.has_flag('TREAT_AS_EXTERNAL') or self.has_flag('CROSS_ORGANIZATION'):
             trusttype = 'External'
             is_transitive = False
@@ -109,15 +103,16 @@ class ADDomainTrust(object):
         else:
             is_transitive = not self.has_flag('NON_TRANSITIVE')
 
-        # Check if self.direction exists in self.trust_dir before accessing it
-        trust_direction = self.trust_dir.get(self.direction, 'UnknownTrustDirection')
+        # Make sure this is an int
+        trust_direction = int(self.direction)
+        trusttype_out = self.bh_trust_type.get(trusttype, 4)
 
         out = {
             "TargetDomainName": self.destination_domain.upper(),
             "TargetDomainSid": self.domainsid,
             "IsTransitive": is_transitive,
             "TrustDirection": trust_direction,
-            "TrustType": trusttype,
+            "TrustType": trusttype_out,
             "SidFilteringEnabled": sid_filtering
         }
         return out
