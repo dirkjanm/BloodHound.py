@@ -593,6 +593,7 @@ class AD(object):
         self.dnsresolver.cache = resolver.Cache()
         # Default timeout after 3 seconds if the DNS servers
         # do not come up with an answer
+        self.dnsresolver.timeout = float(dns_timeout)
         self.dnsresolver.lifetime = float(dns_timeout)
         # Also create a custom cache for both forward and backward lookups
         # this cache is thread-safe
