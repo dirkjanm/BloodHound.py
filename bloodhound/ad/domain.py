@@ -53,11 +53,15 @@ class ADDC(ADComputer):
         # Initialize GUID map
         self.objecttype_guid_map = dict()
 
-    def ldap_connect(self, protocol='ldap', resolver=False):
+    def ldap_connect(self, protocol=None, resolver=False):
         """
         Connect to the LDAP service
         """
+        if not protocol:
+            protocol = self.ad.ldap_default_protocol
+
         logging.info('Connecting to LDAP server: %s' % self.hostname)
+        logging.debug('Using protocol %s' % protocol)
 
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
@@ -580,7 +584,7 @@ Active Directory data and cache
 """
 class AD(object):
 
-    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0):
+    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0, use_ldaps=False):
         self.domain = domain
         # Object of type ADDomain, added later
         self.domain_object = None
@@ -637,6 +641,10 @@ class AD(object):
             self.baseDN = ADUtils.domain2ldap(domain)
         else:
             self.baseDN = None
+        if use_ldaps:
+            self.ldap_default_protocol = 'ldaps'
+        else:
+            self.ldap_default_protocol = 'ldap'
 
     def realm(self):
         if self.domain is not None:
