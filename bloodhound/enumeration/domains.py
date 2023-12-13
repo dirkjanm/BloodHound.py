@@ -112,6 +112,7 @@ class DomainEnumerator(object):
                 "description": ADUtils.get_entry_property(domain_object, 'description', ''),
                 "functionallevel": functional_level,
                 "highvalue": True,
+                "collected": True
                 'whencreated': whencreated
             },
             "Trusts": [],
