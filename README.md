@@ -12,7 +12,7 @@ BloodHound.py currently has the following limitations:
 - Supports most, but not all BloodHound (SharpHound) features. Currently GPO local groups are not supported, all other collection methods are implemented.
 
 ## Installation and usage
-You can install the ingestor via pip with `pip install bloodhound`, or by cloning this repository and running `python setup.py install`, or with `pip install .`.
+You can install the ingestor via pip with `pip install bloodhound`, or by cloning this repository and running `pip install .` from the project directory.
 BloodHound.py requires `impacket`, `ldap3` and `dnspython` to function.
 
 The installation will add a command line tool `bloodhound-python` to your PATH.
