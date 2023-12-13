@@ -451,7 +451,7 @@ class ADComputer(object):
                 if record['wkui1_username'][-2] == '$':
                     continue
                 # Skip sessions for local accounts
-                if record['wkui1_logon_domain'][:-1].upper() == self.samname.upper():
+                if record['wkui1_logon_domain'][:-1].upper() == self.samname[:-1].upper():
                     continue
                 domain = record['wkui1_logon_domain'][:-1].upper()
                 domain_entry = self.ad.get_domain_by_name(domain)
