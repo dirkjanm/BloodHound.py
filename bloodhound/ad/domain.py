@@ -30,9 +30,8 @@ import json
 from uuid import UUID
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
-from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError
+from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError, LDAPCommunicationError
 from ldap3.protocol.microsoft import security_descriptor_control
-# from impacket.krb5.kerberosv5 import KerberosError
 from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache, CollectionException
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
@@ -167,21 +166,27 @@ class ADDC(ADComputer):
         except LDAPNoSuchObjectResult:
             # This may indicate the object doesn't exist or access is denied
             logging.warning('LDAP Server reported that the search in %s for %s does not exist.', search_base, search_filter)
-        except (LDAPSocketReceiveError, LDAPSocketSendError) as e:
+        except (LDAPSocketReceiveError, LDAPSocketSendError, LDAPCommunicationError) as e:
             if is_retry:
                 logging.error('Connection to LDAP server lost during data gathering - reconnect failed - giving up on query %s', search_filter)
             else:
                 if hadresults:
                     logging.error('Connection to LDAP server lost during data gathering. Query was cut short. Data may be inaccurate for query %s', search_filter)
-                    self.ldap_connect(resolver=use_resolver)
+                    if use_gc:
+                        self.gc_connect()
+                    else:
+                        self.ldap_connect(resolver=use_resolver)
                 else:
                     logging.warning('Re-establishing connection with server')
-                    self.ldap_connect(resolver=use_resolver)
+                    if use_gc:
+                        self.gc_connect()
+                    else:
+                        self.ldap_connect(resolver=use_resolver)
                     # Try again
                     yield from self.search(search_filter, attributes, search_base, generator, use_gc, use_resolver, query_sd, is_retry=True)
 
 
-    def ldap_get_single(self, qobject, attributes=None, use_gc=False, use_resolver=False):
+    def ldap_get_single(self, qobject, attributes=None, use_gc=False, use_resolver=False, is_retry=False):
         """
         Get a single object, requires full DN to object.
         This function supports searching both in the local directory and the Global Catalog.
@@ -204,6 +209,18 @@ class ADDC(ADComputer):
                                                             attributes=attributes,
                                                             paged_size=10,
                                                             generator=False)
+        except (LDAPSocketReceiveError, LDAPSocketSendError, LDAPCommunicationError) as e:
+            if is_retry:
+                logging.error('Connection to LDAP server lost during object resolving - reconnect failed - giving up on resolving %s', qobject)
+                return None
+            else:
+                logging.warning('Re-establishing connection with server')
+                if use_gc:
+                    self.gc_connect()
+                else:
+                    self.ldap_connect(resolver=use_resolver)
+                # Try again
+                return self.ldap_get_single(qobject, attributes, use_gc, use_resolver, is_retry=True)
         except LDAPNoSuchObjectResult:
             # This may indicate the object doesn't exist or access is denied
             logging.warning('LDAP Server reported that the object %s does not exist.', qobject)
