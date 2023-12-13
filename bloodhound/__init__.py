@@ -63,7 +63,6 @@ class BloodHound(object):
         self.pdc = ADDC(pdc, self.ad)
         # Create an object resolver
         self.ad.create_objectresolver(self.pdc)
-#        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
     def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None, exclude_dcs=False, fileNamePrefix=""):
@@ -258,6 +257,9 @@ def main():
     coopts.add_argument('--cachefile',
                         action='store',
                         help='Cache file (experimental)')
+    coopts.add_argument('--use-ldaps',
+                        action='store_true',
+                        help='Use LDAP over TLS on port 636 by default')
     coopts.add_argument('-op',
                         '--outputprefix',
                         metavar='PREFIX_NAME',
@@ -294,7 +296,7 @@ def main():
         else:
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout)
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
 
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
