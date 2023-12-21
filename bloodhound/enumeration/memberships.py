@@ -71,7 +71,7 @@ class MembershipEnumerator(object):
         return '%s-%d' % ('-'.join(entry['attributes']['objectSid'].split('-')[:-1]), primarygroupid)
 
     @staticmethod
-    def add_user_properties(user, entry, fileNamePrefix):
+    def add_user_properties(user, entry):
         """
         Resolve properties for user objects
         """
@@ -167,7 +167,7 @@ class MembershipEnumerator(object):
             }
 
             if with_properties:
-                MembershipEnumerator.add_user_properties(user, entry, fileNamePrefix)
+                MembershipEnumerator.add_user_properties(user, entry)
                 if 'allowedtodelegate' in user['Properties']:
                     delegatehosts_cache = []
                     for host in user['Properties']['allowedtodelegate']:
