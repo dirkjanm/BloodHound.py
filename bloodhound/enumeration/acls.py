@@ -54,6 +54,8 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
 
     # Check for protected DACL flag
     entry['IsACLProtected'] = sd.has_control(sd.PD)
+    # BloodHound wants this twice for some reason
+    entry['Properties']['isaclprotected'] = sd.has_control(sd.PD)
     relations = []
 
     # Parse owner

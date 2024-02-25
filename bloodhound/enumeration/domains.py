@@ -89,7 +89,7 @@ class DomainEnumerator(object):
             "meta": {
                 "type": "domains",
                 "count": 0,
-                "version":5
+                "version":6
             }
         }
         # Get functional level
@@ -112,6 +112,7 @@ class DomainEnumerator(object):
                 "description": ADUtils.get_entry_property(domain_object, 'description', ''),
                 "functionallevel": functional_level,
                 "highvalue": True,
+                "isaclprotected": False,
                 "collected": True,
                 'whencreated': whencreated
             },
