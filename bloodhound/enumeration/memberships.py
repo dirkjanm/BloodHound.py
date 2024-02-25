@@ -536,7 +536,8 @@ class MembershipEnumerator(object):
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "blocksinheritance": False,
+                    # Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpol/08090b22-bc16-49f4-8e10-f27a8fb16d18
+                    "blocksinheritance": ADUtils.get_entry_property(entry, 'gPOptions', 0) == 1,
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
