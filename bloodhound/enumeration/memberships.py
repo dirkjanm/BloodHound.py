@@ -71,7 +71,7 @@ class MembershipEnumerator(object):
         return '%s-%d' % ('-'.join(entry['attributes']['objectSid'].split('-')[:-1]), primarygroupid)
 
     @staticmethod
-    def add_user_properties(user, entry, fileNamePrefix):
+    def add_user_properties(user, entry):
         """
         Resolve properties for user objects
         """
@@ -169,7 +169,7 @@ class MembershipEnumerator(object):
             }
 
             if with_properties:
-                MembershipEnumerator.add_user_properties(user, entry, fileNamePrefix)
+                MembershipEnumerator.add_user_properties(user, entry)
                 if 'allowedtodelegate' in user['Properties']:
                     delegatehosts_cache = []
                     for host in user['Properties']['allowedtodelegate']:
@@ -248,7 +248,7 @@ class MembershipEnumerator(object):
         highvalue = ["S-1-5-32-544", "S-1-5-32-550", "S-1-5-32-549", "S-1-5-32-551", "S-1-5-32-548"]
 
         def is_highvalue(sid):
-            if sid.endswith("-512") or sid.endswith("-516") or sid.endswith("-519") or sid.endswith("-520"):
+            if sid.endswith("-512") or sid.endswith("-516") or sid.endswith("-519"):
                 return True
             if sid in highvalue:
                 return True
@@ -539,7 +539,8 @@ class MembershipEnumerator(object):
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "blocksinheritance": False,
+                    # Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpol/08090b22-bc16-49f4-8e10-f27a8fb16d18
+                    "blocksinheritance": ADUtils.get_entry_property(entry, 'gPOptions', 0) == 1,
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
