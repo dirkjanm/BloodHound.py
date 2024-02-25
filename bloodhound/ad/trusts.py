@@ -104,15 +104,14 @@ class ADDomainTrust(object):
             is_transitive = not self.has_flag('NON_TRANSITIVE')
 
         # Make sure this is an int
-        trust_direction = int(self.direction)
-        trusttype_out = self.bh_trust_type.get(trusttype, 4)
+        trust_direction = self.direction_map.get(int(self.direction))
 
         out = {
             "TargetDomainName": self.destination_domain.upper(),
             "TargetDomainSid": self.domainsid,
             "IsTransitive": is_transitive,
             "TrustDirection": trust_direction,
-            "TrustType": trusttype_out,
+            "TrustType": trusttype,
             "SidFilteringEnabled": sid_filtering
         }
         return out
