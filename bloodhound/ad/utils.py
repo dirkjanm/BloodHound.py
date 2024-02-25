@@ -431,6 +431,10 @@ class ADUtils(object):
 
     @staticmethod
     def parse_gplink_string(linkstr):
+        '''
+        Parse GP Link string according to MS-GPOL
+        https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpol/08090b22-bc16-49f4-8e10-f27a8fb16d18
+        '''
         if not linkstr:
             return
         for links in linkstr.split('LDAP://')[1:]:
