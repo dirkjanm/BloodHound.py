@@ -31,10 +31,11 @@ class ObjectResolver(object):
     should be resolved in the GC to see which domain they belong to, or SIDs which have to be
     resolved somewhere else. This resolver is thread-safe.
     """
-    def __init__(self, addomain, addc):
+    def __init__(self, addomain, addc, no_gc=False):
         self.addomain = addomain
         self.addc = addc
         self.lock = threading.Lock()
+        self.no_gc = no_gc
 
     def resolve_distinguishedname(self, distinguishedname, use_gc=True):
         """
@@ -42,7 +43,7 @@ class ObjectResolver(object):
         Returns a single LDAP entry
         """
         with self.lock:
-            if use_gc and not self.addc.gcldap:
+            if use_gc and not self.no_gc and not self.addc.gcldap:
                 if not self.addc.gc_connect():
                     # Error connecting, bail
                     return None
@@ -50,12 +51,12 @@ class ObjectResolver(object):
                 if not self.addc.ldap_connect(resolver=True):
                     # Error connecting, bail
                     return None
-            if use_gc:
+            if use_gc and not self.no_gc:
                 logging.debug('Querying GC for DN %s', distinguishedname)
             else:
                 logging.debug('Querying resolver LDAP for DN %s', distinguishedname)
             distinguishedname = self.addc.ldap_get_single(distinguishedname,
-                                                          use_gc=use_gc,
+                                                          use_gc=(use_gc and not self.no_gc),
                                                           use_resolver=True,
                                                           attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             return distinguishedname
@@ -71,7 +72,7 @@ class ObjectResolver(object):
         else:
             safename = samname
         with self.lock:
-            if use_gc:
+            if use_gc and not self.no_dc:
                 if not self.addc.gcldap:
                     if not self.addc.gc_connect():
                         # Error connecting, bail
@@ -81,7 +82,7 @@ class ObjectResolver(object):
                 logging.debug('Querying LDAP for SAM Name %s', samname)
             entries = self.addc.search(search_base="",
                                        search_filter='(sAMAccountName=%s)' % safename,
-                                       use_gc=use_gc,
+                                       use_gc=(use_gc and not self.no_gc),
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             # This uses a generator, however we return a list
             for entry in entries:
@@ -103,7 +104,7 @@ class ObjectResolver(object):
             logging.debug('Querying GC for UPN %s', upn)
             entries = self.addc.search(search_base="",
                                        search_filter='(&(objectClass=user)(userPrincipalName=%s))' % safename,
-                                       use_gc=True,
+                                       use_gc=(not self.no_gc),
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             for entry in entries:
                 # By definition this can be only one entry
@@ -115,7 +116,7 @@ class ObjectResolver(object):
         Returns a single LDAP entry
         """
         with self.lock:
-            if use_gc and not self.addc.gcldap:
+            if use_gc and not self.no_gc and not self.addc.gcldap:
                 if not self.addc.gc_connect():
                     # Error connecting, bail
                     return None
@@ -123,7 +124,7 @@ class ObjectResolver(object):
                 if not self.addc.ldap_connect(resolver=True):
                     # Error connecting, bail
                     return None
-            if use_gc:
+            if use_gc and not self.no_gc:
                 base = ""
                 logging.debug('Querying GC for SID %s', sid)
             else:
@@ -131,7 +132,7 @@ class ObjectResolver(object):
                 base = None
             entries = self.addc.search(search_base=base,
                                        search_filter='(objectSid=%s)' % sid,
-                                       use_gc=use_gc,
+                                       use_gc=(use_gc and not self.no_gc),
                                        use_resolver=True,
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'name'])
             for entry in entries:
