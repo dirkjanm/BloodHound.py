@@ -19,9 +19,9 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
 #
 ####################
-
 import logging
 import queue
 import threading
@@ -413,7 +413,10 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing computers')
 
+
+
     def enumerate_gpos(self, timestamp ="", fileNamePrefix=""):
+
         if (fileNamePrefix != None):
             filename = fileNamePrefix + "_" + timestamp + 'gpos.json'
         else:
@@ -436,6 +439,7 @@ class MembershipEnumerator(object):
 
         for entry in entries:
             resolved_entry = ADUtils.resolve_ad_entry(entry)
+            
             try:
                 guid = entry['attributes']['objectGUID'][1:-1].upper()
             except KeyError:
@@ -456,7 +460,7 @@ class MembershipEnumerator(object):
                 "IsACLProtected": False,
                 "Aces": [],
             }
-            
+
             if with_properties:
                 gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)

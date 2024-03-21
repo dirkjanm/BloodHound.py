@@ -391,6 +391,7 @@ class ADDC(ADComputer):
 
     def get_gpos(self, include_properties=False, acl=False):
         properties = ['distinguishedName', 'name', 'objectGUID', 'gPCFileSysPath', 'displayName']
+
         if include_properties:
             properties += ['description', 'whencreated']
         if acl:
@@ -399,6 +400,7 @@ class ADDC(ADComputer):
                               properties,
                               generator=True,
                               query_sd=acl)
+
         return entries
 
     def get_ous(self, include_properties=False, acl=False):
