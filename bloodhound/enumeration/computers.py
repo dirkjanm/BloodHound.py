@@ -128,6 +128,17 @@ class ComputerEnumerator(MembershipEnumerator):
                 if 'localadmin' in self.collect:
                     unresolved = c.rpc_get_group_members(544, c.admins)
                     c.rpc_resolve_sids(unresolved, c.admins)
+
+                # Retrieve local admins stored in GPO
+                local_admins_by_gpo = c.get_local_admins_by_gpo()
+
+                # Duplication patch
+                for local_admin in local_admins_by_gpo:
+                    if local_admin['ObjectIdentifier'].find('S-') != -1: 
+                        local_admin_sid = local_admin['ObjectIdentifier'][local_admin['ObjectIdentifier'].find('S-'):]
+                        if local_admin_sid not in unresolved:
+                            c.admins.append(local_admin)
+
                 if 'rdp' in self.collect:
                     unresolved = c.rpc_get_group_members(555, c.rdp)
                     c.rpc_resolve_sids(unresolved, c.rdp)
@@ -277,6 +288,9 @@ class ComputerEnumerator(MembershipEnumerator):
             except Exception as e:
                 logging.error('Unhandled exception in computer %s processing: %s', hostname, str(e))
                 logging.info(traceback.format_exc())
+
+
+
 
     def work(self, process_queue, results_q):
         """
