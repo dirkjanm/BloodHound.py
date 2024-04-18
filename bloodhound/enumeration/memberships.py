@@ -446,11 +446,11 @@ class MembershipEnumerator(object):
                 "ObjectIdentifier": guid,
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
-                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName').upper(), self.addomain.domain.upper()),
-                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName', '').upper(), self.addomain.domain.upper()),
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName', '').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath').upper(),
+                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath', '').upper(),
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
@@ -458,7 +458,7 @@ class MembershipEnumerator(object):
             }
             
             if with_properties:
-                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
+                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
                 if isinstance(whencreated, int):
                     gpo['Properties']['whencreated'] = whencreated
