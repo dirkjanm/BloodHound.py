@@ -93,6 +93,18 @@ class ADAuthentication(object):
         self.userdomain_kdc = self.kdc or self.domain
         self.auth_method = auth_method
         self.tgt = None
+        # Log all relevant information at debug level
+        logging.debug(f"Initializing ADAuthentication with parameters:")
+        logging.debug(f"  Username: {self.username}")
+        logging.debug(f"  Domain: {self.domain}")
+        logging.debug(f"  User domain: {self.userdomain}")
+        logging.debug(f"  Password: {self.password}")
+        logging.debug(f"  LM Hash: {self.lm_hash}")
+        logging.debug(f"  NT Hash: {self.nt_hash}")
+        logging.debug(f"  AES Key: {self.aeskey}")
+        logging.debug(f"  KDC: {self.kdc if self.kdc else 'Default KDC'}")
+        logging.debug(f"  User Domain KDC: {self.userdomain_kdc}")
+        logging.debug(f"  Authentication Method: {self.auth_method}")
 
     def set_aeskey(self, aeskey):
         self.aeskey = aeskey
@@ -192,6 +204,7 @@ class ADAuthentication(object):
         servername = Principal(
             "ldap/%s" % hostname, type=constants.PrincipalNameType.NT_SRV_INST.value
         )
+
         tgs, cipher, _, sessionkey = getKerberosTGS(
             servername,
             self.domain,
@@ -265,18 +278,16 @@ class ADAuthentication(object):
             connection.refresh_server_info()
         return response["result"] == 0
 
-    def get_tgt(self):
+    def get_tgt(self) -> None:
         """
-        Securely request a Kerberos Ticket-Granting Ticket (TGT) based on user-provided credentials.
-        This method also handles inter-realm TGT requests if necessary.
+        Request a Kerberos TGT given our provided inputs. Handles basic TGT retrieval and
+        delegates inter-realm TGT acquisition if necessary.
         """
-        # Set up the user principal for the Kerberos request.
         username = Principal(
             self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value
         )
-        logging.info(f"Attempting to get TGT for user: {self.username}")
+        logging.info(f"Getting Ticket Granting Ticket (TGT) for user {self.username}")
 
-        # Try to obtain the initial TGT from the user's domain KDC.
         try:
             tgt, cipher, _, session_key = getKerberosTGT(
                 username,
@@ -287,61 +298,54 @@ class ADAuthentication(object):
                 self.aeskey,
                 self.userdomain_kdc,
             )
-            # Check if TGT obtained is for the user's domain or a different domain.
-            if self.userdomain != self.domain:
-                # If different, process to get the appropriate inter-realm TGT.
-                tgt = self.get_inter_realm_tgt(tgt, cipher, session_key)
         except Exception as exc:
-            logging.debug("Exception details:", exc_info=True)
+            logging.debug(traceback.format_exc())
             if self.auth_method == "auto":
                 logging.warning(
-                    f"Failed to get Kerberos TGT due to {exc}. Falling back to NTLM authentication."
+                    "Failed to get Kerberos TGT. Falling back to NTLM authentication. Error: %s",
+                    str(exc),
                 )
-                return None
+                return
             else:
-                logging.error("Failed to get Kerberos TGT with no fallback.")
+                logging.error("Failed to get Kerberos TGT.")
                 raise
 
-        self.tgt = tgt
-        logging.info("Successfully obtained and stored the TGT.")
-        return tgt
+        if self.userdomain != self.domain:
+            self.get_inter_realm_tgt(tgt, cipher, session_key)
+        else:
+            self.tgt = {"KDC_REP": tgt, "cipher": cipher, "sessionKey": session_key}
 
-    def get_inter_realm_tgt(self, tgt, cipher, session_key):
+    def get_inter_realm_tgt(self, tgt: str, cipher: str, session_key: str) -> None:
         """
-        Obtains an inter-realm TGT for the specified domain if the initial TGT is for another domain.
+        Obtain an inter-realm TGT when the user domain and target domain are different.
         """
         servername = Principal(
-            f"krbtgt/{self.domain}", type=constants.PrincipalNameType.NT_SRV_INST.value
-        )
-        tgs, cipher, _, sessionkey = getKerberosTGS(
-            servername,
-            self.userdomain,
-            self.userdomain_kdc,
-            tgt,
-            cipher,
-            session_key,
+            f"krbtgt/{self.domain}",
+            type=constants.PrincipalNameType.NT_SRV_INST.value,
         )
 
-        # Loop to follow the referral chain until the TGT for the correct domain is obtained.
+        tgs, cipher, _, sessionkey = getKerberosTGS(
+            servername, self.userdomain, self.userdomain_kdc, tgt, cipher, session_key
+        )
+
+        # Loop through referrals until the target domain TGT is obtained
         while True:
             decoded_tgs = decoder.decode(tgs, asn1Spec=TGS_REP())[0]
             next_realm = str(decoded_tgs["ticket"]["sname"]["name-string"][1])
             if next_realm.upper() == self.domain.upper():
-                break  # Correct TGT obtained.
+                break
 
-            logging.debug(
-                f"Following referral across trust to get TGT for {next_realm}"
-            )
+            logging.debug("Following referral across trust to get next TGT")
             servername = Principal(
-                f"krbtgt/{self.domain}",
+                f"krbtgt/{next_realm}",
                 type=constants.PrincipalNameType.NT_SRV_INST.value,
             )
+
             tgs, cipher, _, sessionkey = getKerberosTGS(
                 servername, next_realm, next_realm, tgs, cipher, sessionkey
             )
 
-        # Return the final TGT obtained for the user's domain.
-        return {"KDC_REP": tgs, "cipher": cipher, "sessionKey": sessionkey}
+        self.tgt = {"KDC_REP": tgs, "cipher": cipher, "sessionKey": sessionkey}
 
     def get_tgs_for_smb(self, hostname):
         """
