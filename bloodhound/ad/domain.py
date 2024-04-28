@@ -76,23 +76,27 @@ class ADDC(ADComputer):
         if not protocol:
             protocol = self.ad.ldap_default_protocol
 
-        logging.info("Connecting to LDAP server: %s" % self.hostname)
-        logging.debug("Using protocol %s" % protocol)
+        logging.info(f"Connecting to LDAP server '{self.hostname}' using {protocol}")
 
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
-        q = self.ad.dnsresolver.query(self.hostname, tcp=self.ad.dns_tcp)
-        for r in q:
-            ip = r.address
+        for record in self.ad.dnsresolver.query(self.hostname, tcp=self.ad.dns_tcp):
+            ip = record.address
+            logging.debug(f"Resolved IP for {self.hostname}: {ip}")
 
-        ldap = self.ad.auth.getLDAPConnection(
-            hostname=self.hostname, ip=ip, baseDN=self.ad.baseDN, protocol=protocol
+        # Establish LDAP connection using the resolved IP address
+        ldap_connection = self.ad.auth.getLDAPConnection(
+            hostname=self.hostname,
+            ip_address=ip,
+            base_dn=self.ad.baseDN,
+            protocol=protocol,
         )
         if resolver:
-            self.resolverldap = ldap
+            self.resolverldap = ldap_connection
         else:
-            self.ldap = ldap
-        return ldap is not None
+            self.ldap = ldap_connection
+
+        return ldap_connection is not None
 
     def gc_connect(self, protocol="ldap"):
         """
@@ -136,9 +140,9 @@ class ADDC(ADComputer):
 
         self.gcldap = self.ad.auth.getLDAPConnection(
             hostname=self.hostname,
-            ip=ip,
-            gc=True,
-            baseDN=self.ad.baseDN,
+            ip_address=ip,
+            use_global_catalog=True,
+            base_dn=self.ad.baseDN,
             protocol=protocol,
         )
         return self.gcldap is not None
@@ -801,7 +805,7 @@ class AD(object):
         auth=None,
         nameserver=None,
         dns_tcp=False,
-        dns_timeout=3.0,
+        dns_timeout=4.0,
         use_ldaps=False,
     ):
         self.domain = domain
@@ -827,6 +831,8 @@ class AD(object):
         self.dnsresolver = resolver.Resolver()
         if nameserver:
             self.dnsresolver.nameservers = [nameserver]
+            logging.info(f"Overwritting dnsresolver for AD object: {nameserver}")
+
         # Resolve DNS over TCP?
         self.dns_tcp = dns_tcp
         # Give it a cache to prevent duplicate lookups

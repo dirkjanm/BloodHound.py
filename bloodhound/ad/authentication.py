@@ -28,10 +28,10 @@ import logging
 import os
 import traceback
 from binascii import unhexlify
-
+import sys
 
 # Third party library imports
-from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS
+from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS, IP_V4_PREFERRED
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
 from ldap3.operation.bind import bind_operation
 from impacket.krb5.ccache import CCache
@@ -95,16 +95,16 @@ class ADAuthentication(object):
         self.tgt = None
         # Log all relevant information at debug level
         logging.debug(f"Initializing ADAuthentication with parameters:")
-        logging.debug(f"  Username: {self.username}")
-        logging.debug(f"  Domain: {self.domain}")
-        logging.debug(f"  User domain: {self.userdomain}")
-        logging.debug(f"  Password: {self.password}")
-        logging.debug(f"  LM Hash: {self.lm_hash}")
-        logging.debug(f"  NT Hash: {self.nt_hash}")
-        logging.debug(f"  AES Key: {self.aeskey}")
-        logging.debug(f"  KDC: {self.kdc if self.kdc else 'Default KDC'}")
-        logging.debug(f"  User Domain KDC: {self.userdomain_kdc}")
-        logging.debug(f"  Authentication Method: {self.auth_method}")
+        logging.debug(f"\tUsername: {self.username}")
+        logging.debug(f"\tDomain: {self.domain}")
+        logging.debug(f"\tUser domain: {self.userdomain}")
+        logging.debug(f"\tPassword: {self.password}")
+        logging.debug(f"\tLM Hash: {self.lm_hash}")
+        logging.debug(f"\tNT Hash: {self.nt_hash}")
+        logging.debug(f"\tAES Key: {self.aeskey}")
+        logging.debug(f"\tKDC: {self.kdc if self.kdc else 'Default KDC'}")
+        logging.debug(f"\tUser Domain KDC: {self.userdomain_kdc}")
+        logging.debug(f"\tAuthentication Method: {self.auth_method}")
 
     def set_aeskey(self, aeskey):
         self.aeskey = aeskey
@@ -117,82 +117,110 @@ class ADAuthentication(object):
             self.userdomain_kdc = kdc
 
     def getLDAPConnection(
-        self, hostname="", ip="", baseDN="", protocol="ldaps", gc=False
+        self,
+        hostname="",
+        ip_address="",
+        base_dn="",
+        protocol="ldaps",
+        use_global_catalog=False,
     ):
-        if gc:
-            # Global Catalog connection
-            if protocol == "ldaps":
-                # Ldap SSL
-                server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
-            else:
-                # Plain LDAP
-                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
-        else:
-            server = Server("%s://%s" % (protocol, ip), get_info=ALL)
-        # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
-        if self.nt_hash != "":
-            ldappass = self.lm_hash + ":" + self.nt_hash
-        else:
-            ldappass = self.password
-        ldaplogin = "%s\\%s" % (self.userdomain, self.username)
+        # Log incoming parameters to help with debugging
+        logging.debug(f"Initializing LDAP Connection with the following parameters:")
+        logging.debug(f"\tHostname: {hostname}")
+        logging.debug(f"\tIP Address: {ip_address}")
+        logging.debug(f"\tBase DN: {base_dn}")
+        logging.debug(f"\tProtocol: {protocol}")
+        logging.debug(f"\tUse Global Catalog: {use_global_catalog}")
+
+        # Directly use the IP address for the server URL
+        port = (
+            3269
+            if use_global_catalog and protocol == "ldaps"
+            else 3268 if use_global_catalog else 636 if protocol == "ldaps" else 389
+        )
+        server_url = f"{protocol}://{ip_address}:{port}"
+
+        logging.debug(f"Server url: {server_url}")
+
+        server = Server(server_url, get_info=ALL, mode=IP_V4_PREFERRED)
+
+        ldap_username = f"{self.userdomain}\\{self.username}"
+        ldap_password = (
+            f"{self.lm_hash}:{self.nt_hash}" if self.nt_hash else self.password
+        )
+
         conn = Connection(
             server,
-            user=ldaplogin,
-            auto_referrals=False,
-            password=ldappass,
+            user=ldap_username,
+            password=ldap_password,
             authentication=NTLM,
+            auto_referrals=False,
             receive_timeout=60,
             auto_range=True,
         )
+
         bound = False
+
+        # Attempt Kerberos authentication if a TGT is available
         if self.tgt is not None and self.auth_method in ("kerberos", "auto"):
-            conn = Connection(
-                server,
-                user=ldaplogin,
-                auto_referrals=False,
-                password=ldappass,
-                authentication=SASL,
-                sasl_mechanism=KERBEROS,
-            )
             logging.debug("Authenticating to LDAP server with Kerberos")
             try:
+                conn = Connection(
+                    server,
+                    user=ldap_username,
+                    password=ldap_password,
+                    authentication=SASL,
+                    sasl_mechanism=KERBEROS,
+                    auto_referrals=False,
+                )
                 bound = self.ldap_kerberos(conn, hostname)
+            except OSError as error:
+                if "Name or service not known" in str(error):
+                    logging.error(
+                        f"DNS resolution error. Please, ensure than your system DNS is able to resolve {hostname}"
+                    )
+                    sys.exit(1)
+
             except Exception as exc:
+
+                logging.debug(f"Kerberos authentication failed: {exc}")
                 if self.auth_method == "auto":
-                    logging.debug(traceback.format_exc())
-                    logging.info("Kerberos auth to LDAP failed, trying NTLM")
+                    logging.info("Kerberos auth failed, falling back to NTLM")
                     bound = False
                 else:
-                    logging.debug(
-                        "Kerberos auth to LDAP failed, no authentication methods left"
-                    )
+                    logging.error("Kerberos authentication failed, no fallback enabled")
 
+        # Fallback to NTLM if Kerberos did not succeed
         if not bound:
             conn = Connection(
                 server,
-                user=ldaplogin,
-                auto_referrals=False,
-                password=ldappass,
+                user=ldap_username,
+                password=ldap_password,
                 authentication=NTLM,
+                auto_referrals=False,
             )
             logging.debug("Authenticating to LDAP server with NTLM")
             bound = conn.bind()
 
+        # Handle unsuccessful binds
         if not bound:
             result = conn.result
-            if result["result"] == RESULT_STRONGER_AUTH_REQUIRED and protocol == "ldap":
+            if (
+                result["result"] == 49 and protocol == "ldap"
+            ):  # LDAP result code for invalid credentials
                 logging.warning(
-                    "LDAP Authentication is refused because LDAP signing is enabled. "
-                    "Trying to connect over LDAPS instead..."
+                    "LDAP Authentication failed because LDAP signing is enabled. Trying LDAPS..."
                 )
-                return self.getLDAPConnection(hostname, ip, baseDN, "ldaps")
+                return self.getLDAPConnection(hostname, ip_address, base_dn, "ldaps")
             else:
+                error_message = result.get("message", "Unknown error during LDAP bind")
                 logging.error(
-                    "Failure to authenticate with LDAP! Error %s" % result["message"]
+                    f"Failure to authenticate with LDAP! Error: {error_message}"
                 )
                 raise CollectionException(
                     "Could not authenticate to LDAP. Check your credentials and LDAP server requirements."
                 )
+
         return conn
 
     def ldap_kerberos(self, connection, hostname):
