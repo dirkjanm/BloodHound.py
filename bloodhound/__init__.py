@@ -512,7 +512,7 @@ def main():
                         # Remove it from disk
                         os.remove(each_file)
 
-    logging.info(f"Run-it again for each trusted domain")
+    logging.info(f"Run-it again with one trusted domain as target")
 
 
 if __name__ == "__main__":
