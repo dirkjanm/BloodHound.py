@@ -306,15 +306,14 @@ class ADAuthentication(object):
             connection.refresh_server_info()
         return response["result"] == 0
 
-    def get_tgt(self) -> None:
+    def get_tgt(self):
         """
-        Request a Kerberos TGT given our provided inputs. Handles basic TGT retrieval and
-        delegates inter-realm TGT acquisition if necessary.
+        Request a Kerberos TGT given our provided inputs.
         """
         username = Principal(
             self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value
         )
-        logging.info(f"Getting Ticket Granting Ticket (TGT) for user {self.username}")
+        logging.info(f"Getting TGT for user {self.username}")
 
         try:
             tgt, cipher, _, session_key = getKerberosTGT(
@@ -335,45 +334,62 @@ class ADAuthentication(object):
                 )
                 return
             else:
+                # No other auth methods, so raise exception
                 logging.error("Failed to get Kerberos TGT.")
                 raise
 
         if self.userdomain != self.domain:
-            self.get_inter_realm_tgt(tgt, cipher, session_key)
-        else:
-            self.tgt = {"KDC_REP": tgt, "cipher": cipher, "sessionKey": session_key}
-
-    def get_inter_realm_tgt(self, tgt: str, cipher: str, session_key: str) -> None:
-        """
-        Obtain an inter-realm TGT when the user domain and target domain are different.
-        """
-        servername = Principal(
-            f"krbtgt/{self.domain}",
-            type=constants.PrincipalNameType.NT_SRV_INST.value,
-        )
-
-        tgs, cipher, _, sessionkey = getKerberosTGS(
-            servername, self.userdomain, self.userdomain_kdc, tgt, cipher, session_key
-        )
-
-        # Loop through referrals until the target domain TGT is obtained
-        while True:
-            decoded_tgs = decoder.decode(tgs, asn1Spec=TGS_REP())[0]
-            next_realm = str(decoded_tgs["ticket"]["sname"]["name-string"][1])
-            if next_realm.upper() == self.domain.upper():
-                break
-
-            logging.debug("Following referral across trust to get next TGT")
+            # Try to get inter-realm TGT
+            username = Principal(
+                self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value
+            )
             servername = Principal(
-                f"krbtgt/{next_realm}",
+                "krbtgt/%s" % self.domain,
                 type=constants.PrincipalNameType.NT_SRV_INST.value,
             )
-
+            # Get referral TGT
             tgs, cipher, _, sessionkey = getKerberosTGS(
-                servername, next_realm, next_realm, tgs, cipher, sessionkey
+                servername,
+                self.userdomain,
+                self.userdomain_kdc,
+                tgt,
+                cipher,
+                session_key,
             )
+            # See if this is a ticket for the correct domain
+            refneeded = True
+            while refneeded:
+                decoded_tgs = decoder.decode(tgs, asn1Spec=TGS_REP())[0]
+                next_realm = str(decoded_tgs["ticket"]["sname"]["name-string"][1])
+                if next_realm.upper() == self.domain.upper():
+                    refneeded = False
+                else:
+                    # Get next referral TGT
+                    logging.debug("Following referral across trust to get next TGT")
+                    servername = Principal(
+                        "krbtgt/%s" % self.domain,
+                        type=constants.PrincipalNameType.NT_SRV_INST.value,
+                    )
+                    tgs, cipher, _, sessionkey = getKerberosTGS(
+                        servername, next_realm, next_realm, tgs, cipher, sessionkey
+                    )
 
-        self.tgt = {"KDC_REP": tgs, "cipher": cipher, "sessionKey": sessionkey}
+            # Get foreign domain TGT
+            servername = Principal(
+                "krbtgt/%s" % self.domain,
+                type=constants.PrincipalNameType.NT_SRV_INST.value,
+            )
+            tgs, cipher, _, sessionkey = getKerberosTGS(
+                servername, self.domain, self.kdc, tgs, cipher, sessionkey
+            )
+            # Store this as our TGT
+            self.tgt = {"KDC_REP": tgs, "cipher": cipher, "sessionKey": sessionkey}
+        else:
+            TGT = dict()
+            TGT["KDC_REP"] = tgt
+            TGT["cipher"] = cipher
+            TGT["sessionKey"] = session_key
+            self.tgt = TGT
 
     def get_tgs_for_smb(self, hostname):
         """
