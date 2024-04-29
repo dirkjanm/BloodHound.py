@@ -22,8 +22,18 @@
 #
 ####################
 
-import os, sys, logging, argparse, getpass, time, re, datetime
+# Built-in imports
+import os
+import sys
+import logging
+import argparse
+import time
+import re
+import datetime
+
 from zipfile import ZipFile
+
+# Local library imports
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
@@ -390,6 +400,8 @@ def main():
             )
             sys.exit(1)
 
+    nameserver = args.nameserver
+
     auth = ADAuthentication(
         username=args.username,
         password=args.password,
@@ -403,7 +415,7 @@ def main():
     ad = AD(
         auth=auth,
         domain=args.domain,
-        nameserver=args.nameserver,
+        nameserver=nameserver,
         dns_tcp=args.dns_tcp,
         dns_timeout=args.dns_timeout,
         use_ldaps=args.use_ldaps,
