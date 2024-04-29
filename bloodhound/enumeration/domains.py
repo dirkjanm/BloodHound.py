@@ -30,12 +30,14 @@ from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.ad.trusts import ADDomainTrust
 from bloodhound.enumeration.acls import parse_binary_acl
 
+
 class DomainEnumerator(object):
     """
     Class to enumerate trusts in the domain.
     Contains the dumping functions which
     methods from the bloodhound.ad module.
     """
+
     def __init__(self, addomain, addc):
         """
         Trusts enumeration. Enumerates all trusts between the source domain
@@ -44,8 +46,10 @@ class DomainEnumerator(object):
         self.addomain = addomain
         self.addc = addc
 
-    def dump_domain(self, collect, timestamp="", filename='domains.json', fileNamePrefix=""):
-        if (fileNamePrefix != None):
+    def dump_domain(
+        self, collect, timestamp="", filename="domains.json", fileNamePrefix=""
+    ):
+        if fileNamePrefix != None:
             filename = fileNamePrefix + "_" + timestamp + filename
         else:
             filename = timestamp + filename
@@ -53,16 +57,16 @@ class DomainEnumerator(object):
         Dump trusts. This is currently the only domain info we support, so
         this function handles the entire domain dumping.
         """
-        if 'trusts' in collect:
+        if "trusts" in collect:
             entries = self.addc.get_trusts()
         else:
             entries = []
 
         try:
-            logging.debug('Opening file for writing: %s' % filename)
-            out = codecs.open(filename, 'w', 'utf-8')
+            logging.debug("Opening file for writing: %s" % filename)
+            out = codecs.open(filename, "w", "utf-8")
         except:
-            logging.warning('Could not write file: %s' % filename)
+            logging.warning("Could not write file: %s" % filename)
             return
 
         # If the logging level is DEBUG, we ident the objects
@@ -80,39 +84,38 @@ class DomainEnumerator(object):
                 break
 
         if not domain_object:
-            logging.error('Could not find domain object. Aborting domain enumeration')
+            logging.error("Could not find domain object. Aborting domain enumeration")
             return
 
         # Initialize json structure
-        datastruct = {
-            "data": [],
-            "meta": {
-                "type": "domains",
-                "count": 0,
-                "version":5
-            }
-        }
+        datastruct = {"data": [], "meta": {"type": "domains", "count": 0, "version": 5}}
         # Get functional level
-        level_id = ADUtils.get_entry_property(domain_object, 'msds-behavior-version')
+        level_id = ADUtils.get_entry_property(domain_object, "msds-behavior-version")
         try:
             functional_level = ADUtils.FUNCTIONAL_LEVELS[int(level_id)]
         except KeyError:
-            functional_level = 'Unknown'
+            functional_level = "Unknown"
 
-        whencreated = ADUtils.get_entry_property(domain_object, 'whencreated', default=0)
+        whencreated = ADUtils.get_entry_property(
+            domain_object, "whencreated", default=0
+        )
         if not isinstance(whencreated, int):
             whencreated = calendar.timegm(whencreated.timetuple())
         domain = {
-            "ObjectIdentifier": domain_object['attributes']['objectSid'],
+            "ObjectIdentifier": domain_object["attributes"]["objectSid"],
             "Properties": {
                 "name": self.addomain.domain.upper(),
                 "domain": self.addomain.domain.upper(),
-                "domainsid": ADUtils.get_entry_property(domain_object, 'objectSid'),
-                "distinguishedname": ADUtils.get_entry_property(domain_object, 'distinguishedName').upper(),
-                "description": ADUtils.get_entry_property(domain_object, 'description', ''),
+                "domainsid": ADUtils.get_entry_property(domain_object, "objectSid"),
+                "distinguishedname": ADUtils.get_entry_property(
+                    domain_object, "distinguishedName"
+                ).upper(),
+                "description": ADUtils.get_entry_property(
+                    domain_object, "description", ""
+                ),
                 "functionallevel": functional_level,
                 "highvalue": True,
-                'whencreated': whencreated
+                "whencreated": whencreated,
             },
             "Trusts": [],
             "Aces": [],
@@ -124,50 +127,73 @@ class DomainEnumerator(object):
                 "DcomUsers": [],
                 "LocalAdmins": [],
                 "PSRemoteUsers": [],
-                "RemoteDesktopUsers": []
+                "RemoteDesktopUsers": [],
             },
             "IsDeleted": False,
         }
-        if 'container' in collect:
-            for childentry in self.addc.get_childobjects(ADUtils.get_entry_property(domain_object, 'distinguishedName')):
-                if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
+        if "container" in collect:
+            for childentry in self.addc.get_childobjects(
+                ADUtils.get_entry_property(domain_object, "distinguishedName")
+            ):
+                if ADUtils.is_filtered_container_child(
+                    ADUtils.get_entry_property(childentry, "distinguishedName")
+                ):
                     continue
                 resolved_childentry = ADUtils.resolve_ad_entry(childentry)
                 out_object = {
-                    "ObjectIdentifier": resolved_childentry['objectid'],
-                    "ObjectType": resolved_childentry['type'],
+                    "ObjectIdentifier": resolved_childentry["objectid"],
+                    "ObjectType": resolved_childentry["type"],
                 }
                 domain["ChildObjects"].append(out_object)
 
-        if 'acl' in collect:
+        if "acl" in collect:
             resolver = AceResolver(self.addomain, self.addomain.objectresolver)
-            _, aces = parse_binary_acl(domain, 'domain', ADUtils.get_entry_property(domain_object, 'nTSecurityDescriptor'), self.addc.objecttype_guid_map)
-            domain['Aces'] = resolver.resolve_aces(aces)
+            _, aces = parse_binary_acl(
+                domain,
+                "domain",
+                ADUtils.get_entry_property(domain_object, "nTSecurityDescriptor"),
+                self.addc.objecttype_guid_map,
+            )
+            domain["Aces"] = resolver.resolve_aces(aces)
 
-        if 'trusts' in collect:
+        if "trusts" in collect:
+            names = []
             num_entries = 0
             for entry in entries:
                 num_entries += 1
-                trust = ADDomainTrust(ADUtils.get_entry_property(entry, 'name'), ADUtils.get_entry_property(entry, 'trustDirection'), ADUtils.get_entry_property(entry, 'trustType'), ADUtils.get_entry_property(entry, 'trustAttributes'), ADUtils.get_entry_property(entry, 'securityIdentifier'))
-                domain['Trusts'].append(trust.to_output())
+                name = ADUtils.get_entry_property(entry, "name")
+                names.append(name)
+                trust = ADDomainTrust(
+                    name,
+                    ADUtils.get_entry_property(entry, "trustDirection"),
+                    ADUtils.get_entry_property(entry, "trustType"),
+                    ADUtils.get_entry_property(entry, "trustAttributes"),
+                    ADUtils.get_entry_property(entry, "securityIdentifier"),
+                )
+                domain["Trusts"].append(trust.to_output())
 
-            logging.info('Found %u trusts', num_entries)
+            logging.info(f"Found {num_entries} trusted domains: {', '.join(names)}")
 
-
-        if 'container' in collect:
-            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(domain_object, 'gPLink', '')):
+        if "container" in collect:
+            for gplink_dn, options in ADUtils.parse_gplink_string(
+                ADUtils.get_entry_property(domain_object, "gPLink", "")
+            ):
                 link = dict()
-                link['IsEnforced'] = options == 2
+                link["IsEnforced"] = options == 2
                 try:
-                    link['GUID'] = self.addomain.get_dn_from_cache_or_ldap(gplink_dn.upper())['ObjectIdentifier']
-                    domain['Links'].append(link)
+                    link["GUID"] = self.addomain.get_dn_from_cache_or_ldap(
+                        gplink_dn.upper()
+                    )["ObjectIdentifier"]
+                    domain["Links"].append(link)
                 except TypeError:
-                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
+                    logging.warning(
+                        "Could not resolve GPO link to {0}".format(gplink_dn)
+                    )
 
         # Single domain only
-        datastruct['meta']['count'] = 1
-        datastruct['data'].append(domain)
+        datastruct["meta"]["count"] = 1
+        datastruct["data"].append(domain)
         json.dump(datastruct, out, indent=indent_level)
 
-        logging.debug('Finished writing domain info')
+        logging.debug("Finished writing domain info")
         out.close()

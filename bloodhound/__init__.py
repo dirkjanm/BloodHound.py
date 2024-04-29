@@ -22,8 +22,18 @@
 #
 ####################
 
-import os, sys, logging, argparse, getpass, time, re, datetime
+# Built-in imports
+import os
+import sys
+import logging
+import argparse
+import time
+import re
+import datetime
+
 from zipfile import ZipFile
+
+# Local library imports
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
@@ -33,6 +43,8 @@ from bloodhound.enumeration.domains import DomainEnumerator
 """
 BloodHound.py is a Python port of BloodHound, designed to run on Linux and Windows.
 """
+
+
 class BloodHound(object):
     def __init__(self, ad):
         self.ad = ad
@@ -40,95 +52,174 @@ class BloodHound(object):
         self.pdc = None
         self.sessions = []
 
-
     def connect(self):
         if len(self.ad.dcs()) == 0:
-            logging.error('Could not find a domain controller. Consider specifying a domain and/or DNS server.')
+            logging.error(
+                "Could not find a domain controller. Consider specifying a domain and/or DNS server."
+            )
             sys.exit(1)
 
         if not self.ad.baseDN:
-            logging.error('Could not figure out the domain to query. Please specify this manually with -d')
+            logging.error(
+                "Could not figure out the domain to query. Please specify this manually with -d"
+            )
             sys.exit(1)
 
         pdc = self.ad.dcs()[0]
-        logging.debug('Using LDAP server: %s', pdc)
-        logging.debug('Using base DN: %s', self.ad.baseDN)
+        logging.debug("Using LDAP server: %s", pdc)
+        logging.debug("Using base DN: %s", self.ad.baseDN)
 
         if len(self.ad.kdcs()) > 0:
             kdc = self.ad.auth.kdc
-            logging.debug('Using kerberos KDC: %s', kdc)
-            logging.debug('Using kerberos realm: %s', self.ad.realm())
+            logging.debug("Using kerberos KDC: %s", kdc)
+            logging.debug("Using kerberos realm: %s", self.ad.realm())
 
         # Create a domain controller object
         self.pdc = ADDC(pdc, self.ad)
         # Create an object resolver
         self.ad.create_objectresolver(self.pdc)
 
-
-    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None, exclude_dcs=False, fileNamePrefix=""):
+    def run(
+        self,
+        collect,
+        num_workers=10,
+        disable_pooling=False,
+        timestamp="",
+        computerfile="",
+        cachefile=None,
+        exclude_dcs=False,
+        fileNamePrefix="",
+    ):
         start_time = time.time()
         if cachefile:
             self.ad.load_cachefile(cachefile)
 
         # Check early if we should enumerate computers as well
-        do_computer_enum = any(method in collect for method in ['localadmin', 'session', 'loggedon', 'experimental', 'rdp', 'dcom', 'psremote'])
+        do_computer_enum = any(
+            method in collect
+            for method in [
+                "localadmin",
+                "session",
+                "loggedon",
+                "experimental",
+                "rdp",
+                "dcom",
+                "psremote",
+            ]
+        )
 
-        if 'group' in collect or 'objectprops' in collect or 'acl' in collect:
+        if "group" in collect or "objectprops" in collect or "acl" in collect:
             # Fetch domains for later, computers if needed
-            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
+            self.pdc.prefetch_info(
+                "objectprops" in collect,
+                "acl" in collect,
+                cache_computers=do_computer_enum,
+            )
             # Initialize enumerator
-            membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
-            membership_enum.enumerate_memberships(timestamp=timestamp, fileNamePrefix=fileNamePrefix)
-        elif 'container' in collect:
+            membership_enum = MembershipEnumerator(
+                self.ad, self.pdc, collect, disable_pooling
+            )
+            membership_enum.enumerate_memberships(
+                timestamp=timestamp, fileNamePrefix=fileNamePrefix
+            )
+        elif "container" in collect:
             # Fetch domains for later, computers if needed
-            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
+            self.pdc.prefetch_info(
+                "objectprops" in collect,
+                "acl" in collect,
+                cache_computers=do_computer_enum,
+            )
             # Initialize enumerator
-            membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
+            membership_enum = MembershipEnumerator(
+                self.ad, self.pdc, collect, disable_pooling
+            )
             membership_enum.do_container_collection(timestamp=timestamp)
         elif do_computer_enum:
             # We need to know which computers to query regardless
             # We also need the domains to have a mapping from NETBIOS -> FQDN for local admins
-            self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=True)
-        elif 'trusts' in collect:
+            self.pdc.prefetch_info(
+                "objectprops" in collect, "acl" in collect, cache_computers=True
+            )
+        elif "trusts" in collect:
             # Prefetch domains
-            self.pdc.get_domains('acl' in collect)
-        if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
+            self.pdc.get_domains("acl" in collect)
+        if "trusts" in collect or "acl" in collect or "objectprops" in collect:
             trusts_enum = DomainEnumerator(self.ad, self.pdc)
-            trusts_enum.dump_domain(collect,timestamp=timestamp,fileNamePrefix=fileNamePrefix)
+            trusts_enum.dump_domain(
+                collect, timestamp=timestamp, fileNamePrefix=fileNamePrefix
+            )
         if do_computer_enum:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
-            computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc, computerfile=computerfile, exclude_dcs=exclude_dcs)
-            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp, fileNamePrefix=fileNamePrefix)
+            computer_enum = ComputerEnumerator(
+                self.ad,
+                self.pdc,
+                collect,
+                do_gc_lookup=have_gc,
+                computerfile=computerfile,
+                exclude_dcs=exclude_dcs,
+            )
+            computer_enum.enumerate_computers(
+                self.ad.computers,
+                num_workers=num_workers,
+                timestamp=timestamp,
+                fileNamePrefix=fileNamePrefix,
+            )
         end_time = time.time()
-        minutes, seconds = divmod(int(end_time-start_time),60)
-        logging.info('Done in %02dM %02dS' % (minutes, seconds))
+        minutes, seconds = divmod(int(end_time - start_time), 60)
+        logging.info("Done in %02dM %02dS" % (minutes, seconds))
+
 
 def resolve_collection_methods(methods):
     """
     Convert methods (string) to list of validated methods to resolve
     """
-    valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon',
-                     'objectprops', 'experimental', 'acl', 'dcom', 'rdp', 'psremote', 'dconly',
-                     'container']
-    default_methods = ['group', 'localadmin', 'session', 'trusts']
+    valid_methods = [
+        "group",
+        "localadmin",
+        "session",
+        "trusts",
+        "default",
+        "all",
+        "loggedon",
+        "objectprops",
+        "experimental",
+        "acl",
+        "dcom",
+        "rdp",
+        "psremote",
+        "dconly",
+        "container",
+    ]
+    default_methods = ["group", "localadmin", "session", "trusts"]
     # Similar to SharpHound, All is not really all, it excludes loggedon
-    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl', 'dcom', 'rdp', 'psremote', 'container']
+    all_methods = [
+        "group",
+        "localadmin",
+        "session",
+        "trusts",
+        "objectprops",
+        "acl",
+        "dcom",
+        "rdp",
+        "psremote",
+        "container",
+    ]
     # DC only, does not collect to computers
-    dconly_methods = ['group', 'trusts', 'objectprops', 'acl', 'container']
-    if ',' in methods:
-        method_list = [method.lower() for method in methods.split(',')]
+    dconly_methods = ["group", "trusts", "objectprops", "acl", "container"]
+    if "," in methods:
+        method_list = [method.lower() for method in methods.split(",")]
         validated_methods = []
         for method in method_list:
             if method not in valid_methods:
-                logging.error('Invalid collection method specified: %s', method)
+                logging.error("Invalid collection method specified: %s", method)
                 return False
 
-            if method == 'default':
+            if method == "default":
                 validated_methods += default_methods
-            elif method == 'all':
+            elif method == "all":
                 validated_methods += all_methods
-            elif method == 'dconly':
+            elif method == "dconly":
                 validated_methods += dconly_methods
             else:
                 validated_methods.append(method)
@@ -138,234 +229,280 @@ def resolve_collection_methods(methods):
         # It is only one
         method = methods.lower()
         if method in valid_methods:
-            if method == 'default':
+            if method == "default":
                 validated_methods += default_methods
-            elif method == 'all':
+            elif method == "all":
                 validated_methods += all_methods
-            elif method == 'dconly':
+            elif method == "dconly":
                 validated_methods += dconly_methods
             else:
                 validated_methods.append(method)
             return set(validated_methods)
         else:
-            logging.error('Invalid collection method specified: %s', method)
+            logging.error("Invalid collection method specified: %s", method)
             return False
 
+
 def main():
-#    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+    #    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     stream = logging.StreamHandler(sys.stderr)
     stream.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(levelname)s: %(message)s')
-#    formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+    formatter = logging.Formatter("%(levelname)s: %(message)s")
+    #    formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
     stream.setFormatter(formatter)
     logger.addHandler(stream)
 
-    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound\nFor help or reporting issues, visit https://github.com/Fox-IT/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        add_help=True,
+        description="Python based ingestor for BloodHound\nFor help or reporting issues, visit https://github.com/Fox-IT/BloodHound.py",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
-    parser.add_argument('-c',
-                        '--collectionmethod',
-                        action='store',
-                        default='Default',
-                        help='Which information to collect. Supported: Group, LocalAdmin, Session, '
-                             'Trusts, Default (all previous), DCOnly (no computer connections), DCOM, RDP,'
-                             'PSRemote, LoggedOn, Container, ObjectProps, ACL, All (all except LoggedOn). '
-                             'You can specify more than one by separating them with a comma. (default: Default)')
-    parser.add_argument('-d',
-                        '--domain',
-                        action='store',
-                        default='',
-                        help='Domain to query.')
-    parser.add_argument('-v',
-                        action='store_true',
-                        help='Enable verbose output')
-    helptext = 'Specify one or more authentication options. \n' \
-               'By default Kerberos authentication is used and NTLM is used as fallback. \n' \
-               'Kerberos tickets are automatically requested if a password or hashes are specified.'
-    auopts = parser.add_argument_group('authentication options', description=helptext)
-    auopts.add_argument('-u',
-                        '--username',
-                        action='store',
-                        help='Username. Format: username[@domain]; If the domain is unspecified, the current domain is used.')
-    auopts.add_argument('-p',
-                        '--password',
-                        action='store',
-                        help='Password')
-    auopts.add_argument('-k',
-                        '--kerberos',
-                        action='store_true',
-                        help='Use kerberos')
-    auopts.add_argument('--hashes',
-                        action='store',
-                        help='LM:NLTM hashes')
-    auopts.add_argument('-no-pass', action="store_true", help='don\'t ask for password (useful for -k)')
-    auopts.add_argument('-aesKey',
-                        action="store",
-                        metavar="hex key",
-                        help='AES key to use for Kerberos Authentication (128 or 256 bits)')
-    auopts.add_argument('--auth-method',
-                        choices=('auto','ntlm','kerberos'),
-                        default='auto',
-                        action='store',
-                        help='Authentication methods. Force Kerberos or NTLM only or use auto for Kerberos with NTLM fallback')
-    coopts = parser.add_argument_group('collection options')
-    coopts.add_argument('-ns',
-                        '--nameserver',
-                        action='store',
-                        help='Alternative name server to use for queries')
-    coopts.add_argument('--dns-tcp',
-                        action='store_true',
-                        help='Use TCP instead of UDP for DNS queries')
-    coopts.add_argument('--dns-timeout',
-                        action='store',
-                        type=int,
-                        default=3,
-                        help='DNS query timeout in seconds (default: 3)')
-    coopts.add_argument('-dc',
-                        '--domain-controller',
-                        metavar='HOST',
-                        action='store',
-                        help='Override which DC to query (hostname)')
-    coopts.add_argument('-gc',
-                        '--global-catalog',
-                        metavar='HOST',
-                        action='store',
-                        help='Override which GC to query (hostname)')
-    coopts.add_argument('-w',
-                        '--workers',
-                        action='store',
-                        type=int,
-                        default=10,
-                        help='Number of workers for computer enumeration (default: 10)')
-    coopts.add_argument('--exclude-dcs',
-                        action='store_true',
-                        help='Skip DCs during computer enumeration')
-    coopts.add_argument('--disable-pooling',
-                        action='store_true',
-                        help='Don\'t use subprocesses for ACL parsing (only for debugging purposes)')
-    coopts.add_argument('--disable-autogc',
-                        action='store_true',
-                        help='Don\'t automatically select a Global Catalog (use only if it gives errors)')
-    coopts.add_argument('--zip',
-                        action='store_true',
-                        help='Compress the JSON output files into a zip archive')
-    coopts.add_argument('--computerfile',
-                        action='store',
-                        help='File containing computer FQDNs to use as allowlist for any computer based methods')
-    coopts.add_argument('--cachefile',
-                        action='store',
-                        help='Cache file (experimental)')
-    coopts.add_argument('--use-ldaps',
-                        action='store_true',
-                        help='Use LDAP over TLS on port 636 by default')
-    coopts.add_argument('-op',
-                        '--outputprefix',
-                        metavar='PREFIX_NAME',
-                        action='store',
-                        help='String to prepend to output file names')
-
-
+    parser.add_argument(
+        "-c",
+        "--collectionmethod",
+        action="store",
+        default="Default",
+        help="Which information to collect. Supported: Group, LocalAdmin, Session, "
+        "Trusts, Default (all previous), DCOnly (no computer connections), DCOM, RDP,"
+        "PSRemote, LoggedOn, Container, ObjectProps, ACL, All (all except LoggedOn). "
+        "You can specify more than one by separating them with a comma. (default: Default)",
+    )
+    parser.add_argument(
+        "-d", "--domain", action="store", default="", help="Domain to query."
+    )
+    parser.add_argument("-v", action="store_true", help="Enable verbose output")
+    helptext = (
+        "Specify one or more authentication options. \n"
+        "By default Kerberos authentication is used and NTLM is used as fallback. \n"
+        "Kerberos tickets are automatically requested if a password or hashes are specified."
+    )
+    auopts = parser.add_argument_group("authentication options", description=helptext)
+    auopts.add_argument(
+        "-u",
+        "--username",
+        action="store",
+        default=None,
+        help="Username. Format: username[@domain]; If the domain is unspecified, the current domain is used.",
+    )
+    auopts.add_argument("-p", "--password", action="store", help="Password")
+    auopts.add_argument("-k", "--kerberos", action="store_true", help="Use kerberos")
+    auopts.add_argument("--hashes", action="store", help="LM:NLTM hashes")
+    auopts.add_argument(
+        "-aesKey",
+        action="store",
+        metavar="hex key",
+        help="AES key to use for Kerberos Authentication (128 or 256 bits)",
+    )
+    auopts.add_argument(
+        "--auth-method",
+        choices=("auto", "ntlm", "kerberos"),
+        default="auto",
+        action="store",
+        help="Authentication methods. Force Kerberos or NTLM only or use auto for Kerberos with NTLM fallback",
+    )
+    coopts = parser.add_argument_group("collection options")
+    coopts.add_argument(
+        "-ns",
+        "--nameserver",
+        action="store",
+        help="Alternative name server to use for queries",
+    )
+    coopts.add_argument(
+        "--dns-tcp", action="store_true", help="Use TCP instead of UDP for DNS queries"
+    )
+    coopts.add_argument(
+        "--dns-timeout",
+        action="store",
+        type=int,
+        default=3,
+        help="DNS query timeout in seconds (default: 3)",
+    )
+    coopts.add_argument(
+        "-dc",
+        "--domain-controller",
+        metavar="HOST",
+        action="store",
+        help="Override which DC to query (hostname)",
+    )
+    coopts.add_argument(
+        "-gc",
+        "--global-catalog",
+        metavar="HOST",
+        action="store",
+        help="Override which GC to query (hostname)",
+    )
+    coopts.add_argument(
+        "-w",
+        "--workers",
+        action="store",
+        type=int,
+        default=10,
+        help="Number of workers for computer enumeration (default: 10)",
+    )
+    coopts.add_argument(
+        "--exclude-dcs",
+        action="store_true",
+        help="Skip DCs during computer enumeration",
+    )
+    coopts.add_argument(
+        "--disable-pooling",
+        action="store_true",
+        help="Don't use subprocesses for ACL parsing (only for debugging purposes)",
+    )
+    coopts.add_argument(
+        "--disable-autogc",
+        action="store_true",
+        help="Don't automatically select a Global Catalog (use only if it gives errors)",
+    )
+    coopts.add_argument(
+        "--zip",
+        action="store_true",
+        help="Compress the JSON output files into a zip archive",
+    )
+    coopts.add_argument(
+        "--computerfile",
+        action="store",
+        help="File containing computer FQDNs to use as allowlist for any computer based methods",
+    )
+    coopts.add_argument("--cachefile", action="store", help="Cache file (experimental)")
+    coopts.add_argument(
+        "--use-ldaps",
+        action="store_true",
+        help="Use LDAP over TLS on port 636 by default",
+    )
+    coopts.add_argument(
+        "-op",
+        "--outputprefix",
+        metavar="PREFIX_NAME",
+        action="store",
+        help="String to prepend to output file names",
+    )
 
     args = parser.parse_args()
 
-    if args.v is True:
+    if args.v:
         logger.setLevel(logging.DEBUG)
 
-    if args.username is not None and args.password is not None:
-        logging.debug('Authentication: username/password')
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
-    elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and args.no_pass is not None:
-        args.password = getpass.getpass()
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
-    elif args.username is None and (args.password is not None or args.hashes is not None):
-        logging.error('Authentication: password or hashes provided without username')
-        sys.exit(1)
-    elif args.hashes is not None and args.username is not None:
-        logging.debug('Authentication: NT hash')
-        lm, nt = args.hashes.split(":")
-        auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method)
-    elif args.aesKey is not None and args.username is not None:
-        logging.debug('Authentication: Kerberos AES')
-        auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method)
-    else:
-        if not args.kerberos:
-            parser.print_help()
-            sys.exit(1)
-        else:
-            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
+    # Initialize variables for LM and NT hashes
+    lm, nt = "", ""
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
+    # Only attempt to split hashes if they are provided
+    if args.hashes:
+        try:
+            lm, nt = args.hashes.split(":")
+        except ValueError:
+            logger.error(
+                "Hashes provided in an incorrect format. Expected format: LM:NT"
+            )
+            sys.exit(1)
+
+    nameserver = args.nameserver
+
+    auth = ADAuthentication(
+        username=args.username,
+        password=args.password,
+        domain=args.domain,
+        auth_method=args.auth_method,
+        lm_hash=lm,
+        nt_hash=nt,
+        aeskey=args.aesKey,
+    )
+
+    ad = AD(
+        auth=auth,
+        domain=args.domain,
+        nameserver=nameserver,
+        dns_tcp=args.dns_tcp,
+        dns_timeout=args.dns_timeout,
+        use_ldaps=args.use_ldaps,
+    )
 
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
     if not collect:
         return
-    logging.debug('Resolved collection methods: %s', ', '.join(list(collect)))
+    logging.debug("Resolved collection methods: %s", ", ".join(list(collect)))
 
-    logging.debug('Using DNS to retrieve domain information')
+    logging.debug("Using DNS to retrieve domain information")
     ad.dns_resolve(domain=args.domain, options=args)
 
     # Override the detected DC / GC if specified
     if args.domain_controller:
-        if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', args.domain_controller):
-            logging.error('The specified domain controller %s looks like an IP address, but requires a hostname (FQDN).\n'\
-                          'Use the -ns flag to specify a DNS server IP if the hostname does not resolve on your default nameserver.',
-                          args.domain_controller)
+        if re.match(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", args.domain_controller):
+            logging.error(
+                "The specified domain controller %s looks like an IP address, but requires a hostname (FQDN).\n"
+                "Use the -ns flag to specify a DNS server IP if the hostname does not resolve on your default nameserver.",
+                args.domain_controller,
+            )
             sys.exit(1)
         ad.override_dc(args.domain_controller)
-        logging.debug('Using supplied domain controller as KDC')
+        logging.debug("Using supplied domain controller as KDC")
         auth.set_kdc(args.domain_controller)
 
     if args.global_catalog:
-        if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', args.global_catalog):
-            logging.error('The specified global catalog server %s looks like an IP address, but requires a hostname (FQDN).\n'\
-                          'Use the -ns flag to specify a DNS server IP if the hostname does not resolve on your default nameserver.',
-                          args.global_catalog)
+        if re.match(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", args.global_catalog):
+            logging.error(
+                "The specified global catalog server %s looks like an IP address, but requires a hostname (FQDN).\n"
+                "Use the -ns flag to specify a DNS server IP if the hostname does not resolve on your default nameserver.",
+                args.global_catalog,
+            )
             sys.exit(1)
         ad.override_gc(args.global_catalog)
 
-    if args.auth_method in ('auto', 'kerberos'):
+    if args.auth_method in ("auto", "kerberos"):
         if args.kerberos is True:
-            logging.debug('Authentication: Kerberos ccache')
+            logging.debug("Authentication: Kerberos ccache")
             # kerberize()
             if not auth.load_ccache():
-                logging.debug('Could not load ticket from ccache, trying to request a TGT instead')
+                logging.debug(
+                    "Could not load ticket from ccache, trying to request a TGT instead"
+                )
                 auth.get_tgt()
         else:
             auth.get_tgt()
 
-    # For adding timestamp prefix to the outputfiles 
-    timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y%m%d%H%M%S') + "_"
+    # For adding timestamp prefix to the outputfiles
+    timestamp = (
+        datetime.datetime.fromtimestamp(time.time()).strftime("%Y%m%d%H%M%S") + "_"
+    )
     bloodhound = BloodHound(ad)
     bloodhound.connect()
-    bloodhound.run(collect=collect,
-                   num_workers=args.workers,
-                   disable_pooling=args.disable_pooling,
-                   timestamp=timestamp,
-                   computerfile=args.computerfile,
-                   cachefile=args.cachefile,
-                   exclude_dcs=args.exclude_dcs,
-                   fileNamePrefix=args.outputprefix)
-    #If args --zip is true, the compress output  
+    bloodhound.run(
+        collect=collect,
+        num_workers=args.workers,
+        disable_pooling=args.disable_pooling,
+        timestamp=timestamp,
+        computerfile=args.computerfile,
+        cachefile=args.cachefile,
+        exclude_dcs=args.exclude_dcs,
+        fileNamePrefix=args.outputprefix,
+    )
+    # If args --zip is true, the compress output
     if args.zip:
         logging.info("Compressing output into " + timestamp + "bloodhound.zip")
         # Get a list of files in the current dir
         list_of_files = os.listdir(os.getcwd())
         # Create handle to zip file with timestamp prefix
-        if(args.outputprefix!=None):
-            with ZipFile(args.outputprefix + "_" + timestamp + "bloodhound.zip",'w') as zip:
+        if args.outputprefix != None:
+            with ZipFile(
+                args.outputprefix + "_" + timestamp + "bloodhound.zip", "w"
+            ) as zip:
                 # For each of those files we fetched
                 for each_file in list_of_files:
                     # If the files starts with the current timestamp and ends in json
-                    if each_file.startswith(args.outputprefix) and each_file.endswith("json"):
+                    if each_file.startswith(args.outputprefix) and each_file.endswith(
+                        "json"
+                    ):
                         # Write it to the zip
                         zip.write(each_file)
                         # Remove it from disk
                         os.remove(each_file)
         else:
-            with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
+            with ZipFile(timestamp + "bloodhound.zip", "w") as zip:
                 # For each of those files we fetched
                 for each_file in list_of_files:
                     # If the files starts with the current timestamp and ends in json
@@ -375,7 +512,8 @@ def main():
                         # Remove it from disk
                         os.remove(each_file)
 
+    logging.info(f"Run-it again with one trusted domain as target")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
