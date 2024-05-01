@@ -909,7 +909,7 @@ class AD(object):
     def save_cachefile(self, cachefile):
         pass
 
-    def dns_resolve(self, domain=None, global_catalog: bool = True, disable_autogc: bool = False):
+    def dns_resolve(self, domain=None, global_catalog: bool = True, disable_autogc: bool = False, timeout: float = 5.0):
         logging.debug("Querying domain controller information from DNS")
 
         basequery = "_ldap._tcp.pdc._msdcs"
@@ -925,7 +925,7 @@ class AD(object):
 
         try:
 
-            q = self.dnsresolver.query(query, "SRV", tcp=self.dns_tcp)
+            q = self.dnsresolver.query(query, "SRV", tcp=self.dns_tcp, lifetime=timeout)
 
             if str(q.qname).lower().startswith("_ldap._tcp.pdc._msdcs"):
                 ad_domain = str(q.qname).lower()[len(basequery) :].strip(".")
@@ -947,7 +947,7 @@ class AD(object):
 
         try:
             q = self.dnsresolver.query(
-                query.replace("pdc", "gc"), "SRV", tcp=self.dns_tcp
+                query.replace("pdc", "gc"), "SRV", tcp=self.dns_tcp, lifetime=timeout
             )
             for r in q:
                 gc = str(r.target).rstrip(".")
@@ -971,7 +971,7 @@ class AD(object):
 
         try:
             kquery = query.replace("pdc", "dc").replace("_ldap", "_kerberos")
-            q = self.dnsresolver.query(kquery, "SRV", tcp=self.dns_tcp)
+            q = self.dnsresolver.query(kquery, "SRV", tcp=self.dns_tcp, lifetime=timeout)
             # TODO: Get the additional records here to get the DC ip immediately
             for r in q:
                 kdc = str(r.target).rstrip(".")
@@ -994,7 +994,7 @@ class AD(object):
         if self.auth.userdomain.lower() != ad_domain.lower():
             # Resolve KDC for user auth domain
             kquery = "_kerberos._tcp.dc._msdcs.%s" % self.auth.userdomain
-            q = self.dnsresolver.query(kquery, "SRV", tcp=self.dns_tcp)
+            q = self.dnsresolver.query(kquery, "SRV", tcp=self.dns_tcp, lifetime=timeout)
             for r in q:
                 kdc = str(r.target).rstrip(".")
                 logging.debug("Found KDC for user: %s" % str(r.target).rstrip("."))
