@@ -26,13 +26,11 @@
 import logging
 import os
 import sys
-import traceback
 from binascii import unhexlify
 import datetime
 
 # Third party library imports
 from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS
-from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
 from ldap3.operation.bind import bind_operation
 from impacket.krb5.ccache import CCache
 from impacket.krb5.types import Principal, KerberosTime, Ticket
@@ -40,18 +38,13 @@ from pyasn1.codec.der import decoder, encoder
 from impacket.krb5.asn1 import (
     AP_REQ,
     AS_REP,
-    TGS_REQ,
     Authenticator,
     TGS_REP,
     seq_set,
-    seq_set_iter,
-    PA_FOR_USER_ENC,
-    Ticket as TicketAsn1,
-    EncTGSRepPart,
 )
 from impacket.spnego import SPNEGO_NegTokenInit, TypesMech
 from impacket.krb5 import constants
-from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS, sendReceive
+from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS
 from pyasn1.type.univ import noValue
 
 

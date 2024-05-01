@@ -22,8 +22,11 @@
 #
 ####################
 
-import os, sys, logging, argparse, getpass, time, re, datetime
+# Built-in imports
+import os, sys, logging, argparse, time, re, datetime
 from zipfile import ZipFile
+
+# Local library imports
 from bloodhound.ad.domain import AD, ADDC
 from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
@@ -454,8 +457,9 @@ def main():
         else:
             auth.get_tgt()
 
-    # For adding timestamp prefix to the outputfiles
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    # For adding timestamp prefix to the output files, formatted in ISO 8601 style
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
 
     bloodhound = BloodHound(ad)
     bloodhound.connect()
@@ -473,7 +477,6 @@ def main():
     # If args --zip is true, the compress output
     if args.zip:
         trail_name = f"{args.domain}_{timestamp}_bloodhound_data.zip"
-        logging.info(f"Compressing output into {trail_name}")
 
         # Get a list of files in the current dir
         list_of_files = os.listdir(os.getcwd())

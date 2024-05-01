@@ -21,17 +21,17 @@
 # SOFTWARE.
 #
 ####################
+
+# Built-in imports
 from __future__ import unicode_literals
 import logging
-import traceback
 import codecs
 import json
-
+from typing import Generator
 from uuid import UUID
 from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
 from ldap3.core.exceptions import (
-    LDAPKeyError,
     LDAPAttributeError,
     LDAPCursorError,
     LDAPNoSuchObjectResult,
@@ -40,6 +40,9 @@ from ldap3.core.exceptions import (
     LDAPCommunicationError,
 )
 from ldap3.protocol.microsoft import security_descriptor_control
+from future.utils import iteritems
+
+# Local library imports
 from bloodhound.ad.utils import (
     ADUtils,
     DNSCache,
@@ -49,7 +52,7 @@ from bloodhound.ad.utils import (
 )
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
-from future.utils import itervalues, iteritems, native_str
+
 
 """
 Active Directory Domain Controller
@@ -455,11 +458,15 @@ class ADDC(ADComputer):
         self.ad.num_domains = entries_count
         logging.info(f"Found {entries_count} domains in the forest: {', '.join(d.name for d in found_domains)}")
 
-    def get_trusts(self):
+    def get_trusts(self) -> Generator[dict, None, None]:
+        """
+        Queries the Active Directory for trusted domains and yields the results as a generator.
 
-        trusted_domains_names = []
+        Returns:
+            Generator[dict]: A generator that yields dictionaries, each containing details of a trusted domain.
+        """
 
-        entries = self.search(
+        return self.search(
             "(objectClass=trustedDomain)",
             attributes=[
                 "flatName",
@@ -471,17 +478,6 @@ class ADDC(ADComputer):
             ],
             generator=True,
         )
-
-        entries_count = 0
-
-        for entry in entries:
-            entries_count += 1
-            trusted_domains_names.append(entry["attributes"]["name"])
-
-
-        logging.info(f"Found {entries_count} trusts: {', '.join(trusted_domains_names)}")
-
-        return entries
 
     def get_cache_items(self):
         self.get_objecttype()
