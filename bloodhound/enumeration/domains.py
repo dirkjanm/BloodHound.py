@@ -43,6 +43,7 @@ class DomainEnumerator(object):
         """
         self.addomain = addomain
         self.addc = addc
+        self.trusted_domains_names = []
 
     def dump_domain(self, collect, timestamp="", filename='domains.json', fileNamePrefix=""):
         if (fileNamePrefix != None):
@@ -161,6 +162,8 @@ class DomainEnumerator(object):
                     ADUtils.get_entry_property(entry, 'securityIdentifier')
                 )
                 domain['Trusts'].append(trust.to_output())
+
+            self.trusted_domains_names = trusted_domains_names
 
             logging.info(f"Found {entries_count} trusts: {', '.join(trusted_domains_names)}")
 

@@ -811,7 +811,7 @@ class AD(object):
         auth=None,
         nameserver=None,
         dns_tcp=False,
-        dns_timeout=3.0,
+        dns_timeout=5.0,
         use_ldaps=False,
     ):
         self.domain = domain
@@ -909,7 +909,7 @@ class AD(object):
     def save_cachefile(self, cachefile):
         pass
 
-    def dns_resolve(self, domain=None, options=None):
+    def dns_resolve(self, domain=None, global_catalog: bool = True, disable_autogc: bool = False):
         logging.debug("Querying domain controller information from DNS")
 
         basequery = "_ldap._tcp.pdc._msdcs"
@@ -957,8 +957,8 @@ class AD(object):
 
         except resolver.NXDOMAIN:
             # Only show warning if we don't already have a GC specified manually
-            if options and not options.global_catalog:
-                if not options.disable_autogc:
+            if not global_catalog:
+                if not disable_autogc:
                     logging.warning(
                         "Could not find a global catalog server, assuming the primary DC has this role\n"
                         "If this gives errors, either specify a hostname with -gc or disable gc resolution with --disable-autogc"
