@@ -455,9 +455,8 @@ def main():
             auth.get_tgt()
 
     # For adding timestamp prefix to the outputfiles
-    timestamp = (
-        datetime.datetime.fromtimestamp(time.time()).strftime("%Y%m%d%H%M%S") + "_"
-    )
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
     bloodhound = BloodHound(ad)
     bloodhound.connect()
     bloodhound.run(
@@ -470,37 +469,28 @@ def main():
         exclude_dcs=args.exclude_dcs,
         fileNamePrefix=args.outputprefix,
     )
+
     # If args --zip is true, the compress output
     if args.zip:
-        logging.info("Compressing output into " + timestamp + "bloodhound.zip")
+        trail_name = f"{args.domain}_{timestamp}_bloodhound_data.zip"
+        logging.info(f"Compressing output into {trail_name}")
+
         # Get a list of files in the current dir
         list_of_files = os.listdir(os.getcwd())
-        # Create handle to zip file with timestamp prefix
-        if args.outputprefix != None:
-            with ZipFile(
-                args.outputprefix + "_" + timestamp + "bloodhound.zip", "w"
-            ) as zip:
-                # For each of those files we fetched
-                for each_file in list_of_files:
-                    # If the files starts with the current timestamp and ends in json
-                    if each_file.startswith(args.outputprefix) and each_file.endswith(
-                        "json"
-                    ):
-                        # Write it to the zip
-                        zip.write(each_file)
-                        # Remove it from disk
-                        os.remove(each_file)
-        else:
-            with ZipFile(timestamp + "bloodhound.zip", "w") as zip:
-                # For each of those files we fetched
-                for each_file in list_of_files:
-                    # If the files starts with the current timestamp and ends in json
-                    if each_file.startswith(timestamp) and each_file.endswith("json"):
-                        # Write it to the zip
-                        zip.write(each_file)
-                        # Remove it from disk
-                        os.remove(each_file)
 
+        # Create handle to zip file with detailed suffix
+        zip_file_name = args.outputprefix + "_" + trail_name if args.outputprefix else trail_name
+
+        with ZipFile(zip_file_name, 'w') as zip:
+            # For each file that matches the criteria
+            for each_file in list_of_files:
+                # Checking if the file starts with the output prefix (if defined) or timestamp, and ends in .json
+                file_prefix = args.outputprefix if args.outputprefix else timestamp
+                if each_file.startswith(file_prefix) and each_file.endswith("json"):
+                    zip.write(each_file)
+                    os.remove(each_file)
+
+        logging.info(f"Successfully created and filled {zip_file_name}")
 
 if __name__ == "__main__":
     main()

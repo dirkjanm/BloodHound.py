@@ -148,11 +148,14 @@ class DomainEnumerator(object):
             num_entries = 0
             for entry in entries:
                 num_entries += 1
-                trust = ADDomainTrust(ADUtils.get_entry_property(entry, 'name'), ADUtils.get_entry_property(entry, 'trustDirection'), ADUtils.get_entry_property(entry, 'trustType'), ADUtils.get_entry_property(entry, 'trustAttributes'), ADUtils.get_entry_property(entry, 'securityIdentifier'))
+                trust = ADDomainTrust(
+                    ADUtils.get_entry_property(entry, 'name'),
+                    ADUtils.get_entry_property(entry, 'trustDirection'),
+                    ADUtils.get_entry_property(entry, 'trustType'),
+                    ADUtils.get_entry_property(entry, 'trustAttributes'),
+                    ADUtils.get_entry_property(entry, 'securityIdentifier')
+                )
                 domain['Trusts'].append(trust.to_output())
-
-            logging.info('Found %u trusts', num_entries)
-
 
         if 'container' in collect:
             for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(domain_object, 'gPLink', '')):

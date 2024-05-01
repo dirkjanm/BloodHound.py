@@ -374,9 +374,9 @@ class ADDC(ADComputer):
         """
         entries = self.search("(objectClass=domain)", [], generator=True, query_sd=acl)
 
-        entriesNum = 0
+        entries_count = 0
         for entry in entries:
-            entriesNum += 1
+            entries_count += 1
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions
             domain_object = ADDomain.fromLDAP(
@@ -393,7 +393,7 @@ class ADDC(ADComputer):
             except IndexError:
                 pass
 
-        if entriesNum == 0:
+        if entries_count == 0:
             # Raise exception if we somehow managed to authenticate but the domain is wrong
             # prevents confusing exceptions later
             actualdn = self.ldap.server.info.other["defaultNamingContext"][0]
@@ -405,7 +405,7 @@ class ADDC(ADComputer):
             )
             raise CollectionException("Specified domain was not found in LDAP")
 
-        logging.info("Found %u domains", entriesNum)
+        logging.info("Found %u domains", entries_count)
 
         return entries
 
@@ -417,27 +417,33 @@ class ADDC(ADComputer):
         This searches the configuration, which is present only once in the forest but is replicated
         to every DC.
         """
-        entries = self.search(
+        entries_count = 0
+
+        found_domains = []
+
+        for entry in self.search(
             "(objectClass=crossRef)",
             ["nETBIOSName", "systemFlags", "nCName", "name"],
             search_base="CN=Partitions,%s"
             % self.ldap.server.info.other["configurationNamingContext"][0],
             generator=True,
-        )
-
-        entriesNum = 0
-        for entry in entries:
+        ):
             # Ensure systemFlags entry is not empty before running the naming context check.
             if not entry["attributes"]["systemFlags"]:
                 continue
+
             # This is a naming context, but not a domain
             if not entry["attributes"]["systemFlags"] & 2:
                 continue
+
             entry["attributes"]["distinguishedName"] = entry["attributes"]["nCName"]
-            entriesNum += 1
+            entries_count += 1
+
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions
-            d = ADDomain.fromLDAP(entry["attributes"]["nCName"])
+            domain = ADDomain.fromLDAP(entry["attributes"]["nCName"])
+            found_domains.append(domain)
+
             # We don't want to add our own domain since this entry doesn't contain the sid
             # which we need later on
             if entry["attributes"]["nCName"] not in self.ad.domains:
@@ -446,8 +452,36 @@ class ADDC(ADComputer):
 
         # Store this number so we can easily determine if we are in a multi-domain
         # forest later on.
-        self.ad.num_domains = entriesNum
-        logging.info("Found %u domains in the forest", entriesNum)
+        self.ad.num_domains = entries_count
+        logging.info(f"Found {entries_count} domains in the forest: {', '.join(d.name for d in found_domains)}")
+
+    def get_trusts(self):
+
+        trusted_domains_names = []
+
+        entries = self.search(
+            "(objectClass=trustedDomain)",
+            attributes=[
+                "flatName",
+                "name",
+                "securityIdentifier",
+                "trustAttributes",
+                "trustDirection",
+                "trustType",
+            ],
+            generator=True,
+        )
+
+        entries_count = 0
+
+        for entry in entries:
+            entries_count += 1
+            trusted_domains_names.append(entry["attributes"]["name"])
+
+
+        logging.info(f"Found {entries_count} trusts: {', '.join(trusted_domains_names)}")
+
+        return entries
 
     def get_cache_items(self):
         self.get_objecttype()
@@ -689,9 +723,9 @@ class ADDC(ADComputer):
 
         entries = self.get_computers(include_properties, acl)
 
-        entriesNum = 0
+        entries_count = 0
         for entry in entries:
-            entriesNum += 1
+            entries_count += 1
             # Resolve it first for DN cache
             resolved_entry = ADUtils.resolve_ad_entry(entry)
             cacheitem = {
@@ -710,7 +744,7 @@ class ADDC(ADComputer):
                 entry["attributes"]["objectSid"],
             )
 
-        logging.info("Found %u computers", entriesNum)
+        logging.info("Found %u computers", entries_count)
 
         return entries
 
@@ -754,20 +788,6 @@ class ADDC(ADComputer):
 
         return entries
 
-    def get_trusts(self):
-        entries = self.search(
-            "(objectClass=trustedDomain)",
-            attributes=[
-                "flatName",
-                "name",
-                "securityIdentifier",
-                "trustAttributes",
-                "trustDirection",
-                "trustType",
-            ],
-            generator=True,
-        )
-        return entries
 
     def prefetch_info(self, props=False, acls=False, cache_computers=False):
         self.get_objecttype()

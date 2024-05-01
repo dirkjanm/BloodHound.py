@@ -349,7 +349,7 @@ class ADComputer(object):
         # Cache the address for future use and proceed with connection
         self.ad.dnscache.put(self.hostname, addr)
         self.addr = addr
-        logging.info(f"Resolved: {self.hostname} -> {addr}")
+        logging.debug(f"Resolved: {self.hostname} -> {addr}")
         logging.debug(f"Attempting to connect to computer: {self.hostname}")
         return ADUtils.tcp_ping(addr, 445)
 
