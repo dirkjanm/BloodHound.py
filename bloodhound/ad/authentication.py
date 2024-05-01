@@ -367,9 +367,6 @@ class ADAuthentication(object):
                 decoded_tgs = decoder.decode(tgs, asn1Spec=TGS_REP())[0]
                 next_realm = str(decoded_tgs["ticket"]["sname"]["name-string"][1])
                 if next_realm.upper() == self.domain.upper():
-                    logging.info(
-                        f"Successfully obtained final TGS for domain {self.domain}."
-                    )
                     break
                 else:
                     # Get next referral TGT
