@@ -40,7 +40,7 @@ EXTRIGHTS_GUID_MAPPING = {
     "UserForceChangePassword": string_to_bin("00299570-246d-11d0-a768-00aa006e0529"),
     "AllowedToAct": string_to_bin("3f78c3e5-f79a-46bd-a0b8-9d18116ddc79"),
     "UserAccountRestrictionsSet": string_to_bin("4c164200-20c0-11d0-a768-00aa006e0529"),
-    "ManageGPLink": string_to_bin("f30e3bbf-9ff0-11d1-b603-0000f80367c1")
+    "WriteGPLink": string_to_bin("f30e3bbf-9ff0-11d1-b603-0000f80367c1")
 }
 
 def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
@@ -142,8 +142,8 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 # Property set, but ignore Domain Admins since they already have enough privileges anyway
                 if entrytype == 'computer' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['UserAccountRestrictionsSet']) and not sid.endswith('-512'):
                     relations.append(build_relation(sid, 'WriteAccountRestrictions', '', inherited=is_inherited))
-                if entrytype == 'organizational-unit' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['ManageGPLink']):
-                    relations.append(build_relation(sid, 'ManageGPLink', '', inherited=is_inherited))
+                if entrytype == 'organizational-unit' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteGPLink']):
+                    relations.append(build_relation(sid, 'WriteGPLink', '', inherited=is_inherited))
 
 
                 # Since 4.0
