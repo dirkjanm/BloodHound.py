@@ -112,7 +112,7 @@ class ADUtils(object):
         7: "2016"
     }
 
-    xml_sid_rex = re.compile('<UserId>(S-[0-9\-]+)</UserId>')
+    xml_sid_rex = re.compile('<UserId>(S-[0-9\\-]+)</UserId>')
     xml_logontype_rex = re.compile('<LogonType>([A-Za-z0-9]+)</LogonType>')
 
     @staticmethod
