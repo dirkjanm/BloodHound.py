@@ -133,6 +133,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             # Property write privileges
             writeprivs = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP)
             if writeprivs:
+
                 # GenericWrite
                 if entrytype in ['user', 'group', 'computer', 'gpo'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
@@ -151,8 +152,14 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 and 'ms-ds-key-credential-link' in objecttype_guid_map and ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-ds-key-credential-link']:
                     relations.append(build_relation(sid, 'AddKeyCredentialLink', inherited=is_inherited))
 
+                #Old WriteSPN query, for some reason saying that the if needs to have a entrytype of 'user' can lead to false positives and do not return that a user have write spn over a computer
                 # ServicePrincipalName property write rights (exclude generic rights)
-                if entrytype == 'user' and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
+                #if entrytype == 'user' and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
+                #and ace_object.acedata.get_object_type().lower() == objecttype_guid_map['service-principal-name']:
+                #    relations.append(build_relation(sid, 'WriteSPN', inherited=is_inherited))
+
+                # ServicePrincipalName property write rights (exclude generic rights)
+                if ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
                 and ace_object.acedata.get_object_type().lower() == objecttype_guid_map['service-principal-name']:
                     relations.append(build_relation(sid, 'WriteSPN', inherited=is_inherited))
 
