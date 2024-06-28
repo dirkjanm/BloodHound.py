@@ -1,0 +1,41 @@
+[tool.poetry]
+name = "bloodhound"
+version = "1.7.2"
+description = "Python based ingestor for BloodHound"
+authors = [
+    "Dirk-jan Mollema <dirkjan@dirkjanm.io>",
+    "Edwin van Vliet <edwin.vanvliet@fox-it.com>",
+    "Matthijs Gielen <matthijs.gielen@fox-it.com>"
+]
+maintainers = ["Dirk-jan Mollema <dirkjan@dirkjanm.io>"]
+license = "MIT"
+homepage = "https://github.com/dirkjanm/bloodhound.py"
+readme = "README.md"  # Assumes you have a README.md file at the root of your project
+classifiers = [
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11"
+]
+
+[tool.poetry.dependencies]
+python = ">=3.6,<3.12"
+dnspython = "*"
+impacket = ">=0.9.17"
+ldap3 = ">=2.5,!=2.5.2,!=2.5.0,!=2.6"
+pyasn1 = ">=0.4"
+future = "*"
+pycryptodome = "*"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+bloodhound-python = "bloodhound:main"

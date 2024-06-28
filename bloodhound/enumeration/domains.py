@@ -43,6 +43,7 @@ class DomainEnumerator(object):
         """
         self.addomain = addomain
         self.addc = addc
+        self.trusted_domains_names = []
 
     def dump_domain(self, collect, timestamp="", filename='domains.json', fileNamePrefix=""):
         if (fileNamePrefix != None):
@@ -145,14 +146,26 @@ class DomainEnumerator(object):
             domain['Aces'] = resolver.resolve_aces(aces)
 
         if 'trusts' in collect:
-            num_entries = 0
+            trusted_domains_names = []
+
+            entries_count = 0
+
             for entry in entries:
-                num_entries += 1
-                trust = ADDomainTrust(ADUtils.get_entry_property(entry, 'name'), ADUtils.get_entry_property(entry, 'trustDirection'), ADUtils.get_entry_property(entry, 'trustType'), ADUtils.get_entry_property(entry, 'trustAttributes'), ADUtils.get_entry_property(entry, 'securityIdentifier'))
+                entries_count += 1
+                trust_name = ADUtils.get_entry_property(entry, 'name')
+                trusted_domains_names.append(trust_name)
+                trust = ADDomainTrust(
+                    trust_name,
+                    ADUtils.get_entry_property(entry, 'trustDirection'),
+                    ADUtils.get_entry_property(entry, 'trustType'),
+                    ADUtils.get_entry_property(entry, 'trustAttributes'),
+                    ADUtils.get_entry_property(entry, 'securityIdentifier')
+                )
                 domain['Trusts'].append(trust.to_output())
 
-            logging.info('Found %u trusts', num_entries)
+            self.trusted_domains_names = trusted_domains_names
 
+            logging.info(f"Found {entries_count} trusts: {', '.join(trusted_domains_names)}")
 
         if 'container' in collect:
             for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(domain_object, 'gPLink', '')):
