@@ -189,7 +189,7 @@ class ADComputer(object):
                         )['type'],
                     })
                 except KeyError:
-                    object_sam = target.upper().split(".")[0]
+                    object_sam = target.upper().split(".")[0].split("\\")[0]
                     if object_sam in delegatehosts_cache: continue
                     delegatehosts_cache.append(object_sam)
                     object_entry = self.ad.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
