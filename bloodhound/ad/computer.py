@@ -31,6 +31,7 @@ from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, sc
 from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
 from impacket.dcerpc.v5.ndr import NULL
 from impacket.dcerpc.v5.dtypes import RPC_SID, MAXIMUM_ALLOWED
+from impacket.nmb import NetBIOSTimeout, NetBIOSError
 from bloodhound.ad.utils import ADUtils, AceResolver
 from bloodhound.enumeration.acls import parse_binary_acl
 from bloodhound.ad.structures import LDAP_SID
@@ -172,6 +173,7 @@ class ADComputer(object):
                 props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
             props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
             delegatehosts = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
+            delegatehosts_cache = []
             for host in delegatehosts:
                 try:
                     target = host.split('/')[1]
@@ -179,11 +181,24 @@ class ADComputer(object):
                     logging.warning('Invalid delegation target: %s', host)
                     continue
                 try:
-                    sid = self.ad.computersidcache.get(target.lower())
-                    data['AllowedToDelegate'].append(sid)
+                    object_sid = self.ad.computersidcache.get(target.lower())
+                    data['AllowedToDelegate'].append({
+                        'ObjectIdentifier': object_sid,
+                        'ObjectType': ADUtils.resolve_ad_entry(
+                            self.ad.objectresolver.resolve_sid(object_sid)
+                        )['type'],
+                    })
                 except KeyError:
-                    if '.' in target:
-                        data['AllowedToDelegate'].append(target.upper())
+                    object_sam = target.upper().split(".")[0].split("\\")[0]
+                    if object_sam in delegatehosts_cache: continue
+                    delegatehosts_cache.append(object_sam)
+                    object_entry = self.ad.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
+                    if object_entry:
+                        object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                        data['AllowedToDelegate'].append({
+                            'ObjectIdentifier': object_resolved['objectid'],
+                            'ObjectType': object_resolved['type'],
+                        })
             if len(delegatehosts) > 0:
                 props['allowedtodelegate'] = delegatehosts
 
@@ -277,6 +292,8 @@ class ADComputer(object):
                             self.auth_method = 'ntlm'
                         else:
                             logging.warning('Failed to get service ticket for %s, skipping host', self.hostname)
+                            self.permanentfailure = True
+                            return None
                 if hasattr(self.rpc, 'set_credentials'):
                     if self.auth_method == 'auto':
                         # Set all we have
@@ -400,7 +417,7 @@ class ADComputer(object):
                 if record['wkui1_username'][-2] == '$':
                     continue
                 # Skip sessions for local accounts
-                if record['wkui1_logon_domain'][:-1].upper() == self.samname.upper():
+                if record['wkui1_logon_domain'][:-1].upper() == self.samname[:-1].upper():
                     continue
                 domain = record['wkui1_logon_domain'][:-1].upper()
                 domain_entry = self.ad.get_domain_by_name(domain)
@@ -807,6 +824,9 @@ class ADComputer(object):
                     resp = e.get_packet()
                 else:
                     raise
+            except NetBIOSTimeout as e:
+                logging.warning('Connection timed out while resolving sids')
+                continue
 
             domains = []
             for entry in resp['ReferencedDomains']['Domains']:
@@ -828,5 +848,7 @@ class ADComputer(object):
                     self.ad.sidcache.put(sid_string, resolved_entry)
                 else:
                     logging.warning('Resolved name is empty [%s]', entry)
-
-        dce.disconnect()
+        try:
+            dce.disconnect()
+        except NetBIOSError:
+            pass

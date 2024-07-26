@@ -119,8 +119,11 @@ class MembershipEnumerator(object):
         # props['sfupassword'] = ADUtils.ensure_string(ADUtils.get_entry_property(entry, 'msSFU30Password'))
         props['sfupassword'] = None
 
-    def enumerate_users(self, timestamp=""):
-        filename = timestamp + 'users.json'
+    def enumerate_users(self, timestamp="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'users.json'
+        else:
+            filename = timestamp + 'users.json'
 
         # Should we include extra properties in the query?
         with_properties = 'objectprops' in self.collect
@@ -166,6 +169,7 @@ class MembershipEnumerator(object):
             if with_properties:
                 MembershipEnumerator.add_user_properties(user, entry)
                 if 'allowedtodelegate' in user['Properties']:
+                    delegatehosts_cache = []
                     for host in user['Properties']['allowedtodelegate']:
                         try:
                             target = host.split('/')[1]
@@ -173,11 +177,24 @@ class MembershipEnumerator(object):
                             logging.warning('Invalid delegation target: %s', host)
                             continue
                         try:
-                            sid = self.addomain.computersidcache.get(target.lower())
-                            user['AllowedToDelegate'].append(sid)
+                            object_sid = self.addomain.computersidcache.get(target.lower())
+                            user['AllowedToDelegate'].append({
+                                'ObjectIdentifier': object_sid,
+                                'ObjectType': ADUtils.resolve_ad_entry(
+                                    self.addomain.objectresolver.resolve_sid(object_sid)
+                                )['type'],
+                            })
                         except KeyError:
-                            if '.' in target:
-                                user['AllowedToDelegate'].append(target.upper())
+                            object_sam = target.upper().split(".")[0].split("\\")[0]
+                            if object_sam in delegatehosts_cache: continue
+                            delegatehosts_cache.append(object_sam)
+                            object_entry = self.addomain.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
+                            if object_entry:
+                                object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                                user['AllowedToDelegate'].append({
+                                    'ObjectIdentifier': object_resolved['objectid'],
+                                    'ObjectType': object_resolved['type'],
+                                })
                 # Parse SID history
                 if len(user['Properties']['sidhistory']) > 0:
                     for historysid in user['Properties']['sidhistory']:
@@ -224,12 +241,12 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing users')
 
-    def enumerate_groups(self, timestamp=""):
+    def enumerate_groups(self, timestamp="", fileNamePrefix=""):
 
         highvalue = ["S-1-5-32-544", "S-1-5-32-550", "S-1-5-32-549", "S-1-5-32-551", "S-1-5-32-548"]
 
         def is_highvalue(sid):
-            if sid.endswith("-512") or sid.endswith("-516") or sid.endswith("-519") or sid.endswith("-520"):
+            if sid.endswith("-512") or sid.endswith("-516") or sid.endswith("-519"):
                 return True
             if sid in highvalue:
                 return True
@@ -238,8 +255,10 @@ class MembershipEnumerator(object):
         # Should we include extra properties in the query?
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
-
-        filename = timestamp + 'groups.json'
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'groups.json'
+        else:
+            filename = timestamp + 'groups.json'
         entries = self.addc.get_groups(include_properties=with_properties, acl=acl)
 
         logging.debug('Writing groups to file: %s', filename)
@@ -282,7 +301,10 @@ class MembershipEnumerator(object):
                 group['Properties']['description'] = ADUtils.get_entry_property(entry, 'description')
                 group['Properties']['samaccountname'] = ADUtils.get_entry_property(entry, 'sAMAccountName')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-                group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
+                if isinstance(whencreated, int):
+                    group['Properties']['whencreated'] = whencreated
+                else:
+                    group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
             for member in entry['attributes']['member']:
                 resolved_member = self.get_membership(member)
@@ -324,13 +346,15 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing groups')
 
-    def enumerate_computers_dconly(self,timestamp =""):
+    def enumerate_computers_dconly(self,timestamp ="", fileNamePrefix=""):
         '''
         Enumerate computer objects. This function is only used if no
         collection was requested that required connecting to computers anyway.
         '''
-        filename = timestamp + 'computers.json'
-
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'computers.json'
+        else:
+            filename = timestamp + 'computers.json'
         # Should we include extra properties in the query?
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
@@ -389,8 +413,11 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing computers')
 
-    def enumerate_gpos(self, timestamp =""):
-        filename = timestamp + 'gpos.json'
+    def enumerate_gpos(self, timestamp ="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'gpos.json'
+        else:
+            filename = timestamp + 'gpos.json'
 
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
@@ -419,11 +446,11 @@ class MembershipEnumerator(object):
                 "ObjectIdentifier": guid,
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
-                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName').upper(), self.addomain.domain.upper()),
-                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName', '').upper(), self.addomain.domain.upper()),
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName', '').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath').upper(),
+                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath', '').upper(),
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
@@ -431,9 +458,12 @@ class MembershipEnumerator(object):
             }
             
             if with_properties:
-                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
+                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-                gpo["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
+                if isinstance(whencreated, int):
+                    gpo['Properties']['whencreated'] = whencreated
+                else:
+                    gpo['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
             # Create cache entry for links
             link_output = {
@@ -470,8 +500,11 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing GPO')
 
-    def enumerate_ous(self, timestamp =""):
-        filename = timestamp + 'ous.json'
+    def enumerate_ous(self, timestamp ="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'ous.json'
+        else:
+            filename = timestamp + 'ous.json'
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
         entries = self.addc.get_ous(include_properties=with_properties, acl=acl)
@@ -503,7 +536,8 @@ class MembershipEnumerator(object):
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "blocksinheritance": False,
+                    # Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpol/08090b22-bc16-49f4-8e10-f27a8fb16d18
+                    "blocksinheritance": ADUtils.get_entry_property(entry, 'gPOptions', 0) == 1,
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
@@ -523,7 +557,10 @@ class MembershipEnumerator(object):
             if with_properties:
                 ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
-                ou["Properties"]["whencreated"] =  calendar.timegm(whencreated.timetuple())
+                if isinstance(whencreated, int):
+                    ou['Properties']['whencreated'] = whencreated
+                else:
+                    ou['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
             
             for childentry in self.addc.get_childobjects(ou["Properties"]["distinguishedname"]):
                 resolved_childentry = ADUtils.resolve_ad_entry(childentry)
@@ -577,8 +614,11 @@ class MembershipEnumerator(object):
 
         logging.debug('Finished writing OU')
 
-    def enumerate_containers(self, timestamp =""):
-        filename = timestamp + 'containers.json'
+    def enumerate_containers(self, timestamp ="", fileNamePrefix=""):
+        if (fileNamePrefix != None):
+            filename = fileNamePrefix + "_" + timestamp + 'containers.json'
+        else:
+            filename = timestamp + 'containers.json'
         with_properties = 'objectprops' in self.collect
         acl = 'acl' in self.collect
         entries = self.addc.get_containers(include_properties=with_properties, acl=acl)
@@ -792,21 +832,21 @@ class MembershipEnumerator(object):
         }
         self.result_q.put(iugroup)
 
-    def do_container_collection(self, timestamp=""):
-        self.enumerate_gpos(timestamp)
-        self.enumerate_ous(timestamp)
-        self.enumerate_containers(timestamp)
+    def do_container_collection(self, timestamp="", fileNamePrefix=""):
+        self.enumerate_gpos(timestamp, fileNamePrefix)
+        self.enumerate_ous(timestamp, fileNamePrefix)
+        self.enumerate_containers(timestamp, fileNamePrefix)
 
-    def enumerate_memberships(self, timestamp=""):
+    def enumerate_memberships(self, timestamp="", fileNamePrefix=""):
         """
         Run appropriate enumeration tasks
         """
-        self.enumerate_users(timestamp)
-        self.enumerate_groups(timestamp)
+        self.enumerate_users(timestamp, fileNamePrefix)
+        self.enumerate_groups(timestamp, fileNamePrefix)
         if 'container' in self.collect:
-            self.do_container_collection(timestamp)
+            self.do_container_collection(timestamp, fileNamePrefix)
         if not ('localadmin' in self.collect
                 or 'session' in self.collect
                 or 'loggedon' in self.collect
                 or 'experimental' in self.collect):
-            self.enumerate_computers_dconly(timestamp)
+            self.enumerate_computers_dconly(timestamp, fileNamePrefix)

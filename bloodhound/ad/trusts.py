@@ -56,20 +56,13 @@ class ADDomainTrust(object):
                   'UPLEVEL':0x02,
                   'MIT':0x03}
 
-    # BloodHound trust types - deprecated
+    # BloodHound trust types - undeprecated again
     bh_trust_type = {
         'ParentChild': 0,
         'CrossLink': 1,
         'Forest': 2,
         'External': 3,
         'Unknown':4
-    }
-    # BH4.1 mapping
-    trust_dir = {
-        0: 'Disabled',
-        1: 'Inbound',
-        2: 'Outbound',
-        3: 'Bidirectional'
     }
     def __init__(self, destination, direction, trust_type, flags, domainsid):
         self.destination_domain = destination
@@ -84,9 +77,16 @@ class ADDomainTrust(object):
             self.domainsid = ''
 
     def has_flag(self, flag):
+        if self.flags is None or self.trust_flags.get(flag) is None:
+            return False  # Handle the case where either self.flags or trust_flags[flag] is None
+    
         return self.flags & self.trust_flags[flag] == self.trust_flags[flag]
 
     def to_output(self):
+        trusttype = 'Unknown'
+        is_transitive = False
+        sid_filtering = True
+
         if self.has_flag('WITHIN_FOREST'):
             trusttype = 'ParentChild'
             is_transitive = True
@@ -94,22 +94,25 @@ class ADDomainTrust(object):
         elif self.has_flag('FOREST_TRANSITIVE'):
             trusttype = 'Forest'
             is_transitive = True
-            sid_filtering = True
+            # SID filtering is disabled if this flag is set
+            sid_filtering = not self.has_flag('TREAT_AS_EXTERNAL')
         elif self.has_flag('TREAT_AS_EXTERNAL') or self.has_flag('CROSS_ORGANIZATION'):
             trusttype = 'External'
             is_transitive = False
             sid_filtering = True
         else:
-            trusttype = 'Unknown'
             is_transitive = not self.has_flag('NON_TRANSITIVE')
-            sid_filtering = True
+
+        # Make sure this is an int
+        trust_direction = int(self.direction)
+        trusttype_out = self.bh_trust_type.get(trusttype, 4)
 
         out = {
             "TargetDomainName": self.destination_domain.upper(),
             "TargetDomainSid": self.domainsid,
             "IsTransitive": is_transitive,
-            "TrustDirection": self.trust_dir[self.direction],
-            "TrustType": trusttype,
+            "TrustDirection": trust_direction,
+            "TrustType": trusttype_out,
             "SidFilteringEnabled": sid_filtering
         }
         return out

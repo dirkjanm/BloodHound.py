@@ -55,7 +55,7 @@ class BloodHound(object):
         logging.debug('Using base DN: %s', self.ad.baseDN)
 
         if len(self.ad.kdcs()) > 0:
-            kdc = self.ad.kdcs()[0]
+            kdc = self.ad.auth.kdc
             logging.debug('Using kerberos KDC: %s', kdc)
             logging.debug('Using kerberos realm: %s', self.ad.realm())
 
@@ -63,10 +63,9 @@ class BloodHound(object):
         self.pdc = ADDC(pdc, self.ad)
         # Create an object resolver
         self.ad.create_objectresolver(self.pdc)
-#        self.pdc.ldap_connect(self.ad.auth.username, self.ad.auth.password, kdc)
 
 
-    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None, exclude_dcs=False):
+    def run(self, collect, num_workers=10, disable_pooling=False, timestamp="", computerfile="", cachefile=None, exclude_dcs=False, fileNamePrefix=""):
         start_time = time.time()
         if cachefile:
             self.ad.load_cachefile(cachefile)
@@ -79,7 +78,7 @@ class BloodHound(object):
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
             # Initialize enumerator
             membership_enum = MembershipEnumerator(self.ad, self.pdc, collect, disable_pooling)
-            membership_enum.enumerate_memberships(timestamp=timestamp)
+            membership_enum.enumerate_memberships(timestamp=timestamp, fileNamePrefix=fileNamePrefix)
         elif 'container' in collect:
             # Fetch domains for later, computers if needed
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
@@ -95,12 +94,12 @@ class BloodHound(object):
             self.pdc.get_domains('acl' in collect)
         if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
             trusts_enum = DomainEnumerator(self.ad, self.pdc)
-            trusts_enum.dump_domain(collect,timestamp=timestamp)
+            trusts_enum.dump_domain(collect,timestamp=timestamp,fileNamePrefix=fileNamePrefix)
         if do_computer_enum:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
             computer_enum = ComputerEnumerator(self.ad, self.pdc, collect, do_gc_lookup=have_gc, computerfile=computerfile, exclude_dcs=exclude_dcs)
-            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp)
+            computer_enum.enumerate_computers(self.ad.computers, num_workers=num_workers, timestamp=timestamp, fileNamePrefix=fileNamePrefix)
         end_time = time.time()
         minutes, seconds = divmod(int(end_time-start_time),60)
         logging.info('Done in %02dM %02dS' % (minutes, seconds))
@@ -261,6 +260,14 @@ def main():
     coopts.add_argument('--ldap-channel-binding',
                         action='store_true',
                         help='Use LDAP Channel Binding (will force ldaps protocol to be used)')
+    coopts.add_argument('--use-ldaps',
+                        action='store_true',
+                        help='Use LDAP over TLS on port 636 by default')
+    coopts.add_argument('-op',
+                        '--outputprefix',
+                        metavar='PREFIX_NAME',
+                        action='store',
+                        help='String to prepend to output file names')
 
 
     args = parser.parse_args()
@@ -271,23 +278,19 @@ def main():
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
-    elif args.username is not None and args.password is None and args.hashes is None:
+    elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and args.no_pass is not None:
         args.password = getpass.getpass()
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
     elif args.username is None and (args.password is not None or args.hashes is not None):
         logging.error('Authentication: password or hashes provided without username')
         sys.exit(1)
-    elif (args.hashes is not None or args.aesKey is not None) and args.username is not None:
-        if args.hashes:
-            logging.debug('Authentication: NT hash')
-            lm, nt = args.hashes.split(":")
-            auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
-            if args.aesKey:
-                logging.debug('Authentication: Kerberos AES')
-                auth.set_aeskey(args.aesKey)
-        else:
-            logging.debug('Authentication: Kerberos AES')
-            auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
+    elif args.hashes is not None and args.username is not None:
+        logging.debug('Authentication: NT hash')
+        lm, nt = args.hashes.split(":")
+        auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
+    elif args.aesKey is not None and args.username is not None:
+        logging.debug('Authentication: Kerberos AES')
+        auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
     else:
         if not args.kerberos:
             parser.print_help()
@@ -295,7 +298,7 @@ def main():
         else:
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout)
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
 
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
@@ -314,9 +317,9 @@ def main():
                           args.domain_controller)
             sys.exit(1)
         ad.override_dc(args.domain_controller)
-        if not auth.kdc:
-            logging.debug('Using supplied domain controller as KDC')
-            auth.kdc = args.domain_controller
+        logging.debug('Using supplied domain controller as KDC')
+        auth.set_kdc(args.domain_controller)
+
     if args.global_catalog:
         if re.match(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', args.global_catalog):
             logging.error('The specified global catalog server %s looks like an IP address, but requires a hostname (FQDN).\n'\
@@ -345,22 +348,35 @@ def main():
                    timestamp=timestamp,
                    computerfile=args.computerfile,
                    cachefile=args.cachefile,
-                   exclude_dcs=args.exclude_dcs)
+                   exclude_dcs=args.exclude_dcs,
+                   fileNamePrefix=args.outputprefix)
     #If args --zip is true, the compress output  
     if args.zip:
         logging.info("Compressing output into " + timestamp + "bloodhound.zip")
         # Get a list of files in the current dir
         list_of_files = os.listdir(os.getcwd())
         # Create handle to zip file with timestamp prefix
-        with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
-            # For each of those files we fetched
-            for each_file in list_of_files:
-                # If the files starts with the current timestamp and ends in json
-                if each_file.startswith(timestamp) and each_file.endswith("json"):
-                    # Write it to the zip
-                    zip.write(each_file)
-                    # Remove it from disk
-                    os.remove(each_file)
+        if(args.outputprefix!=None):
+            with ZipFile(args.outputprefix + "_" + timestamp + "bloodhound.zip",'w') as zip:
+                # For each of those files we fetched
+                for each_file in list_of_files:
+                    # If the files starts with the current timestamp and ends in json
+                    if each_file.startswith(args.outputprefix) and each_file.endswith("json"):
+                        # Write it to the zip
+                        zip.write(each_file)
+                        # Remove it from disk
+                        os.remove(each_file)
+        else:
+            with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
+                # For each of those files we fetched
+                for each_file in list_of_files:
+                    # If the files starts with the current timestamp and ends in json
+                    if each_file.startswith(timestamp) and each_file.endswith("json"):
+                        # Write it to the zip
+                        zip.write(each_file)
+                        # Remove it from disk
+                        os.remove(each_file)
+
 
 
 if __name__ == '__main__':

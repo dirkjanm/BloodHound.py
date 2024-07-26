@@ -112,7 +112,7 @@ class ADUtils(object):
         7: "2016"
     }
 
-    xml_sid_rex = re.compile('<UserId>(S-[0-9\-]+)</UserId>')
+    xml_sid_rex = re.compile('<UserId>(S-[0-9\\-]+)</UserId>')
     xml_logontype_rex = re.compile('<LogonType>([A-Za-z0-9]+)</LogonType>')
 
     @staticmethod
@@ -311,18 +311,17 @@ class ADUtils(object):
                 resolved['type'] = 'Base'
         else:
             accountType = ADUtils.get_entry_property(entry, 'sAMAccountType')
+            object_class = ADUtils.get_entry_property(entry, 'objectClass', [])
             if accountType in [268435456, 268435457, 536870912, 536870913]:
                 resolved['type'] = 'Group'
-            elif ADUtils.get_entry_property(entry, 'msDS-GroupMSAMembership', default=b'', raw=True) != b'':
+            elif accountType in [805306368] or \
+                 'msDS-GroupManagedServiceAccount' in object_class or \
+                 'msDS-ManagedServiceAccount' in object_class:
                 resolved['type'] = 'User'
-                short_name = account.rstrip('$')
-                resolved['principal'] = ('%s@%s' % (short_name, domain)).upper()
             elif accountType in [805306369]:
                 resolved['type'] = 'Computer'
                 short_name = account.rstrip('$')
                 resolved['principal'] = ('%s.%s' % (short_name, domain)).upper()
-            elif accountType in [805306368]:
-                resolved['type'] = 'User'
             elif accountType in [805306370]:
                 resolved['type'] = 'trustaccount'
             else:
@@ -356,6 +355,8 @@ class ADUtils(object):
         converting empty values to the default specified. This is primarily
         for output to JSON
         """
+        if entry is None:
+            return default
         try:
             if raw:
                 value = entry['raw_attributes'][prop]
@@ -416,6 +417,8 @@ class ADUtils(object):
 
     @staticmethod
     def is_filtered_container(containerdn):
+        if not containerdn:
+            return False
         if "CN=DOMAINUPDATES,CN=SYSTEM,DC=" in containerdn.upper():
             return True
         if "CN=POLICIES,CN=SYSTEM,DC=" in containerdn.upper() and (containerdn.upper().startswith('CN=USER') or containerdn.upper().startswith('CN=MACHINE')):
@@ -424,6 +427,8 @@ class ADUtils(object):
 
     @staticmethod
     def is_filtered_container_child(containerdn):
+        if not containerdn:
+            return False
         if "CN=PROGRAM DATA,DC=" in containerdn.upper():
             return True
         if "CN=SYSTEM,DC=" in containerdn.upper():
@@ -432,10 +437,14 @@ class ADUtils(object):
 
     @staticmethod
     def parse_gplink_string(linkstr):
+        '''
+        Parse GP Link string according to MS-GPOL
+        https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpol/08090b22-bc16-49f4-8e10-f27a8fb16d18
+        '''
         if not linkstr:
             return
-        for links in linkstr.split('[LDAP://')[1:]:
-            dn, options = links.rstrip('][').split(';')
+        for links in linkstr.split('LDAP://')[1:]:
+            dn, options = links.rstrip('][ ').split(';')
             yield dn, int(options)
 
 class AceResolver(object):
