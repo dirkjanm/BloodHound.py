@@ -355,6 +355,8 @@ class ADUtils(object):
         converting empty values to the default specified. This is primarily
         for output to JSON
         """
+        if entry is None:
+            return default
         try:
             if raw:
                 value = entry['raw_attributes'][prop]
