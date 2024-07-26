@@ -90,7 +90,11 @@ class ADAuthentication(object):
             server = Server("%s://%s" % (protocol, ip), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
-            ldappass = self.lm_hash + ':' + self.nt_hash
+            if self.lm_hash != '':
+                ldappass = self.lm_hash + ':' + self.nt_hash
+            else:
+                # ldap3 requires a 32-character long string for LM hash in order to use the NT hash
+                ldappass = 'aad3b435b51404eeaad3b435b51404ee:' + self.nt_hash
         else:
             ldappass = self.password
         ldaplogin = '%s\\%s' % (self.userdomain, self.username)
