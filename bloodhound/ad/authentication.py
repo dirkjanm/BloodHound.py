@@ -27,8 +27,9 @@ import os
 import traceback
 from bloodhound.ad.utils import CollectionException
 from binascii import unhexlify
-from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS
+from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS, Tls
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
+import ldap3
 from ldap3.operation.bind import bind_operation
 from impacket.krb5.ccache import CCache
 from impacket.krb5.types import Principal, KerberosTime, Ticket
@@ -46,7 +47,7 @@ Active Directory authentication helper
 """
 class ADAuthentication(object):
     def __init__(self, username='', password='', domain='',
-                 lm_hash='', nt_hash='', aeskey='', kdc=None, auth_method='auto'):
+                 lm_hash='', nt_hash='', aeskey='', kdc=None, auth_method='auto', ldap_channel_binding=False):
         self.username = username
         # Assume user domain and enum domain are same
         self.domain = domain.lower()
@@ -63,6 +64,7 @@ class ADAuthentication(object):
         # KDC for domain of the user - fill with domain first, will be resolved later
         self.userdomain_kdc = self.domain
         self.auth_method = auth_method
+        self.ldap_channel_binding = ldap_channel_binding
 
         # Kerberos
         self.tgt = None
@@ -80,14 +82,44 @@ class ADAuthentication(object):
     def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
         if gc:
             # Global Catalog connection
-            if protocol == 'ldaps':
-                # Ldap SSL
-                server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
+            if protocol == 'ldaps' or self.ldap_channel_binding is True:
+                if self.ldap_channel_binding is True:
+                    if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
+                        raise Exception("To use LDAP channel binding, install the patched ldap3 module: pip3 install git+https://github.com/ly4k/ldap3")
+                    logging.debug("Using LDAPS channel binding")
+                    protocol = 'ldaps'
+                    import ssl
+                    version=ssl.PROTOCOL_TLSv1_2
+                    tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
+                    server = Server(
+                        "%s://%s:3269" % (protocol,ip),
+                        use_ssl=True,
+                        get_info=ALL,
+                        tls=tls
+                    )
+                else:
+                    # Ldap SSL (no channel binding)
+                    server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
             else:
                 # Plain LDAP
                 server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
-        else:
-            server = Server("%s://%s" % (protocol, ip), get_info=ALL)
+        else: # no GC specified
+            if self.ldap_channel_binding is True:
+                if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
+                    raise Exception("To use LDAP channel binding, install the patched ldap3 module: pip3 install git+https://github.com/ly4k/ldap3")
+                logging.debug("Using LDAPS channel binding")
+                import ssl
+                protocol = 'ldaps'
+                version=ssl.PROTOCOL_TLSv1_2
+                tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
+                server = Server(
+                    "%s://%s" % (protocol,ip),
+                    use_ssl=True,
+                    get_info=ALL,
+                    tls=tls
+                )
+            else: # No LDAP Channel Binding
+                server = Server("%s://%s" % (protocol, ip), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
             if self.lm_hash != '':
@@ -98,7 +130,14 @@ class ADAuthentication(object):
         else:
             ldappass = self.password
         ldaplogin = '%s\\%s' % (self.userdomain, self.username)
-        conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
+        if self.ldap_channel_binding:
+            from ldap3 import TLS_CHANNEL_BINDING
+            logging.debug("Using LDAPS channel binding")
+            protocol = 'ldaps'
+            channel_binding = {"channel_binding": TLS_CHANNEL_BINDING}
+            conn = Connection(server, user=ldaplogin, password=ldappass, authentication=NTLM, auto_referrals=False, **channel_binding)
+        else:
+            conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
         bound = False
         if self.tgt is not None and self.auth_method in ('kerberos', 'auto'):
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=SASL, sasl_mechanism=KERBEROS)
@@ -114,18 +153,22 @@ class ADAuthentication(object):
                     logging.debug('Kerberos auth to LDAP failed, no authentication methods left')
 
         if not bound:
-            conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM)
             logging.debug('Authenticating to LDAP server with NTLM')
             bound = conn.bind()
 
         if not bound:
             result = conn.result
+            if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldaps':
+                logging.warning('LDAP Authentication is refused because LDAP Channel Binding is likely enabled. '
+                                'Trying to connect using LDAP Channel Binding')
+                self.ldap_channel_binding = True
+                return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
             if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
                 logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
                                 'Trying to connect over LDAPS instead...')
                 return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
             else:
-                logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
+                logging.error('Failure to authenticate with LDAP! Error %s : Code: %s' % (result['message'], result['result']))
                 raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
         return conn
 
