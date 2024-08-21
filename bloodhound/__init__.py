@@ -296,6 +296,9 @@ def main():
         else:
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
 
+    # Put "." at the end to prevent DNS resolution error
+    args.domain = f'{args.domain.rstrip(" .")}.'
+
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
 
     # Resolve collection methods
