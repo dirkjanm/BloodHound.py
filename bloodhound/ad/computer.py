@@ -166,11 +166,16 @@ class ADComputer(object):
             props['whencreated'] = whencreated
             props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
             props['description'] = ADUtils.get_entry_property(entry, 'description')
-            props['operatingsystem'] = ADUtils.get_entry_property(entry, 'operatingSystem')
+
+            osname = ADUtils.get_entry_property(entry, 'operatingSystem')
+            osservicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
+            osversion = ADUtils.get_entry_property(entry, 'operatingSystemVersion')
             # Add SP to OS if specified
-            servicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
-            if servicepack:
-                props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
+            props['operatingsystem'] = '%s %s' % (osname, osservicepack) if osservicepack else osname
+            props['operatingsystemname'] = osname
+            props['operatingsystemservicepack'] = osservicepack
+            props['operatingsystemversion'] = osversion
+
             props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
             delegatehosts = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
             delegatehosts_cache = []
