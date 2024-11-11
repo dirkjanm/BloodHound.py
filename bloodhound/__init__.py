@@ -278,7 +278,7 @@ def main():
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
-    elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and args.no_pass is not None:
+    elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and args.no_pass is not True:
         args.password = getpass.getpass()
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
     elif args.username is None and (args.password is not None or args.hashes is not None):

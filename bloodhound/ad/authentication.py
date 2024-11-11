@@ -80,6 +80,11 @@ class ADAuthentication(object):
             self.userdomain_kdc = kdc
 
     def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
+        if self.tgt is not None and self.auth_method in ('kerberos', 'auto'):
+            server_host=hostname
+        else:
+            server_host=ip
+            
         if gc:
             # Global Catalog connection
             if protocol == 'ldaps' or self.ldap_channel_binding is True:
@@ -92,17 +97,17 @@ class ADAuthentication(object):
                     version=ssl.PROTOCOL_TLSv1_2
                     tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
                     server = Server(
-                        "%s://%s:3269" % (protocol,ip),
+                        "%s://%s:3269" % (protocol,server_host),
                         use_ssl=True,
                         get_info=ALL,
                         tls=tls
                     )
                 else:
                     # Ldap SSL (no channel binding)
-                    server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
+                    server = Server("%s://%s:3269" % (protocol, server_host), get_info=ALL)
             else:
                 # Plain LDAP
-                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
+                server = Server("%s://%s:3268" % (protocol, server_host), get_info=ALL)
         else: # no GC specified
             if self.ldap_channel_binding is True:
                 if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
@@ -113,13 +118,13 @@ class ADAuthentication(object):
                 version=ssl.PROTOCOL_TLSv1_2
                 tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
                 server = Server(
-                    "%s://%s" % (protocol,ip),
+                    "%s://%s" % (protocol,server_host),
                     use_ssl=True,
                     get_info=ALL,
                     tls=tls
                 )
             else: # No LDAP Channel Binding
-                server = Server("%s://%s" % (protocol, ip), get_info=ALL)
+                server = Server("%s://%s" % (protocol, server_host), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
             if self.lm_hash != '':
@@ -162,11 +167,11 @@ class ADAuthentication(object):
                 logging.warning('LDAP Authentication is refused because LDAP Channel Binding is likely enabled. '
                                 'Trying to connect using LDAP Channel Binding')
                 self.ldap_channel_binding = True
-                return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
+                return self.getLDAPConnection(hostname, server_host, baseDN, 'ldaps')
             if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
                 logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
                                 'Trying to connect over LDAPS instead...')
-                return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
+                return self.getLDAPConnection(hostname, server_host, baseDN, 'ldaps')
             else:
                 logging.error('Failure to authenticate with LDAP! Error %s : Code: %s' % (result['message'], result['result']))
                 raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
