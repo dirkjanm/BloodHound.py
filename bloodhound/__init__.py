@@ -265,6 +265,10 @@ def main():
                         metavar='PREFIX_NAME',
                         action='store',
                         help='String to prepend to output file names')
+    coopts.add_argument('-P',
+                        '--port',
+                        action='store',
+                        help='Use this port instead of default for connections')
 
 
 
@@ -296,7 +300,14 @@ def main():
         else:
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
+    if dstPort is not None and not dstPort.isdigit():
+        logging.error('Port is not a valid port: "%s"' % dstPort)
+        sys.exit(1)
+    if dstPort is not None and 0 < int(dstPort) < 65535:
+        logging.error('Port is not in valid port range: "%s"' % dstPort)
+        sys.exit(1)
+
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps, port=args.port)
 
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
@@ -336,7 +347,7 @@ def main():
         else:
             auth.get_tgt()
 
-    # For adding timestamp prefix to the outputfiles 
+    # For adding timestamp prefix to the outputfiles
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y%m%d%H%M%S') + "_"
     bloodhound = BloodHound(ad)
     bloodhound.connect()
@@ -348,7 +359,7 @@ def main():
                    cachefile=args.cachefile,
                    exclude_dcs=args.exclude_dcs,
                    fileNamePrefix=args.outputprefix)
-    #If args --zip is true, the compress output  
+    #If args --zip is true, the compress output
     if args.zip:
         logging.info("Compressing output into " + timestamp + "bloodhound.zip")
         # Get a list of files in the current dir

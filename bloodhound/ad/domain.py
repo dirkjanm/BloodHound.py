@@ -32,7 +32,7 @@ from dns import resolver
 from ldap3 import ALL_ATTRIBUTES, BASE, SUBTREE, LEVEL
 from ldap3.core.exceptions import LDAPKeyError, LDAPAttributeError, LDAPCursorError, LDAPNoSuchObjectResult, LDAPSocketReceiveError, LDAPSocketSendError, LDAPCommunicationError
 from ldap3.protocol.microsoft import security_descriptor_control
-from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache, CollectionException
+from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache, CollectionException, ConnectionException
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
 from future.utils import itervalues, iteritems, native_str
@@ -69,8 +69,13 @@ class ADDC(ADComputer):
         for r in q:
             ip = r.address
 
+        if self.ad.port is not None and not self.ad.port.isdigit():
+            raise ConnectionException(errorString="Port is not a valid port: '%s'" % self.ad.port)
+        if self.ad.port is not None and 0 < int(self.ad.port) < 65535:
+            raise ConnectionException(errorString="Port is not in valid port range: '%s'" % self.ad.port)
+
         ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip,
-                                              baseDN=self.ad.baseDN, protocol=protocol)
+                                              baseDN=self.ad.baseDN, protocol=protocol, port=int(self.ad.port))
         if resolver:
             self.resolverldap = ldap
         else:
@@ -116,7 +121,7 @@ class ADDC(ADComputer):
                     continue
 
         self.gcldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip, gc=True,
-                                                     baseDN=self.ad.baseDN, protocol=protocol)
+                                                     baseDN=self.ad.baseDN, protocol=protocol, port=self.ad.port)
         return self.gcldap is not None
 
     def search(self, search_filter='(objectClass=*)',attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False, is_retry=False,  search_scope=SUBTREE,):
@@ -559,7 +564,7 @@ class ADDC(ADComputer):
                               search_base=dn,
                               search_scope=LEVEL,
                               use_resolver=use_resolver)
-                              
+
         return entries
 
     def get_trusts(self):
@@ -584,7 +589,7 @@ Active Directory data and cache
 """
 class AD(object):
 
-    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0, use_ldaps=False):
+    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0, use_ldaps=False, port=None):
         self.domain = domain
         # Object of type ADDomain, added later
         self.domain_object = None
@@ -596,6 +601,7 @@ class AD(object):
         self._kdcs = []
         # Global catalog servers
         self._gcs = []
+        self.port = port
 
         self.domains = {}
         self.nbdomains = {}

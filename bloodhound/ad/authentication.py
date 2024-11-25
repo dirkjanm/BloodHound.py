@@ -77,17 +77,20 @@ class ADAuthentication(object):
             # Also set it for user domain if this is equal
             self.userdomain_kdc = kdc
 
-    def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
-        if gc:
-            # Global Catalog connection
-            if protocol == 'ldaps':
-                # Ldap SSL
-                server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
+    def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False, port=None):
+        if port is None:
+            if gc:
+                # Global Catalog connection
+                if protocol == 'ldaps':
+                    # Ldap SSL
+                    server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
+                else:
+                    # Plain LDAP
+                    server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
             else:
-                # Plain LDAP
-                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
+                server = Server("%s://%s" % (protocol, ip), get_info=ALL)
         else:
-            server = Server("%s://%s" % (protocol, ip), get_info=ALL)
+            server = Server("%s://%s:%s" % (protocol, ip, port), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
             if self.lm_hash != '':
@@ -123,7 +126,7 @@ class ADAuthentication(object):
             if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
                 logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
                                 'Trying to connect over LDAPS instead...')
-                return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
+                return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps', port)
             else:
                 logging.error('Failure to authenticate with LDAP! Error %s' % result['message'])
                 raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
