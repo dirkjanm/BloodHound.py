@@ -271,10 +271,10 @@ class ADDC(ADComputer):
         if 'ms-mcs-admpwdexpirationtime' in self.objecttype_guid_map:
             logging.debug('Found LAPS attributes in schema')
             self.ad.has_laps = True
-        elif 'ms-laps-passwordexpirationtime' in self.objecttype_guid_map:
+        if 'ms-laps-passwordexpirationtime' in self.objecttype_guid_map:
             logging.debug('Found LAPSv2 attributes in schema')
             self.ad.has_lapsv2 = True
-        else:
+        if not self.ad.has_laps and not self.ad.has_lapsv2:
             logging.debug('No LAPS attributes found in schema')
 
         if 'ms-ds-key-credential-link' in self.objecttype_guid_map:
