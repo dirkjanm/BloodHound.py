@@ -141,7 +141,6 @@ class ADAuthentication(object):
             logging.debug('Authenticating to LDAP server with Kerberos')
             try:
                 bound = self.ldap_kerberos(conn, hostname)
-                logging.info(bound)
             except Exception as exc:
                 if self.auth_method == 'auto':
                     logging.debug(traceback.format_exc())

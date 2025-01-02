@@ -163,7 +163,7 @@ def main():
     stream.setFormatter(formatter)
     logger.addHandler(stream)
 
-    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound\nFor help or reporting issues, visit https://github.com/Fox-IT/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound LEGACY\nFor help or reporting issues, visit https://github.com/dirkjanm/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument('-c',
                         '--collectionmethod',
@@ -269,9 +269,8 @@ def main():
                         action='store',
                         help='String to prepend to output file names')
 
-
-
     args = parser.parse_args()
+    logging.info('BloodHound.py for BloodHound LEGACY (BloodHound 4.2 and 4.3)')
 
     if args.v is True:
         logger.setLevel(logging.DEBUG)
@@ -300,7 +299,6 @@ def main():
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
-
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
     if not collect:
