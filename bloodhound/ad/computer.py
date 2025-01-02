@@ -176,7 +176,7 @@ class ADComputer(object):
             delegatehosts_cache = []
             for host in delegatehosts:
                 try:
-                    target = host.split('/')[1]
+                    target = host.split('/')[1].split(':')[0]
                 except IndexError:
                     logging.warning('Invalid delegation target: %s', host)
                     continue
@@ -190,11 +190,26 @@ class ADComputer(object):
                     })
                 except KeyError:
                     object_sam = target.upper().split(".")[0].split("\\")[0]
-                    if object_sam in delegatehosts_cache: continue
+                    if object_sam in delegatehosts_cache:
+                        continue
                     delegatehosts_cache.append(object_sam)
                     object_entry = self.ad.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
                     if object_entry:
-                        object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                        if len(object_entry) > 1:
+                            object_resolved = None
+                            for object_entry_instance in object_entry:
+                                sam = ADUtils.get_entry_property(object_entry_instance, 'sAMAccountName')
+                                if not sam:
+                                    continue
+                                if sam.lower() == object_sam.lower() or f"{sam}$".lower() == object_sam.lower():
+                                    # Best match
+                                    object_resolved = ADUtils.resolve_ad_entry(object_entry_instance)
+                                    break
+                            # No match? Then pick first one and hope for the best
+                            if not object_resolved:
+                                object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                        else:
+                            object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
                         data['AllowedToDelegate'].append({
                             'ObjectIdentifier': object_resolved['objectid'],
                             'ObjectType': object_resolved['type'],
