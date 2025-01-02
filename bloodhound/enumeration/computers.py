@@ -21,7 +21,6 @@
 # SOFTWARE.
 #
 ####################
-from __future__ import unicode_literals
 import queue
 import threading
 import logging
@@ -32,7 +31,6 @@ from bloodhound.enumeration.outputworker import OutputWorker
 from bloodhound.enumeration.memberships import MembershipEnumerator
 from bloodhound.ad.computer import ADComputer
 from bloodhound.ad.utils import ADUtils
-from future.utils import itervalues, iteritems, native_str
 
 class ComputerEnumerator(MembershipEnumerator):
     """
@@ -85,7 +83,7 @@ class ComputerEnumerator(MembershipEnumerator):
             thread.daemon = True
             thread.start()
 
-        for _, computer in iteritems(computers):
+        for _, computer in computers.items():
             if not 'attributes' in computer:
                 continue
 

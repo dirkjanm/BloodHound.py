@@ -21,7 +21,6 @@
 # SOFTWARE.
 #
 ####################
-from __future__ import unicode_literals
 import logging
 import traceback
 import codecs
@@ -35,7 +34,6 @@ from ldap3.protocol.microsoft import security_descriptor_control
 from bloodhound.ad.utils import ADUtils, DNSCache, SidCache, SamCache, CollectionException
 from bloodhound.ad.computer import ADComputer
 from bloodhound.enumeration.objectresolver import ObjectResolver
-from future.utils import itervalues, iteritems, native_str
 
 """
 Active Directory Domain Controller
@@ -777,12 +775,12 @@ class AD(object):
 
 
     def get_domain_by_name(self, name):
-        for domain, entry in iteritems(self.domains):
+        for domain, entry in self.domains.items():
             if 'name' in entry['attributes']:
                 if entry['attributes']['name'].upper() == name.upper():
                     return entry
         # Also try domains by NETBIOS definition
-        for domain, entry in iteritems(self.nbdomains):
+        for domain, entry in self.nbdomains.items():
             if domain.upper() == name.upper():
                 return entry
         return None
