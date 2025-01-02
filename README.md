@@ -5,19 +5,29 @@
 
 BloodHound.py is a Python based ingestor for [BloodHound](https://github.com/BloodHoundAD/BloodHound), based on [Impacket](https://github.com/CoreSecurity/impacket/).
 
-This version of BloodHound.py is **only compatible with BloodHound 4.2 and 4.3**. For BloodHound CE, check out the [bloodhound-ce branch](https://github.com/dirkjanm/BloodHound.py/tree/bloodhound-ce)
+The code in this branch is **only compatible with BloodHound 4.2 and 4.3**. For BloodHound CE, check out the [bloodhound-ce branch](https://github.com/dirkjanm/BloodHound.py/tree/bloodhound-ce)
 
-## Limitations
-BloodHound.py currently has the following limitations:
-- Supports most, but not all BloodHound (SharpHound) features. Currently GPO local groups are not supported, all other collection methods are implemented.
+## Installation
+There are different install methods for BloodHound Community Edition (CE) and BloodHound legacy. You can only have one of the two tools installed at the same time, unless you use a virtual environment for both tools, or a package manager like pipx that automatically sets these up.
 
-## Installation and usage
-You can install the ingestor via pip with `pip install bloodhound`, or by cloning this repository and running `pip install .` from the project directory.
-BloodHound.py requires `impacket`, `ldap3` and `dnspython` to function.
+### BloodHound Legacy
+The following install methods are available:
+* Via pip: `pip install bloodhound`
+* Via pipx: `pipx install bloodhound`
+* By cloning this repository `git clone https://github.com/dirkjanm/BloodHound.py` and running `pip install .` from the project directory.
 
-The installation will add a command line tool `bloodhound-python` to your PATH.
+The BloodHound.py Legacy installation will add a command line tool `bloodhound-python` to your PATH.
 
-To use the ingestor, at a minimum you will need credentials of the domain you're logging in to.
+### BloodHound CE
+The following install methods are available:
+* Via pip: `pip install bloodhound-ce`
+* Via pipx: `pipx install bloodhound-ce`
+* By cloning this repository `git clone https://github.com/dirkjanm/BloodHound.py`, checking out the CE branch `git checkout bloodhound-ce` and running `pip install .` from the project directory.
+
+The BloodHound.py CE ingestor will add a command line tool `bloodhound-ce-python` to your PATH.
+
+## Usage
+To use the ingestor, at a minimum you will need credentials of the domain you're logging in to. Credentials can be specified as username + password, NT hash or AES keys, or a Kerberos TGT in a ccache file.
 You will need to specify the `-u` option with a username of this domain (or `username@domain` for a user in a trusted domain). If you have your DNS set up properly and the AD domain is in your DNS search list, then BloodHound.py will automatically detect the domain for you. If not, you have to specify it manually with the `-d` option.
 
 By default BloodHound.py will query LDAP and the individual computers of the domain to enumerate users, computers, groups, trusts, sessions and local admins. 
@@ -41,6 +51,10 @@ If you want to restrict collection, specify the `--collectionmethod` parameter, 
 Multiple collectionmethods should be separated by a comma, for example: `-c Group,LocalAdmin`
 
 You can override some of the automatic detection options, such as the hostname of the primary Domain Controller if you want to use a different Domain Controller with `-dc`, or specify your own Global Catalog with `-gc`.
+
+## Limitations
+BloodHound.py currently has the following limitations:
+- Supports most, but not all BloodHound (SharpHound) features. Currently GPO local groups are not supported, all other collection methods are implemented.
 
 ## Docker usage
 1. Build container  
