@@ -155,7 +155,7 @@ class ADComputer(object):
         props['samaccountname'] = ADUtils.get_entry_property(entry, 'sAMAccountName')
 
         if 'objectprops' in collect or 'acl' in collect:
-            props['haslaps'] = ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) != 0
+            props['haslaps'] = bool(ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) or ADUtils.get_entry_property(entry, 'mslaps-passwordexpirationtime', 0))
 
         if 'objectprops' in collect:
             props['lastlogon'] = ADUtils.win_timestamp_to_unix(

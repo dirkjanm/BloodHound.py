@@ -196,7 +196,7 @@ def main():
     auopts.add_argument('-k',
                         '--kerberos',
                         action='store_true',
-                        help='Use kerberos')
+                        help='Use kerberos ccache file')
     auopts.add_argument('--hashes',
                         action='store',
                         help='LM:NLTM hashes')
@@ -278,7 +278,7 @@ def main():
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
-    elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and args.no_pass is not None:
+    elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and not args.no_pass:
         args.password = getpass.getpass()
         auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
     elif args.username is None and (args.password is not None or args.hashes is not None):
@@ -296,6 +296,11 @@ def main():
             parser.print_help()
             sys.exit(1)
         else:
+            if not args.username:
+                logging.error('Specifying the username explicitly is required for Kerberos ccache authentication')
+                sys.exit(1)
+            logging.debug('Authentication: Kerberos ccache')
+            args.auth_method = 'kerberos'
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
@@ -329,8 +334,6 @@ def main():
 
     if args.auth_method in ('auto', 'kerberos'):
         if args.kerberos is True:
-            logging.debug('Authentication: Kerberos ccache')
-            # kerberize()
             if not auth.load_ccache():
                 logging.debug('Could not load ticket from ccache, trying to request a TGT instead')
                 auth.get_tgt()

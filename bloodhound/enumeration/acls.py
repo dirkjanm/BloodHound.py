@@ -21,13 +21,11 @@
 # SOFTWARE.
 #
 ####################
-from __future__ import unicode_literals
 import logging
 from multiprocessing import Pool
 from impacket.uuid import string_to_bin, bin_to_string
 from bloodhound.lib import cstruct
 from io import BytesIO
-from future.utils import iteritems, native_str
 
 # Extended rights and property GUID mapping, converted to binary so we don't have to do this
 # for every comparison.
@@ -155,7 +153,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     relations.append(build_relation(sid, 'AddKeyCredentialLink', inherited=is_inherited))
 
                 # ServicePrincipalName property write rights (exclude generic rights)
-                if entrytype == 'user' and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
+                if entrytype in ['user', 'computer'] and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
                 and ace_object.acedata.get_object_type().lower() == objecttype_guid_map['service-principal-name']:
                     relations.append(build_relation(sid, 'WriteSPN', inherited=is_inherited))
 
@@ -169,7 +167,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 if entrytype == 'computer' and \
                 ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
                 entry['Properties']['haslaps']:
-                    if ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                    if ace_object.acedata.get_object_type().lower() in (objecttype_guid_map.get('ms-mcs-admpwd'), objecttype_guid_map.get('mslaps-password')):
                         relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
 
             # Extended rights
@@ -303,7 +301,7 @@ class AclEnumerator(object):
 The following is Security Descriptor parsing using cstruct
 Thanks to Erik Schamper for helping me implement this!
 """
-cdef = native_str("""
+cdef = """
 struct SECURITY_DESCRIPTOR {
     uint8   Revision;
     uint8   Sbz1;
@@ -353,7 +351,7 @@ struct ACCESS_ALLOWED_OBJECT_ACE {
     char    InheritedObjectType[Flags & 2 * 8];
     LDAP_SID Sid;
 };
-""")
+"""
 c_secd = cstruct()
 c_secd.load(cdef, compiled=True)
 
@@ -472,7 +470,7 @@ class ACCESS_ALLOWED_OBJECT_ACE(object):
 
     def __repr__(self):
         out = []
-        for name, value in iteritems(vars(ACCESS_ALLOWED_OBJECT_ACE)):
+        for name, value in vars(ACCESS_ALLOWED_OBJECT_ACE).items():
             if not name.startswith('_') and type(value) is int and self.has_flag(value):
                 out.append(name)
         data = (' | '.join(out),
@@ -540,7 +538,7 @@ class ACCESS_MASK(object):
 
     def __repr__(self):
         out = []
-        for name, value in iteritems(vars(ACCESS_MASK)):
+        for name, value in vars(ACCESS_MASK).items():
             if not name.startswith('_') and type(value) is int and self.has_priv(value):
                 out.append(name)
         return "<ACCESS_MASK RawMask=%d Flags=%s>" % (self.mask, ' | '.join(out))
@@ -581,7 +579,7 @@ class ACE(object):
 
     def __repr__(self):
         out = []
-        for name, value in iteritems(vars(ACE)):
+        for name, value in vars(ACE).items():
             if not name.startswith('_') and type(value) is int and self.has_flag(value):
                 out.append(name)
         return "<ACE Type=%s Flags=%s RawFlags=%d \n\tAce=%s>" % (self.ace.AceType, ' | '.join(out), self.ace.AceFlags, str(self.acedata))
