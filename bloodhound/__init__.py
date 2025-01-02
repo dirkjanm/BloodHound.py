@@ -334,8 +334,6 @@ def main():
 
     if args.auth_method in ('auto', 'kerberos'):
         if args.kerberos is True:
-            logging.debug('Authentication: Kerberos ccache')
-            # kerberize()
             if not auth.load_ccache():
                 logging.debug('Could not load ticket from ccache, trying to request a TGT instead')
                 auth.get_tgt()
