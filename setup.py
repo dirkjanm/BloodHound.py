@@ -1,8 +1,8 @@
 from setuptools import setup
 
-setup(name='bloodhound',
+setup(name='bloodhound-ce',
       version='1.8.0',
-      description='Python based ingestor for BloodHound',
+      description='Python based ingestor for BloodHound Community Edition',
       author='Dirk-jan Mollema, Edwin van Vliet, Matthijs Gielen',
       author_email='dirkjan@dirkjanm.io, edwin.vanvliet@fox-it.com, matthijs.gielen@fox-it.com',
       maintainer='Dirk-jan Mollema',
@@ -25,6 +25,6 @@ setup(name='bloodhound',
         'Programming Language :: Python :: 3.12',
       ],
       entry_points= {
-        'console_scripts': ['bloodhound-python=bloodhound:main']
+        'console_scripts': ['bloodhound-ce-python=bloodhound:main']
       }
       )

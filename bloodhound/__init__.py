@@ -163,7 +163,7 @@ def main():
     stream.setFormatter(formatter)
     logger.addHandler(stream)
 
-    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound LEGACY\nFor help or reporting issues, visit https://github.com/dirkjanm/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound Community Edition\nFor help or reporting issues, visit https://github.com/dirkjanm/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument('-c',
                         '--collectionmethod',
@@ -270,7 +270,7 @@ def main():
                         help='String to prepend to output file names')
 
     args = parser.parse_args()
-    logging.info('BloodHound.py for BloodHound LEGACY (BloodHound 4.2 and 4.3)')
+    logging.info('BloodHound.py for BloodHound Community Edition')
 
     if args.v is True:
         logger.setLevel(logging.DEBUG)
