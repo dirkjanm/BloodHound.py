@@ -271,7 +271,10 @@ class ADDC(ADComputer):
         if 'ms-mcs-admpwdexpirationtime' in self.objecttype_guid_map:
             logging.debug('Found LAPS attributes in schema')
             self.ad.has_laps = True
-        else:
+        if 'ms-laps-passwordexpirationtime' in self.objecttype_guid_map:
+            logging.debug('Found LAPSv2 attributes in schema')
+            self.ad.has_lapsv2 = True
+        if not self.ad.has_laps and not self.ad.has_lapsv2:
             logging.debug('No LAPS attributes found in schema')
 
         if 'ms-ds-key-credential-link' in self.objecttype_guid_map:
@@ -484,12 +487,15 @@ class ADDC(ADComputer):
                 properties.append('msDS-AllowedToActOnBehalfOfOtherIdentity')
             if self.ad.has_laps:
                 properties.append('ms-mcs-admpwdexpirationtime')
+            if self.ad.has_lapsv2:
+                properties.append('mslaps-passwordexpirationtime')
         if acl:
             # Also collect LAPS expiration time since this matters for reporting (no LAPS = no ACL reported)
             if self.ad.has_laps:
-                properties += ['nTSecurityDescriptor', 'ms-mcs-admpwdexpirationtime']
-            else:
-                properties.append('nTSecurityDescriptor')
+                properties.append('ms-mcs-admpwdexpirationtime')
+            if self.ad.has_lapsv2:
+                properties.append('mslaps-passwordexpirationtime')
+            properties.append('nTSecurityDescriptor')
 
         # Exclude MSA only if server supports it
         if 'msDS-GroupManagedServiceAccount' in self.ldap.server.schema.object_classes:
@@ -635,6 +641,8 @@ class AD(object):
         self.num_domains = 1
         # Does the schema have laps properties
         self.has_laps = False
+        # Does the schema have lapsv2 properties
+        self.has_lapsv2 = False
         # Does the schema have msDS-KeyCredentialLink
         self.has_keycredlink = False
         if domain is not None:
