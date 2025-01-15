@@ -274,7 +274,7 @@ def main():
                         help='String to prepend to output file names')
 
     args = parser.parse_args()
-    logging.info('BloodHound.py for BloodHound LEGACY')
+    logging.info('BloodHound.py for BloodHound LEGACY (BloodHound 4.2 and 4.3)')
 
     if args.v is True:
         logger.setLevel(logging.DEBUG)
