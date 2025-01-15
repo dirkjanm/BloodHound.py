@@ -315,7 +315,6 @@ def main():
     logging.debug('Resolved collection methods: %s', ', '.join(list(collect)))
 
     logging.debug('Using DNS to retrieve domain information')
-    print(args)
     ad.dns_resolve(domain=args.domain, options=args)
 
     # Override the detected DC / GC if specified
