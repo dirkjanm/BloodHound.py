@@ -163,7 +163,7 @@ def main():
     stream.setFormatter(formatter)
     logger.addHandler(stream)
 
-    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound LEGACY\nFor help or reporting issues, visit https://github.com/dirkjanm/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(add_help=True, description='Python based ingestor for BloodHound Community Edition\nFor help or reporting issues, visit https://github.com/dirkjanm/BloodHound.py', formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument('-c',
                         '--collectionmethod',
@@ -228,6 +228,10 @@ def main():
                         metavar='HOST',
                         action='store',
                         help='Override which DC to query (hostname)')
+    coopts.add_argument('-dc-ip',
+                        '--domain-ip',
+                        action='store',
+                        help='Override which DC/LDAP server to query (IP)')         
     coopts.add_argument('-gc',
                         '--global-catalog',
                         metavar='HOST',
@@ -270,7 +274,7 @@ def main():
                         help='String to prepend to output file names')
 
     args = parser.parse_args()
-    logging.info('BloodHound.py for BloodHound LEGACY (BloodHound 4.2 and 4.3)')
+    logging.info('BloodHound.py for BloodHound Community Edition')
 
     if args.v is True:
         logger.setLevel(logging.DEBUG)
@@ -303,7 +307,7 @@ def main():
             args.auth_method = 'kerberos'
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps, dc_ip=args.domain_ip)
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
     if not collect:
@@ -311,6 +315,7 @@ def main():
     logging.debug('Resolved collection methods: %s', ', '.join(list(collect)))
 
     logging.debug('Using DNS to retrieve domain information')
+    print(args)
     ad.dns_resolve(domain=args.domain, options=args)
 
     # Override the detected DC / GC if specified
