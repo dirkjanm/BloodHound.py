@@ -479,7 +479,7 @@ class ADDC(ADComputer):
         if include_properties:
             properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'sIDHistory', 'whencreated',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description',
-                           'operatingSystemServicePack']
+                           'operatingSystemServicePack', 'operatingSystemVersion']
             # Difference between guid map which maps the lowercase schema object name and the property name itself
             if 'ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity'.lower() in self.objecttype_guid_map:
                 properties.append('msDS-AllowedToActOnBehalfOfOtherIdentity')
