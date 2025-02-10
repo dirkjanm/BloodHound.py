@@ -413,7 +413,7 @@ class ADUtils(object):
         if isinstance(data, bytes):
             data = repr(data)
         elif isinstance(data, list):
-            data = list(map(lambda x: repr(x) if isinstance(x, bytes) else x))
+            data = list(map(lambda x: repr(x) if isinstance(x, bytes) else x,data))
         return data
 
     @staticmethod
