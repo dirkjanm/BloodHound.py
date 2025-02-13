@@ -54,7 +54,7 @@ class DomainEnumerator(object):
         this function handles the entire domain dumping.
         """
         if 'trusts' in collect:
-            entries = self.addc.get_trusts()
+            entries = []
         else:
             entries = []
 

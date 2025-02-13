@@ -233,9 +233,9 @@ class ADDC(ADComputer):
             return e
 
     def get_domain_controllers(self):
-        entries = self.search('(userAccountControl:1.2.840.113556.1.4.803:=8192)',
+        entries = self.search('(userAccountControl=8192)',
                               ['dnshostname', 'samaccounttype', 'samaccountname',
-                               'serviceprincipalname', 'objectSid'])
+                               'objectSid'])
 
         return entries
 
@@ -361,7 +361,7 @@ class ADDC(ADComputer):
         dncache = {}
         for nc, domain in self.ad.domains.items():
             logging.info('Processing domain %s', domain['attributes']['name'])
-            query = '(|(&(objectCategory=person)(objectClass=user))(objectClass=group)(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2))))'
+            query = '(|(&(objectCategory=person)(objectClass=user))(objectClass=group)(&(sAMAccountType=805306369)))'
             entries = self.search(query,
                                   use_gc=True,
                                   use_resolver=True,
@@ -435,7 +435,7 @@ class ADDC(ADComputer):
             properties.append('msDS-GroupMSAMembership')
 
         if include_properties:
-            properties += ['servicePrincipalName', 'userAccountControl', 'displayName',
+            properties += ['userAccountControl', 'displayName',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'mail', 'title', 'homeDirectory',
                            'description', 'userPassword', 'adminCount', 'msDS-AllowedToDelegateTo', 'sIDHistory',
                            'whencreated', 'unicodepwd', 'scriptpath']
@@ -477,7 +477,7 @@ class ADDC(ADComputer):
                       'dnshostname', 'samaccounttype', 'objectSid', 'primaryGroupID',
                       'isDeleted']
         if include_properties:
-            properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'sIDHistory', 'whencreated',
+            properties += ['msDS-AllowedToDelegateTo', 'sIDHistory', 'whencreated',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description',
                            'operatingSystemServicePack']
             # Difference between guid map which maps the lowercase schema object name and the property name itself
@@ -553,7 +553,7 @@ class ADDC(ADComputer):
         return entries
 
     def get_sessions(self):
-        entries = self.search('(&(samAccountType=805306368)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(|(homedirectory=*)(scriptpath=*)(profilepath=*)))',
+        entries = self.search('(&(samAccountType=805306368))(|(homedirectory=*)(scriptpath=*)(profilepath=*)))',
                               ['homedirectory', 'scriptpath', 'profilepath'])
         return entries
 
