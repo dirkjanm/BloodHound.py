@@ -570,14 +570,15 @@ class MembershipEnumerator(object):
                 }
                 ou["ChildObjects"].append(out_object)
             
-            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
-                link = dict()
-                link['IsEnforced'] = options == 2
-                try:
-                    link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
-                    ou['Links'].append(link)
-                except TypeError:
-                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
+            for gplink_dn, option in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
+                if option == 0 or option == 2:
+                    link = dict()
+                    link['IsEnforced'] = option == 2
+                    try:
+                        link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                        ou['Links'].append(link)
+                    except TypeError:
+                        logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
             
             # Create cache entry for links
             link_output = {
