@@ -61,11 +61,19 @@ class ADDC(ADComputer):
         logging.info('Connecting to LDAP server: %s' % self.hostname)
         logging.debug('Using protocol %s' % protocol)
 
-        # Convert the hostname to an IP, this prevents ldap3 from doing it
-        # which doesn't use our custom nameservers
-        q = self.ad.dnsresolver.query(self.hostname, tcp=self.ad.dns_tcp)
-        for r in q:
-            ip = r.address
+
+        if (self.ad.dc_ip):
+            logging.info('LDAP server IP provied')
+            logging.info('LDAP server IP: %s' % self.ad.dc_ip)
+            ip = self.ad.dc_ip
+        else:
+            # Convert the hostname to an IP, this prevents ldap3 from doing it
+            # which doesn't use our custom nameservers
+            logging.info('Resolving LDAP ip from nameserver')
+            q = self.ad.dnsresolver.query(self.hostname, tcp=self.ad.dns_tcp)
+            for r in q:
+                ip = r.address
+            logging.info('LDAP server IP: %s' % ip)
 
         ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip,
                                               baseDN=self.ad.baseDN, protocol=protocol)
@@ -588,7 +596,7 @@ Active Directory data and cache
 """
 class AD(object):
 
-    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0, use_ldaps=False):
+    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0, use_ldaps=False,dc_ip=None):
         self.domain = domain
         # Object of type ADDomain, added later
         self.domain_object = None
@@ -614,6 +622,8 @@ class AD(object):
             self.dnsresolver.nameservers = [nameserver]
         # Resolve DNS over TCP?
         self.dns_tcp = dns_tcp
+        # ldap ip to query
+        self.dc_ip = dc_ip
         # Give it a cache to prevent duplicate lookups
         self.dnsresolver.cache = resolver.Cache()
         # Default timeout after 3 seconds if the DNS servers
