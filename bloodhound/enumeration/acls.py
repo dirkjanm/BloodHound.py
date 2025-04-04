@@ -161,11 +161,16 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     relations.append(build_relation(sid, 'AddSelf', '', inherited=is_inherited))
 
             # Property read privileges
-            if ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_READ_PROP):
+            if ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_READ_PROP) and \
+                ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_CONTROL_ACCESS):
                 if entrytype == 'computer' and \
                 ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
                 entry['Properties']['haslaps']:
-                    if ace_object.acedata.get_object_type().lower() in (objecttype_guid_map.get('ms-mcs-admpwd'), objecttype_guid_map.get('mslaps-password')):
+                    if ace_object.acedata.get_object_type().lower() in (
+                        objecttype_guid_map.get("ms-mcs-admpwd"),
+                        objecttype_guid_map.get("ms-laps-password"),
+                        objecttype_guid_map.get("ms-laps-encryptedpassword"),
+                    ):
                         relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
 
             # Extended rights
