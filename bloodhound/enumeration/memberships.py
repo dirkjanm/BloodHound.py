@@ -71,7 +71,7 @@ class MembershipEnumerator(object):
         return '%s-%d' % ('-'.join(entry['attributes']['objectSid'].split('-')[:-1]), primarygroupid)
 
     @staticmethod
-    def add_user_properties(user, entry, fileNamePrefix):
+    def add_user_properties(user, entry):
         """
         Resolve properties for user objects
         """
@@ -167,7 +167,7 @@ class MembershipEnumerator(object):
             }
 
             if with_properties:
-                MembershipEnumerator.add_user_properties(user, entry, fileNamePrefix)
+                MembershipEnumerator.add_user_properties(user, entry)
                 if 'allowedtodelegate' in user['Properties']:
                     delegatehosts_cache = []
                     for host in user['Properties']['allowedtodelegate']:
@@ -185,7 +185,7 @@ class MembershipEnumerator(object):
                                 )['type'],
                             })
                         except KeyError:
-                            object_sam = target.upper().split(".")[0]
+                            object_sam = target.upper().split(".")[0].split("\\")[0]
                             if object_sam in delegatehosts_cache: continue
                             delegatehosts_cache.append(object_sam)
                             object_entry = self.addomain.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
@@ -246,7 +246,7 @@ class MembershipEnumerator(object):
         highvalue = ["S-1-5-32-544", "S-1-5-32-550", "S-1-5-32-549", "S-1-5-32-551", "S-1-5-32-548"]
 
         def is_highvalue(sid):
-            if sid.endswith("-512") or sid.endswith("-516") or sid.endswith("-519") or sid.endswith("-520"):
+            if sid.endswith("-512") or sid.endswith("-516") or sid.endswith("-519"):
                 return True
             if sid in highvalue:
                 return True
@@ -446,11 +446,11 @@ class MembershipEnumerator(object):
                 "ObjectIdentifier": guid,
                 "Properties": {
                     "domain": self.addomain.domain.upper(),
-                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName').upper(), self.addomain.domain.upper()),
-                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                    "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName', '').upper(), self.addomain.domain.upper()),
+                    "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName', '').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath').upper(),
+                    "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath', '').upper(),
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
@@ -458,7 +458,7 @@ class MembershipEnumerator(object):
             }
             
             if with_properties:
-                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
+                gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
                 whencreated = ADUtils.get_entry_property(entry, 'whencreated', default=0)
                 if isinstance(whencreated, int):
                     gpo['Properties']['whencreated'] = whencreated
@@ -536,7 +536,8 @@ class MembershipEnumerator(object):
                     "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
                     "domainsid": self.addomain.domain_object.sid,
                     "highvalue": False,
-                    "blocksinheritance": False,
+                    # Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpol/08090b22-bc16-49f4-8e10-f27a8fb16d18
+                    "blocksinheritance": ADUtils.get_entry_property(entry, 'gPOptions', 0) == 1,
                 },
                 "IsDeleted": False,
                 "IsACLProtected": False,
@@ -569,14 +570,15 @@ class MembershipEnumerator(object):
                 }
                 ou["ChildObjects"].append(out_object)
             
-            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
-                link = dict()
-                link['IsEnforced'] = options == 2
-                try:
-                    link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
-                    ou['Links'].append(link)
-                except TypeError:
-                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
+            for gplink_dn, option in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
+                if option == 0 or option == 2:
+                    link = dict()
+                    link['IsEnforced'] = option == 2
+                    try:
+                        link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                        ou['Links'].append(link)
+                    except TypeError:
+                        logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
             
             # Create cache entry for links
             link_output = {

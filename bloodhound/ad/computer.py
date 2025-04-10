@@ -146,7 +146,7 @@ class ADComputer(object):
         props['samaccountname'] = ADUtils.get_entry_property(entry, 'sAMAccountName')
 
         if 'objectprops' in collect or 'acl' in collect:
-            props['haslaps'] = ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) != 0
+            props['haslaps'] = bool(ADUtils.get_entry_property(entry, 'ms-mcs-admpwdexpirationtime', 0) or ADUtils.get_entry_property(entry, 'mslaps-passwordexpirationtime', 0))
 
         if 'objectprops' in collect:
             props['lastlogon'] = ADUtils.win_timestamp_to_unix(
@@ -166,17 +166,22 @@ class ADComputer(object):
             props['whencreated'] = whencreated
             props['serviceprincipalnames'] = ADUtils.get_entry_property(entry, 'servicePrincipalName', [])
             props['description'] = ADUtils.get_entry_property(entry, 'description')
-            props['operatingsystem'] = ADUtils.get_entry_property(entry, 'operatingSystem')
+
+            osname = ADUtils.get_entry_property(entry, 'operatingSystem')
+            osservicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
+            osversion = ADUtils.get_entry_property(entry, 'operatingSystemVersion')
             # Add SP to OS if specified
-            servicepack = ADUtils.get_entry_property(entry, 'operatingSystemServicePack')
-            if servicepack:
-                props['operatingsystem'] = '%s %s' % (props['operatingsystem'], servicepack)
+            props['operatingsystem'] = '%s %s' % (osname, osservicepack) if osservicepack else osname
+            props['operatingsystemname'] = osname
+            props['operatingsystemservicepack'] = osservicepack
+            props['operatingsystemversion'] = osversion
+
             props['sidhistory'] = [LDAP_SID(bsid).formatCanonical() for bsid in ADUtils.get_entry_property(entry, 'sIDHistory', [])]
             delegatehosts = ADUtils.get_entry_property(entry, 'msDS-AllowedToDelegateTo', [])
             delegatehosts_cache = []
             for host in delegatehosts:
                 try:
-                    target = host.split('/')[1]
+                    target = host.split('/')[1].split(':')[0]
                 except IndexError:
                     logging.warning('Invalid delegation target: %s', host)
                     continue
@@ -189,12 +194,27 @@ class ADComputer(object):
                         )['type'],
                     })
                 except KeyError:
-                    object_sam = target.upper().split(".")[0]
-                    if object_sam in delegatehosts_cache: continue
+                    object_sam = target.upper().split(".")[0].split("\\")[0]
+                    if object_sam in delegatehosts_cache:
+                        continue
                     delegatehosts_cache.append(object_sam)
                     object_entry = self.ad.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
                     if object_entry:
-                        object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                        if len(object_entry) > 1:
+                            object_resolved = None
+                            for object_entry_instance in object_entry:
+                                sam = ADUtils.get_entry_property(object_entry_instance, 'sAMAccountName')
+                                if not sam:
+                                    continue
+                                if sam.lower() == object_sam.lower() or f"{sam}$".lower() == object_sam.lower():
+                                    # Best match
+                                    object_resolved = ADUtils.resolve_ad_entry(object_entry_instance)
+                                    break
+                            # No match? Then pick first one and hope for the best
+                            if not object_resolved:
+                                object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
+                        else:
+                            object_resolved = ADUtils.resolve_ad_entry(object_entry[0])
                         data['AllowedToDelegate'].append({
                             'ObjectIdentifier': object_resolved['objectid'],
                             'ObjectType': object_resolved['type'],

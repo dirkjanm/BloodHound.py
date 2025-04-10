@@ -21,13 +21,11 @@
 # SOFTWARE.
 #
 ####################
-from __future__ import unicode_literals
 import logging
 from multiprocessing import Pool
 from impacket.uuid import string_to_bin, bin_to_string
 from bloodhound.lib import cstruct
 from io import BytesIO
-from future.utils import iteritems, native_str
 
 # Extended rights and property GUID mapping, converted to binary so we don't have to do this
 # for every comparison.
@@ -39,7 +37,8 @@ EXTRIGHTS_GUID_MAPPING = {
     "WriteMember": string_to_bin("bf9679c0-0de6-11d0-a285-00aa003049e2"),
     "UserForceChangePassword": string_to_bin("00299570-246d-11d0-a768-00aa006e0529"),
     "AllowedToAct": string_to_bin("3f78c3e5-f79a-46bd-a0b8-9d18116ddc79"),
-    "UserAccountRestrictionsSet": string_to_bin("4c164200-20c0-11d0-a768-00aa006e0529")
+    "UserAccountRestrictionsSet": string_to_bin("4c164200-20c0-11d0-a768-00aa006e0529"),
+    "WriteGPLink": string_to_bin("f30e3bbf-9ff0-11d1-b603-0000f80367c1")
 }
 
 def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
@@ -132,7 +131,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
             writeprivs = ace_object.acedata.mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP)
             if writeprivs:
                 # GenericWrite
-                if entrytype in ['user', 'group', 'computer', 'gpo'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
+                if entrytype in ['user', 'group', 'computer', 'gpo', 'organizational-unit'] and not ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT):
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
                 if entrytype == 'group' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteMember']):
                     relations.append(build_relation(sid, 'AddMember', '', inherited=is_inherited))
@@ -141,6 +140,8 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 # Property set, but ignore Domain Admins since they already have enough privileges anyway
                 if entrytype == 'computer' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['UserAccountRestrictionsSet']) and not sid.endswith('-512'):
                     relations.append(build_relation(sid, 'WriteAccountRestrictions', '', inherited=is_inherited))
+                if entrytype == 'organizational-unit' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteGPLink']):
+                    relations.append(build_relation(sid, 'WriteGPLink', '', inherited=is_inherited))
 
 
                 # Since 4.0
@@ -150,7 +151,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     relations.append(build_relation(sid, 'AddKeyCredentialLink', inherited=is_inherited))
 
                 # ServicePrincipalName property write rights (exclude generic rights)
-                if entrytype == 'user' and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
+                if entrytype in ['user', 'computer'] and ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) \
                 and ace_object.acedata.get_object_type().lower() == objecttype_guid_map['service-principal-name']:
                     relations.append(build_relation(sid, 'WriteSPN', inherited=is_inherited))
 
@@ -164,7 +165,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 if entrytype == 'computer' and \
                 ace_object.acedata.has_flag(ACCESS_ALLOWED_OBJECT_ACE.ACE_OBJECT_TYPE_PRESENT) and \
                 entry['Properties']['haslaps']:
-                    if ace_object.acedata.get_object_type().lower() == objecttype_guid_map['ms-mcs-admpwd']:
+                    if ace_object.acedata.get_object_type().lower() in (objecttype_guid_map.get('ms-mcs-admpwd'), objecttype_guid_map.get('mslaps-password')):
                         relations.append(build_relation(sid, 'ReadLAPSPassword', inherited=is_inherited))
 
             # Extended rights
@@ -200,7 +201,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
 
             if mask.has_priv(ACCESS_MASK.ADS_RIGHT_DS_WRITE_PROP):
                 # Genericwrite is only for properties, don't skip after
-                if entrytype in ['user', 'group', 'computer', 'gpo']:
+                if entrytype in ['user', 'group', 'computer', 'gpo', 'organizational-unit']:
                     relations.append(build_relation(sid, 'GenericWrite', inherited=is_inherited))
 
             if mask.has_priv(ACCESS_MASK.WRITE_OWNER):
@@ -298,7 +299,7 @@ class AclEnumerator(object):
 The following is Security Descriptor parsing using cstruct
 Thanks to Erik Schamper for helping me implement this!
 """
-cdef = native_str("""
+cdef = """
 struct SECURITY_DESCRIPTOR {
     uint8   Revision;
     uint8   Sbz1;
@@ -348,7 +349,7 @@ struct ACCESS_ALLOWED_OBJECT_ACE {
     char    InheritedObjectType[Flags & 2 * 8];
     LDAP_SID Sid;
 };
-""")
+"""
 c_secd = cstruct()
 c_secd.load(cdef, compiled=True)
 
@@ -467,7 +468,7 @@ class ACCESS_ALLOWED_OBJECT_ACE(object):
 
     def __repr__(self):
         out = []
-        for name, value in iteritems(vars(ACCESS_ALLOWED_OBJECT_ACE)):
+        for name, value in vars(ACCESS_ALLOWED_OBJECT_ACE).items():
             if not name.startswith('_') and type(value) is int and self.has_flag(value):
                 out.append(name)
         data = (' | '.join(out),
@@ -535,7 +536,7 @@ class ACCESS_MASK(object):
 
     def __repr__(self):
         out = []
-        for name, value in iteritems(vars(ACCESS_MASK)):
+        for name, value in vars(ACCESS_MASK).items():
             if not name.startswith('_') and type(value) is int and self.has_priv(value):
                 out.append(name)
         return "<ACCESS_MASK RawMask=%d Flags=%s>" % (self.mask, ' | '.join(out))
@@ -576,7 +577,7 @@ class ACE(object):
 
     def __repr__(self):
         out = []
-        for name, value in iteritems(vars(ACE)):
+        for name, value in vars(ACE).items():
             if not name.startswith('_') and type(value) is int and self.has_flag(value):
                 out.append(name)
         return "<ACE Type=%s Flags=%s RawFlags=%d \n\tAce=%s>" % (self.ace.AceType, ' | '.join(out), self.ace.AceFlags, str(self.acedata))
