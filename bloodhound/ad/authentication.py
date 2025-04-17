@@ -25,6 +25,7 @@
 import logging
 import ssl
 import os
+import re
 import traceback
 from hashlib import sha256, md5
 from bloodhound.ad.utils import CollectionException
@@ -33,7 +34,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 import ldap3
-from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS, Tls
+from ldap3 import Server, Connection, SIMPLE, NTLM, ALL, SASL, KERBEROS, Tls
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
 from ldap3.operation.bind import bind_operation
 from impacket.krb5.ccache import CCache
@@ -150,7 +151,7 @@ class ADAuthentication(object):
                     logging.debug(traceback.format_exc())
                     logging.critical('Kerberos auth to LDAP failed, no authentication methods left')
                     raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
-        if not bound:
+        if not bound and self.auth_method in ('ntlm', 'auto'):
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
             logging.debug('Authenticating to LDAP server with NTLM')
             if self.ldap_channel_binding:
@@ -161,6 +162,13 @@ class ADAuthentication(object):
                 conn = Connection(server, user=ldaplogin, password=ldappass, authentication=NTLM, auto_referrals=False, receive_timeout=60, auto_range=True, **channel_binding)
             else:
                 conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
+            bound = conn.bind()
+
+        if not bound and self.auth_method in ('simple', 'auto'):
+            if self.auth_method == 'auto': logging.warning('NTLM auth to LDAP failed, trying SIMPLE')
+            user_upn = f"{self.username}@{self.domain}"
+            conn = Connection(server, user=user_upn, auto_referrals=False, password=ldappass, authentication=SIMPLE, receive_timeout=60, auto_range=True)
+            logging.debug('Authenticating to LDAP server with SIMPLE auth')
             bound = conn.bind()
 
         if not bound:
