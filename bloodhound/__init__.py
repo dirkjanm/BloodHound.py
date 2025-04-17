@@ -206,10 +206,10 @@ def main():
                         metavar="hex key",
                         help='AES key to use for Kerberos Authentication (128 or 256 bits)')
     auopts.add_argument('--auth-method',
-                        choices=('auto','ntlm','kerberos'),
+                        choices=('auto','simple','ntlm','kerberos'),
                         default='auto',
                         action='store',
-                        help='Authentication methods. Force Kerberos or NTLM only or use auto for Kerberos with NTLM fallback')
+                        help='Authentication methods. Force Kerberos, NTLM or SIMPLE only or use auto for Kerberos with NTLM and SIMPLE auth fallback')
     coopts = parser.add_argument_group('collection options')
     coopts.add_argument('-ns',
                         '--nameserver',
