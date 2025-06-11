@@ -65,7 +65,6 @@ class ADDC(ADComputer):
 
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
-
         try:
             q = self.ad.dnsresolver.resolve(self.hostname, 'A', tcp=self.ad.dns_tcp)
             for rdata in q:
