@@ -25,6 +25,8 @@ import logging
 import traceback
 import codecs
 import json
+import ldap3
+import ipaddress
 
 from uuid import UUID
 from dns import resolver
@@ -63,9 +65,42 @@ class ADDC(ADComputer):
 
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
-        q = self.ad.dnsresolver.query(self.hostname, tcp=self.ad.dns_tcp)
-        for r in q:
-            ip = r.address
+        q = self.ad.dnsresolver.resolve(self.hostname, tcp=self.ad.dns_tcp)
+
+        q = self.ad.dnsresolver.resolve(self.hostname, 'A', tcp=self.ad.dns_tcp)
+        for rdata in q:
+            print('IPv4:', rdata.address)
+            logging.info('Testing resolved hostname connectivity %s' % rdata.address)
+            try:
+                _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
+                _conn = ldap3.Connection(_tmp_serv)
+                _bind = _conn.bind()
+            except ldap3.core.exceptions.LDAPSocketOpenError:
+                continue
+            else:
+                if _conn:
+                    logging.info('Successful connection to: %s' % rdata.address)
+                    ip = rdata.address
+
+        q6 = self.ad.dnsresolver.resolve(self.hostname, 'AAAA', tcp=self.ad.dns_tcp)
+        for rdata in q6:
+            print('IPv6:', rdata.address)
+            logging.info('Testing resolved hostname connectivity %s' % rdata.address)
+            try:
+                logging.info('Trying LDAP connection to %s' % rdata.address)
+                _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
+                _conn = ldap3.Connection(_tmp_serv)
+                _bind = _conn.bind()
+            except ldap3.core.exceptions.LDAPSocketOpenError:
+                continue
+            except ldap3.core.exceptions.LDAPInvalidServerError:
+                logging.info('Did not like address: %s' % rdata.address)
+                continue
+            else:
+                logging.info('Successful connection to: %s' % rdata.address)
+                if _conn:
+                    logging.info('Successful connection to: %s' % rdata.address)
+                    ip = f'[{rdata.address}]'
 
         ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip,
                                               baseDN=self.ad.baseDN, protocol=protocol)
@@ -479,7 +514,7 @@ class ADDC(ADComputer):
         if include_properties:
             properties += ['servicePrincipalName', 'msDS-AllowedToDelegateTo', 'sIDHistory', 'whencreated',
                            'lastLogon', 'lastLogonTimestamp', 'pwdLastSet', 'operatingSystem', 'description',
-                           'operatingSystemServicePack', 'operatingSystemVersion']
+                           'operatingSystemServicePack']
             # Difference between guid map which maps the lowercase schema object name and the property name itself
             if 'ms-DS-Allowed-To-Act-On-Behalf-Of-Other-Identity'.lower() in self.objecttype_guid_map:
                 properties.append('msDS-AllowedToActOnBehalfOfOtherIdentity')
