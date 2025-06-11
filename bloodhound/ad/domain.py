@@ -65,42 +65,47 @@ class ADDC(ADComputer):
 
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
-        q = self.ad.dnsresolver.resolve(self.hostname, tcp=self.ad.dns_tcp)
 
-        q = self.ad.dnsresolver.resolve(self.hostname, 'A', tcp=self.ad.dns_tcp)
-        for rdata in q:
-            print('IPv4:', rdata.address)
-            logging.info('Testing resolved hostname connectivity %s' % rdata.address)
-            try:
-                _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
-                _conn = ldap3.Connection(_tmp_serv)
-                _bind = _conn.bind()
-            except ldap3.core.exceptions.LDAPSocketOpenError:
-                continue
-            else:
-                if _conn:
-                    logging.info('Successful connection to: %s' % rdata.address)
-                    ip = rdata.address
+        try:
+            q = self.ad.dnsresolver.resolve(self.hostname, 'A', tcp=self.ad.dns_tcp)
+            for rdata in q:
+                print('IPv4:', rdata.address)
+                logging.info('Testing resolved hostname connectivity %s' % rdata.address)
+                try:
+                    _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
+                    _conn = ldap3.Connection(_tmp_serv)
+                    _bind = _conn.bind()
+                except ldap3.core.exceptions.LDAPSocketOpenError:
+                    continue
+                else:
+                    if _conn:
+                        logging.info('Successful connection to: %s' % rdata.address)
+                        ip = rdata.address
+        except:
+            logging.info('No A records found')
 
-        q6 = self.ad.dnsresolver.resolve(self.hostname, 'AAAA', tcp=self.ad.dns_tcp)
-        for rdata in q6:
-            print('IPv6:', rdata.address)
-            logging.info('Testing resolved hostname connectivity %s' % rdata.address)
-            try:
-                logging.info('Trying LDAP connection to %s' % rdata.address)
-                _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
-                _conn = ldap3.Connection(_tmp_serv)
-                _bind = _conn.bind()
-            except ldap3.core.exceptions.LDAPSocketOpenError:
-                continue
-            except ldap3.core.exceptions.LDAPInvalidServerError:
-                logging.info('Did not like address: %s' % rdata.address)
-                continue
-            else:
-                logging.info('Successful connection to: %s' % rdata.address)
-                if _conn:
+        try:
+            q6 = self.ad.dnsresolver.resolve(self.hostname, 'AAAA', tcp=self.ad.dns_tcp)
+            for rdata in q6:
+                print('IPv6:', rdata.address)
+                logging.info('Testing resolved hostname connectivity %s' % rdata.address)
+                try:
+                    logging.info('Trying LDAP connection to %s' % rdata.address)
+                    _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
+                    _conn = ldap3.Connection(_tmp_serv)
+                    _bind = _conn.bind()
+                except ldap3.core.exceptions.LDAPSocketOpenError:
+                    continue
+                except ldap3.core.exceptions.LDAPInvalidServerError:
+                    logging.info('Did not like address: %s' % rdata.address)
+                    continue
+                else:
                     logging.info('Successful connection to: %s' % rdata.address)
-                    ip = f'[{rdata.address}]'
+                    if _conn:
+                        logging.info('Successful connection to: %s' % rdata.address)
+                        ip = f'[{rdata.address}]'
+        except:
+            logging.info('No AAAA records found')
 
         ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip,
                                               baseDN=self.ad.baseDN, protocol=protocol)
