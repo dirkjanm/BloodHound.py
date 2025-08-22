@@ -839,6 +839,8 @@ class AD(object):
             if qobject is None:
                 return None
             resolved_entry = ADUtils.resolve_ad_entry(qobject)
+            if not resolved_entry['objectid']:
+                return None
             linkentry = {
                 "ObjectIdentifier": resolved_entry['objectid'],
                 "ObjectType": resolved_entry['type'].capitalize()
