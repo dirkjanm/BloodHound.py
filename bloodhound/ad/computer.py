@@ -198,7 +198,11 @@ class ADComputer(object):
                     if object_sam in delegatehosts_cache:
                         continue
                     delegatehosts_cache.append(object_sam)
-                    object_entry = self.ad.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
+                    object_entry = self.ad.objectresolver.resolve_samname(object_sam)
+                    if not object_entry:
+                        object_entry = self.ad.objectresolver.resolve_samname(object_sam + '$')
+                    if not object_entry:
+                        object_entry = self.ad.objectresolver.resolve_samname(object_sam + '*', allow_filter=True)
                     if object_entry:
                         if len(object_entry) > 1:
                             object_resolved = None
