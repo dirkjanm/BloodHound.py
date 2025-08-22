@@ -310,7 +310,7 @@ class MembershipEnumerator(object):
                     group['Properties']['whencreated'] = calendar.timegm(whencreated.timetuple())
 
             for member in entry['attributes']['member']:
-                resolved_member = self.get_membership(member)
+                resolved_member = self.get_membership(member+'a')
                 if resolved_member:
                     group['Members'].append(resolved_member)
 
@@ -567,20 +567,26 @@ class MembershipEnumerator(object):
             
             for childentry in self.addc.get_childobjects(ou["Properties"]["distinguishedname"]):
                 resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+                # Skip children with empty ID because it breaks ingestion
+                if not resolved_childentry['objectid']:
+                    continue
                 out_object = {
                     "ObjectIdentifier":resolved_childentry['objectid'],
                     "ObjectType":resolved_childentry['type']
                 }
                 ou["ChildObjects"].append(out_object)
             
-            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
-                link = dict()
-                link['IsEnforced'] = options == 2
-                try:
-                    link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
-                    ou['Links'].append(link)
-                except TypeError:
-                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
+            for gplink_dn, option in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
+                if option == 0 or option == 2:
+                    link = dict()
+                    link['IsEnforced'] = option == 2
+                    try:
+                        link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                        if not link['GUID']:
+                            continue
+                        ou['Links'].append(link)
+                    except TypeError:
+                        logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
             
             # Create cache entry for links
             link_output = {
@@ -673,11 +679,14 @@ class MembershipEnumerator(object):
                 if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
                     continue
                 resolved_childentry = ADUtils.resolve_ad_entry(childentry)
-                object = {
+                # Skip children with empty ID because it breaks ingestion
+                if not resolved_childentry['objectid']:
+                    continue
+                childobject = {
                     "ObjectIdentifier":resolved_childentry['objectid'],
                     "ObjectType":resolved_childentry['type']
                 }
-                container["ChildObjects"].append(object)
+                container["ChildObjects"].append(childobject)
             
             # Create cache entry for links
             link_output = {

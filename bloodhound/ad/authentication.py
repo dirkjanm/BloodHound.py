@@ -150,7 +150,7 @@ class ADAuthentication(object):
                     logging.debug(traceback.format_exc())
                     logging.critical('Kerberos auth to LDAP failed, no authentication methods left')
                     raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
-        if not bound:
+        if not bound and self.auth_method in ('auto','ntlm'):
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
             logging.debug('Authenticating to LDAP server with NTLM')
             if self.ldap_channel_binding:
