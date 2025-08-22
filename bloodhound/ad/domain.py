@@ -738,7 +738,7 @@ class AD(object):
 
         if domain is not None:
             logging.debug('Using domain hint: %s' % str(domain))
-            query = '_ldap._tcp.pdc._msdcs.%s' % domain
+            query = '_ldap._tcp.pdc._msdcs.%s.' % domain
         else:
             # Assume a DNS search domain is (correctly) configured on the host
             # in which case the resolver will autocomplete our request
@@ -806,7 +806,7 @@ class AD(object):
 
         if self.auth.userdomain.lower() != ad_domain.lower():
             # Resolve KDC for user auth domain
-            kquery = '_kerberos._tcp.dc._msdcs.%s' % self.auth.userdomain
+            kquery = '_kerberos._tcp.dc._msdcs.%s.' % self.auth.userdomain
             q = self.dnsresolver.query(kquery, 'SRV', tcp=self.dns_tcp)
             for r in q:
                 kdc = str(r.target).rstrip('.')
