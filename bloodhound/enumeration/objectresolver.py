@@ -70,22 +70,44 @@ class ObjectResolver(object):
             safename = escape_filter_chars(samname)
         else:
             safename = samname
+        
+        logging.debug('[SAM_RESOLVE] Starting resolution for SAM name: %s (use_gc=%s)', samname, use_gc)
+        
         with self.lock:
             if use_gc:
                 if not self.addc.gcldap:
+                    logging.debug('[SAM_RESOLVE] No existing GC connection, attempting to connect...')
                     if not self.addc.gc_connect():
                         # Error connecting, bail
+                        logging.warning('[SAM_RESOLVE] Failed to establish GC connection for SAM name %s', samname)
                         return None
-                logging.debug('Querying GC for SAM Name %s', samname)
+                    logging.debug('[SAM_RESOLVE] Successfully established GC connection')
+                else:
+                    logging.debug('[SAM_RESOLVE] Using existing GC connection')
+                logging.debug('[SAM_RESOLVE] Querying GC for SAM Name %s with filter: (sAMAccountName=%s)', samname, safename)
             else:
-                logging.debug('Querying LDAP for SAM Name %s', samname)
-            entries = self.addc.search(search_base="",
-                                       search_filter='(sAMAccountName=%s)' % safename,
-                                       use_gc=use_gc,
-                                       attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
-            # This uses a generator, however we return a list
-            for entry in entries:
-                out.append(entry)
+                logging.debug('[SAM_RESOLVE] Querying LDAP for SAM Name %s with filter: (sAMAccountName=%s)', samname, safename)
+            
+            try:
+                entries = self.addc.search(search_base="",
+                                           search_filter='(sAMAccountName=%s)' % safename,
+                                           use_gc=use_gc,
+                                           attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
+                # This uses a generator, however we return a list
+                entry_count = 0
+                for entry in entries:
+                    out.append(entry)
+                    entry_count += 1
+                    logging.debug('[SAM_RESOLVE] Found entry %d: DN=%s, SID=%s', 
+                                entry_count, 
+                                entry.get('attributes', {}).get('distinguishedName', 'N/A'),
+                                entry.get('attributes', {}).get('objectSid', 'N/A'))
+                
+                logging.debug('[SAM_RESOLVE] Search completed. Found %d entries for SAM name %s', entry_count, samname)
+                
+            except Exception as e:
+                logging.error('[SAM_RESOLVE] LDAP search failed for SAM name %s: %s', samname, str(e))
+                return None
 
         return out
 
