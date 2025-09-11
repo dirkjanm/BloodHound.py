@@ -509,6 +509,15 @@ class ADComputer(object):
             # Skip machine accounts
             if userName[-1] == '$':
                 continue
+            # Skip obvious service SPNs that shouldn't be treated as user sessions
+            if '/' in userName:
+                # Check for common service SPNs that are not user sessions
+                service_prefixes = ['HTTP/', 'HTTPS/', 'CIFS/', 'SMB/', 'LDAP/', 'GC/', 'DNS/', 'Kerberos/']
+                parts = userName.split('/')
+                if len(parts) == 2 and any(userName.upper().startswith(prefix.upper()) for prefix in service_prefixes):
+                    # This is likely a SERVICE/HOST SPN, not a user session
+                    logging.debug('Skipping service SPN: %s', userName)
+                    continue
             # Skip local connections
             if ip in ['127.0.0.1', '[::1]']:
                 continue
