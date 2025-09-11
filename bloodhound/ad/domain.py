@@ -79,21 +79,15 @@ class ADDC(ADComputer):
         """
         Connect to the global catalog
         """
-        logging.debug('[GC_CONNECT] Starting GC connection process (protocol=%s)', protocol)
-        logging.debug('[GC_CONNECT] Available GC servers: %s', self.ad.gcs())
-        logging.debug('[GC_CONNECT] Current hostname: %s', self.hostname)
-        
         if self.hostname in self.ad.gcs():
             # This server is a Global Catalog
             initial_server = self.hostname
-            logging.debug('[GC_CONNECT] Using current hostname as GC server: %s', initial_server)
         else:
             # Pick the first GC server
             try:
                 initial_server = self.ad.gcs()[0]
-                logging.debug('[GC_CONNECT] Selected first available GC server: %s', initial_server)
             except IndexError:
-                logging.error('[GC_CONNECT] Could not find a Global Catalog in this domain!'\
+                logging.error('Could not find a Global Catalog in this domain!'\
                               ' Resolving will be unreliable in forests with multiple domains')
                 return False
         
@@ -102,15 +96,12 @@ class ADDC(ADComputer):
             # Convert the hostname to an IP, this prevents ldap3 from doing it
             # which doesn't use our custom nameservers
             logging.info('Connecting to GC LDAP server: %s' % initial_server)
-            logging.debug('[GC_CONNECT] Resolving DNS for %s (tcp=%s)', initial_server, self.ad.dns_tcp)
             q = self.ad.dnsresolver.query(initial_server, tcp=self.ad.dns_tcp)
             for r in q:
                 ip = r.address
-                logging.debug('[GC_CONNECT] Resolved %s to IP: %s', initial_server, ip)
                 break
         except (resolver.NXDOMAIN, resolver.Timeout) as e:
-            logging.warning('[GC_CONNECT] Failed to resolve %s: %s', initial_server, str(e))
-            logging.debug('[GC_CONNECT] Trying alternative GC servers...')
+            logging.warning('Failed to resolve GC server %s: %s', initial_server, str(e))
             for server in self.ad.gcs():
                 # Skip the one we already tried
                 if server == initial_server:
@@ -119,35 +110,30 @@ class ADDC(ADComputer):
                     # Convert the hostname to an IP, this prevents ldap3 from doing it
                     # which doesn't use our custom nameservers
                     logging.info('Connecting to GC LDAP server: %s' % server)
-                    logging.debug('[GC_CONNECT] Resolving DNS for alternative server %s', server)
                     q = self.ad.dnsresolver.query(server, tcp=self.ad.dns_tcp)
                     for r in q:
                         ip = r.address
-                        logging.debug('[GC_CONNECT] Resolved alternative server %s to IP: %s', server, ip)
                         break
                     if ip:
                         initial_server = server
                         break
                 except (resolver.NXDOMAIN, resolver.Timeout) as e:
-                    logging.debug('[GC_CONNECT] Failed to resolve alternative server %s: %s', server, str(e))
+                    logging.warning('Failed to resolve alternative GC server %s: %s', server, str(e))
                     continue
         
         if ip is None:
-            logging.error('[GC_CONNECT] Failed to resolve any GC server to an IP address')
+            logging.error('Failed to resolve any GC server to an IP address')
             return False
         
-        logging.debug('[GC_CONNECT] Attempting LDAP connection to %s (%s) with protocol=%s', initial_server, ip, protocol)
         try:
             self.gcldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip, gc=True,
                                                          baseDN=self.ad.baseDN, protocol=protocol)
             success = self.gcldap is not None
-            if success:
-                logging.debug('[GC_CONNECT] Successfully established GC LDAP connection')
-            else:
-                logging.error('[GC_CONNECT] Failed to establish GC LDAP connection (getLDAPConnection returned None)')
+            if not success:
+                logging.error('Failed to establish GC LDAP connection')
             return success
         except Exception as e:
-            logging.error('[GC_CONNECT] Exception during GC LDAP connection: %s', str(e))
+            logging.error('Exception during GC LDAP connection: %s', str(e))
             return False
 
     def search(self, search_filter='(objectClass=*)',attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False, is_retry=False,  search_scope=SUBTREE,):
@@ -182,27 +168,14 @@ class ADDC(ADComputer):
             else:
                 searcher = self.ldap
 
-        logging.debug('[LDAP_SEARCH] Executing search: base=%s, filter=%s, use_gc=%s, attributes=%s', 
-                    search_base, search_filter, use_gc, attributes)
-        if use_gc and searcher:
-            logging.debug('[LDAP_SEARCH] GC connection details: server=%s, bound=%s', 
-                        getattr(searcher, 'server', 'Unknown'), 
-                        getattr(searcher, 'bound', 'Unknown'))
-        
         hadresults = False
-        result_count = 0
-        try:
-            sresult = searcher.extend.standard.paged_search(search_base,
-                                                            search_filter,
-                                                            attributes=attributes,
-                                                            paged_size=200,
-                                                            search_scope=search_scope,
-                                                            controls=controls,
-                                                            generator=generator)
-        except Exception as e:
-            logging.error('[LDAP_SEARCH] Failed to execute search: %s', str(e))
-            raise
-        
+        sresult = searcher.extend.standard.paged_search(search_base,
+                                                        search_filter,
+                                                        attributes=attributes,
+                                                        paged_size=200,
+                                                        search_scope=search_scope,
+                                                        controls=controls,
+                                                        generator=generator)
         try:
             # Use a generator for the result regardless of if the search function uses one
             for e in sresult:
@@ -210,11 +183,7 @@ class ADDC(ADComputer):
                     continue
                 if not hadresults:
                     hadresults = True
-                result_count += 1
                 yield e
-            
-            logging.debug('[LDAP_SEARCH] Search completed: base=%s, filter=%s, results=%d', 
-                        search_base, search_filter, result_count)
         except LDAPNoSuchObjectResult:
             # This may indicate the object doesn't exist or access is denied
             logging.warning('LDAP Server reported that the search in %s for %s does not exist.', search_base, search_filter)
@@ -402,12 +371,6 @@ class ADDC(ADComputer):
         # forest later on.
         self.ad.num_domains = entriesNum
         logging.info('Found %u domains in the forest', entriesNum)
-        
-        # Debug: Show all discovered domains
-        for domain_dn, domain_info in self.ad.domains.items():
-            domain_name = domain_info.get('attributes', {}).get('name', 'Unknown')
-            netbios_name = domain_info.get('attributes', {}).get('nETBIOSName', 'Unknown')
-            logging.debug('[FOREST_DOMAINS] Domain: %s (NetBIOS: %s, DN: %s)', domain_name, netbios_name, domain_dn)
 
     def get_cache_items(self):
         self.get_objecttype()

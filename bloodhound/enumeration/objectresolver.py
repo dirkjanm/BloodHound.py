@@ -71,26 +71,16 @@ class ObjectResolver(object):
         else:
             safename = samname
         
-        logging.debug('[SAM_RESOLVE] Starting resolution for SAM name: %s (use_gc=%s)', samname, use_gc)
-        
         with self.lock:
             if use_gc:
                 if not self.addc.gcldap:
-                    logging.debug('[SAM_RESOLVE] No existing GC connection, attempting to connect...')
                     if not self.addc.gc_connect():
                         # Error connecting, bail
                         logging.warning('[SAM_RESOLVE] Failed to establish GC connection for SAM name %s', samname)
                         return None
-                    logging.debug('[SAM_RESOLVE] Successfully established GC connection')
-                else:
-                    logging.debug('[SAM_RESOLVE] Using existing GC connection')
-                logging.debug('[SAM_RESOLVE] Querying GC for SAM Name %s with filter: (sAMAccountName=%s)', samname, safename)
-            else:
-                logging.debug('[SAM_RESOLVE] Querying LDAP for SAM Name %s with filter: (sAMAccountName=%s)', samname, safename)
             
             try:
                 # First try searching the entire forest (empty base)
-                logging.debug('[SAM_RESOLVE] Forest domains available: %s', list(self.addc.ad.domains.keys()) if hasattr(self.addc.ad, 'domains') else 'Unknown')
                 entries = self.addc.search(search_base="",
                                            search_filter='(sAMAccountName=%s)' % safename,
                                            use_gc=use_gc,
@@ -100,19 +90,13 @@ class ObjectResolver(object):
                 for entry in entries:
                     out.append(entry)
                     entry_count += 1
-                    logging.debug('[SAM_RESOLVE] Found entry %d: DN=%s, SID=%s', 
-                                entry_count, 
-                                entry.get('attributes', {}).get('distinguishedName', 'N/A'),
-                                entry.get('attributes', {}).get('objectSid', 'N/A'))
-                
-                logging.debug('[SAM_RESOLVE] Forest-wide search completed. Found %d entries for SAM name %s', entry_count, samname)
                 
                 # If no results and we're using GC, try searching each domain individually
                 if entry_count == 0 and use_gc and hasattr(self.addc.ad, 'domains'):
-                    logging.debug('[SAM_RESOLVE] Forest-wide search failed, trying individual domain searches...')
+                    logging.debug('[SAM_RESOLVE] Forest-wide search failed for %s, trying individual domain searches...', samname)
                     for domain_base, domain_info in self.addc.ad.domains.items():
                         domain_name = domain_info.get('attributes', {}).get('name', domain_base)
-                        logging.debug('[SAM_RESOLVE] Searching domain %s (base: %s)', domain_name, domain_base)
+                        logging.debug('[SAM_RESOLVE] Searching domain %s for %s', domain_name, samname)
                         try:
                             domain_entries = self.addc.search(search_base=domain_base,
                                                              search_filter='(sAMAccountName=%s)' % safename,
@@ -123,16 +107,14 @@ class ObjectResolver(object):
                                 out.append(entry)
                                 entry_count += 1
                                 domain_entry_count += 1
-                                logging.debug('[SAM_RESOLVE] Found entry in domain %s: DN=%s, SID=%s', 
-                                            domain_name,
-                                            entry.get('attributes', {}).get('distinguishedName', 'N/A'),
-                                            entry.get('attributes', {}).get('objectSid', 'N/A'))
-                            logging.debug('[SAM_RESOLVE] Domain %s search found %d entries', domain_name, domain_entry_count)
+                            if domain_entry_count > 0:
+                                logging.debug('[SAM_RESOLVE] Found %s in domain %s', samname, domain_name)
                         except Exception as domain_e:
-                            logging.debug('[SAM_RESOLVE] Failed to search domain %s: %s', domain_name, str(domain_e))
+                            logging.warning('[SAM_RESOLVE] Failed to search domain %s for %s: %s', domain_name, samname, str(domain_e))
                             continue
                 
-                logging.debug('[SAM_RESOLVE] Total search completed. Found %d entries for SAM name %s', entry_count, samname)
+                if entry_count == 0:
+                    logging.warning('[SAM_RESOLVE] Could not find user %s in any domain of the forest', samname)
                 
             except Exception as e:
                 logging.error('[SAM_RESOLVE] LDAP search failed for SAM name %s: %s', samname, str(e))

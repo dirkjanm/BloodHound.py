@@ -161,28 +161,19 @@ class ComputerEnumerator(MembershipEnumerator):
                 for ses in sessions:
                     # For every session, resolve the SAM name in the GC if needed
                     domain = self.addomain.domain
-                    logging.debug('[SESSION_RESOLVE] Processing session: user=%s, source=%s, target=%s', 
-                                ses['user'], ses['source'], ses['target'])
                     try:
                         users = self.addomain.samcache.get(ses['user'])
-                        logging.debug('[SESSION_RESOLVE] Found cached SAM resolution for %s: %d SIDs', ses['user'], len(users))
                     except KeyError:
-                        logging.debug('[SESSION_RESOLVE] No cached resolution for %s, performing GC lookup (use_gc=%s)', ses['user'], use_gc)
                         # Look up the SAM name in the GC
                         entries = self.addomain.objectresolver.resolve_samname(ses['user'], use_gc=use_gc)
                         if entries is not None:
                             users = [user['attributes']['objectSid'] for user in entries]
-                            logging.debug('[SESSION_RESOLVE] Successfully resolved %s to %d SIDs: %s', 
-                                        ses['user'], len(users), users)
                         else:
-                            logging.debug('[SESSION_RESOLVE] resolve_samname returned None for %s', ses['user'])
                             users = []
                         if entries is None or users == []:
-                            logging.warning('[SESSION_RESOLVE] Failed to resolve SAM name %s in current forest (entries=%s, users=%s, use_gc=%s)', 
-                                          ses['user'], entries, users, use_gc)
+                            logging.warning('Failed to resolve SAM name %s in current forest', ses['user'])
                             continue
                         self.addomain.samcache.put(ses['user'], users)
-                        logging.debug('[SESSION_RESOLVE] Cached SAM resolution for %s', ses['user'])
 
                     # Resolve the IP to obtain the host the session is from
                     try:
@@ -223,37 +214,27 @@ class ComputerEnumerator(MembershipEnumerator):
                 for user, userdomain in loggedon:
                     # Construct fake UPN to cache this user
                     fupn = '%s@%s' % (user.upper(), userdomain.upper())
-                    logging.debug('[REGISTRY_RESOLVE] Processing registry session: user=%s, domain=%s, fupn=%s', user, userdomain, fupn)
                     try:
                         users = self.addomain.samcache.get(fupn)
-                        logging.debug('[REGISTRY_RESOLVE] Found cached SAM resolution for %s: %d SIDs', fupn, len(users))
                     except KeyError:
-                        logging.debug('[REGISTRY_RESOLVE] No cached resolution for %s, performing GC lookup (use_gc=%s)', user, use_gc)
                         entries = self.addomain.objectresolver.resolve_samname(user, use_gc=use_gc)
                         if entries is not None:
-                            logging.debug('[REGISTRY_RESOLVE] resolve_samname returned %d entries for %s', len(entries), user)
                             if len(entries) > 1:
-                                logging.debug('[REGISTRY_RESOLVE] Multiple entries found, filtering by domain %s', userdomain.lower())
                                 for resolved_user in entries:
                                     edn = ADUtils.get_entry_property(resolved_user, 'distinguishedName')
                                     edom = ADUtils.ldap2domain(edn).lower()
                                     if edom == userdomain.lower():
                                         users = [resolved_user['attributes']['objectSid']]
-                                        logging.debug('[REGISTRY_RESOLVE] Selected user %s from domain %s', edn, edom)
                                         break
                                     logging.debug('Skipping resolved user %s since domain does not match (%s != %s)', edn, edom, userdomain.lower())
                             else:
                                 users = [resolved_user['attributes']['objectSid'] for resolved_user in entries]
-                                logging.debug('[REGISTRY_RESOLVE] Single entry found, using SID: %s', users)
                         else:
-                            logging.debug('[REGISTRY_RESOLVE] resolve_samname returned None for %s', user)
                             users = []
                         if entries is None or users == []:
-                            logging.warning('[REGISTRY_RESOLVE] Failed to resolve SAM name %s in current forest (entries=%s, users=%s, use_gc=%s)', 
-                                          samname, entries, users, use_gc)
+                            logging.warning('Failed to resolve SAM name %s in current forest', samname)
                             continue
                         self.addomain.samcache.put(fupn, users)
-                        logging.debug('[REGISTRY_RESOLVE] Cached SAM resolution for %s', fupn)
                     for resultuser in users:
                         c.loggedon.append({'ComputerSID':objectsid, 'UserSID':resultuser})
 
