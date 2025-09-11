@@ -184,6 +184,10 @@ class ADDC(ADComputer):
 
         logging.debug('[LDAP_SEARCH] Executing search: base=%s, filter=%s, use_gc=%s, attributes=%s', 
                     search_base, search_filter, use_gc, attributes)
+        if use_gc and searcher:
+            logging.debug('[LDAP_SEARCH] GC connection details: server=%s, bound=%s', 
+                        getattr(searcher, 'server', 'Unknown'), 
+                        getattr(searcher, 'bound', 'Unknown'))
         
         hadresults = False
         result_count = 0
@@ -398,6 +402,12 @@ class ADDC(ADComputer):
         # forest later on.
         self.ad.num_domains = entriesNum
         logging.info('Found %u domains in the forest', entriesNum)
+        
+        # Debug: Show all discovered domains
+        for domain_dn, domain_info in self.ad.domains.items():
+            domain_name = domain_info.get('attributes', {}).get('name', 'Unknown')
+            netbios_name = domain_info.get('attributes', {}).get('nETBIOSName', 'Unknown')
+            logging.debug('[FOREST_DOMAINS] Domain: %s (NetBIOS: %s, DN: %s)', domain_name, netbios_name, domain_dn)
 
     def get_cache_items(self):
         self.get_objecttype()
