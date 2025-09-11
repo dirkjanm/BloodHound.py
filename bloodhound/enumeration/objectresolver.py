@@ -79,6 +79,8 @@ class ObjectResolver(object):
                 logging.debug('Querying GC for SAM Name %s', samname)
             else:
                 logging.debug('Querying LDAP for SAM Name %s', samname)
+            
+            # First try searching the entire forest (empty base)
             entries = self.addc.search(search_base="",
                                        search_filter='(sAMAccountName=%s)' % safename,
                                        use_gc=use_gc,
@@ -86,6 +88,21 @@ class ObjectResolver(object):
             # This uses a generator, however we return a list
             for entry in entries:
                 out.append(entry)
+
+            # If no results and we're using GC in a multi-domain forest, 
+            # try searching each domain individually
+            if len(out) == 0 and use_gc and hasattr(self.addc.ad, 'domains'):
+                for domain_base, domain_info in self.addc.ad.domains.items():
+                    try:
+                        domain_entries = self.addc.search(search_base=domain_base,
+                                                         search_filter='(sAMAccountName=%s)' % safename,
+                                                         use_gc=use_gc,
+                                                         attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
+                        for entry in domain_entries:
+                            out.append(entry)
+                    except Exception:
+                        # Continue to next domain if this one fails
+                        continue
 
         return out
 
