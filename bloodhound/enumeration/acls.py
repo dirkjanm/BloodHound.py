@@ -188,7 +188,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                     relations.append(build_relation(sid, 'GetChangesAll', '', inherited=is_inherited))
                 if entrytype == 'domain' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['GetChangesInFilteredSet']):
                     relations.append(build_relation(sid, 'GetChangesInFilteredSet', '', inherited=is_inherited))
-                if entrytype == 'user' and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['UserForceChangePassword']):
+                if entrytype in ['user', 'computer'] and has_extended_right(ace_object, EXTRIGHTS_GUID_MAPPING['UserForceChangePassword']):
                     relations.append(build_relation(sid, 'ForceChangePassword', '', inherited=is_inherited))
 
         if ace_object.ace.AceType == 0x00:
