@@ -140,7 +140,7 @@ def parse_binary_acl(entry, entrytype, acl, objecttype_guid_map):
                 if entrytype == 'computer' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['AllowedToAct']):
                     relations.append(build_relation(sid, 'AddAllowedToAct', '', inherited=is_inherited))
                 # Property set, but ignore Domain Admins since they already have enough privileges anyway
-                if entrytype == 'computer' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['UserAccountRestrictionsSet']) and not sid.endswith('-512'):
+                if entrytype in ['computer', 'user'] and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['UserAccountRestrictionsSet']) and not sid.endswith('-512'):
                     relations.append(build_relation(sid, 'WriteAccountRestrictions', '', inherited=is_inherited))
                 if entrytype == 'organizational-unit' and can_write_property(ace_object, EXTRIGHTS_GUID_MAPPING['WriteGPLink']):
                     relations.append(build_relation(sid, 'WriteGPLink', '', inherited=is_inherited))
