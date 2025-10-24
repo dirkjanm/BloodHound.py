@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='bloodhound-ce',
-      version='1.9.0',
+      version='1.9.1',
       description='Python based ingestor for BloodHound Community Edition',
       author='Dirk-jan Mollema, Edwin van Vliet, Matthijs Gielen',
       author_email='dirkjan@dirkjanm.io, edwin.vanvliet@fox-it.com, matthijs.gielen@fox-it.com',
