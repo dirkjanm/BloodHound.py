@@ -312,6 +312,9 @@ class MembershipEnumerator(object):
             for member in entry['attributes']['member']:
                 resolved_member = self.get_membership(member)
                 if resolved_member:
+                    if not resolved_member['ObjectIdentifier']:
+                        logging.warning('Skipping member %s of group since we could not identify its objectid', member)
+                        continue
                     group['Members'].append(resolved_member)
 
             # Create cache entry for links
