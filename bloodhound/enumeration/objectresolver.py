@@ -60,16 +60,52 @@ class ObjectResolver(object):
                                                           attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             return distinguishedname
 
+    def _parse_spn_username(self, username):
+        """
+        Parse a username that might be an SPN (Service Principal Name).
+        SPNs can have formats like:
+        - HTTP/server.domain.com/serviceaccount
+        - HTTP/server.domain.com
+        - CIFS/server.domain.com/serviceaccount
+        - serviceaccount (regular username)
+        
+        Returns the actual account name or the original username if not an SPN.
+        """
+        # Check if this looks like an SPN (contains forward slashes)
+        if '/' in username:
+            parts = username.split('/')
+            # Common SPN formats:
+            # SERVICE/HOST/ACCOUNT -> return ACCOUNT
+            # SERVICE/HOST -> return HOST (computer account)
+            if len(parts) >= 3:
+                # SERVICE/HOST/ACCOUNT format - return the account name
+                return parts[2]
+            elif len(parts) == 2:
+                # SERVICE/HOST format - this is likely a computer account
+                # Extract just the hostname without domain suffix
+                host = parts[1]
+                if '.' in host:
+                    return host.split('.')[0] + '$'  # Add $ for computer account
+                else:
+                    return host + '$'
+        
+        # Not an SPN, return as-is
+        return username
+
     def resolve_samname(self, samname, use_gc=True, allow_filter=False):
         """
         Resolve a SAM name in the GC. This can give multiple results.
         Returns a list of LDAP entries
         """
+        # Parse potential SPN to extract actual account name
+        parsed_samname = self._parse_spn_username(samname)
+        
         out = []
         if not allow_filter:
-            safename = escape_filter_chars(samname)
+            safename = escape_filter_chars(parsed_samname)
         else:
-            safename = samname
+            safename = parsed_samname
+        
         with self.lock:
             if use_gc:
                 if not self.addc.gcldap:
@@ -79,13 +115,32 @@ class ObjectResolver(object):
                 logging.debug('Querying GC for SAM Name %s', samname)
             else:
                 logging.debug('Querying LDAP for SAM Name %s', samname)
+            
+            # First try searching the entire forest (empty base)
             entries = self.addc.search(search_base="",
                                        search_filter='(sAMAccountName=%s)' % safename,
                                        use_gc=use_gc,
                                        attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
             # This uses a generator, however we return a list
+            entry_count = 0
             for entry in entries:
                 out.append(entry)
+                entry_count += 1
+            
+            # If no results and we're using GC in a multi-domain forest, 
+            # try searching each domain individually
+            if entry_count == 0 and use_gc and hasattr(self.addc.ad, 'domains'):
+                for domain_base, domain_info in self.addc.ad.domains.items():
+                    try:
+                        domain_entries = self.addc.search(search_base=domain_base,
+                                                         search_filter='(sAMAccountName=%s)' % safename,
+                                                         use_gc=use_gc,
+                                                         attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'])
+                        for entry in domain_entries:
+                            out.append(entry)
+                    except Exception:
+                        # Continue to next domain if this one fails
+                        continue
 
         return out
 
