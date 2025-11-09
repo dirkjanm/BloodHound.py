@@ -41,7 +41,7 @@ from bloodhound.enumeration.objectresolver import ObjectResolver
 Active Directory Domain Controller
 """
 class ADDC(ADComputer):
-    def __init__(self, hostname=None, ad=None):
+    def __init__(self, hostname=None, ad=None, no_gc=False):
         ADComputer.__init__(self, hostname)
         self.ad = ad
         # Primary LDAP connection
@@ -50,6 +50,7 @@ class ADDC(ADComputer):
         self.resolverldap = None
         # GC LDAP connection
         self.gcldap = None
+        self.no_gc = no_gc
         # Initialize GUID map
         self.objecttype_guid_map = dict()
 
@@ -157,7 +158,7 @@ class ADDC(ADComputer):
                 except (resolver.NXDOMAIN, resolver.Timeout):
                     continue
 
-        self.gcldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip, gc=True,
+        self.gcldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip, gc=(True and not self.no_gc),
                                                      baseDN=self.ad.baseDN, protocol=protocol)
         return self.gcldap is not None
 
@@ -407,7 +408,7 @@ class ADDC(ADComputer):
             logging.info('Processing domain %s', domain['attributes']['name'])
             query = '(|(&(objectCategory=person)(objectClass=user))(objectClass=group)(&(sAMAccountType=805306369)(!(UserAccountControl:1.2.840.113556.1.4.803:=2))))'
             entries = self.search(query,
-                                  use_gc=True,
+                                  use_gc=(True and not self.no_gc),
                                   use_resolver=True,
                                   attributes=['sAMAccountName', 'distinguishedName', 'sAMAccountType', 'objectSid', 'name'],
                                   search_base=nc,
@@ -632,7 +633,7 @@ Active Directory data and cache
 """
 class AD(object):
 
-    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0, use_ldaps=False):
+    def __init__(self, domain=None, auth=None, nameserver=None, dns_tcp=False, dns_timeout=3.0, use_ldaps=False, no_gc=False):
         self.domain = domain
         # Object of type ADDomain, added later
         self.domain_object = None
@@ -695,6 +696,7 @@ class AD(object):
             self.ldap_default_protocol = 'ldaps'
         else:
             self.ldap_default_protocol = 'ldap'
+        self.no_gc = no_gc
 
     def realm(self):
         if self.domain is not None:
@@ -718,7 +720,7 @@ class AD(object):
         return self._kdcs
 
     def create_objectresolver(self, addc):
-        self.objectresolver = ObjectResolver(addomain=self, addc=addc)
+        self.objectresolver = ObjectResolver(addomain=self, addc=addc, no_gc=self.no_gc)
 
     def load_cachefile(self, cachefile):
         with codecs.open(cachefile, 'r', 'utf-8') as cfile:
