@@ -86,43 +86,42 @@ class ADAuthentication(object):
             self.userdomain_kdc = kdc
 
     def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
-        if gc:
-            # Global Catalog connection
-            if protocol == 'ldaps' or self.ldap_channel_binding is True:
-                if self.ldap_channel_binding is True:
-                    if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
-                        raise Exception("To use LDAP channel binding, install the patched ldap3 module: pip3 install git+https://github.com/ly4k/ldap3 or pip3 install ldap3-bleeding-edge")
-                    logging.debug("Using LDAPS channel binding")
-                    protocol = 'ldaps'
-                    version=ssl.PROTOCOL_TLSv1_2
-                    tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
-                    server = Server(
-                        "%s://%s:3269" % (protocol,ip),
-                        use_ssl=True,
-                        get_info=ALL,
-                        tls=tls
-                    )
-                else:
-                    # Ldap SSL (no channel binding)
-                    server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
-            else:
-                # Plain LDAP
-                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
-        else: # no GC specified
-            if self.ldap_channel_binding is True:
+        # Create TLS configuration for LDAPS connections
+        # This is needed to handle servers with specific TLS requirements
+        def get_tls_config(use_channel_binding=False):
+            if use_channel_binding:
                 if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
                     raise Exception("To use LDAP channel binding, install the patched ldap3 module: pip3 install git+https://github.com/ly4k/ldap3 or pip3 install ldap3-bleeding-edge")
                 logging.debug("Using LDAPS channel binding")
+            # Use TLS 1.2 with relaxed certificate validation for self-signed certs
+            # and allow all ciphers to maximize compatibility with various DC configurations
+            return Tls(validate=ssl.CERT_NONE, version=ssl.PROTOCOL_TLSv1_2, ciphers='ALL:@SECLEVEL=0')
+
+        if gc:
+            # Global Catalog connection
+            if protocol == 'ldaps' or self.ldap_channel_binding is True:
+                tls = get_tls_config(self.ldap_channel_binding)
                 protocol = 'ldaps'
-                version=ssl.PROTOCOL_TLSv1_2
-                tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
                 server = Server(
-                    "%s://%s" % (protocol,ip),
+                    "%s://%s:3269" % (protocol, ip),
                     use_ssl=True,
                     get_info=ALL,
                     tls=tls
                 )
-            else: # No LDAP Channel Binding
+            else:
+                # Plain LDAP
+                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
+        else: # no GC specified
+            if protocol == 'ldaps' or self.ldap_channel_binding is True:
+                tls = get_tls_config(self.ldap_channel_binding)
+                protocol = 'ldaps'
+                server = Server(
+                    "%s://%s" % (protocol, ip),
+                    use_ssl=True,
+                    get_info=ALL,
+                    tls=tls
+                )
+            else: # Plain LDAP
                 server = Server("%s://%s" % (protocol, ip), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
@@ -141,6 +140,16 @@ class ADAuthentication(object):
             logging.debug('Authenticating to LDAP server with Kerberos')
             try:
                 bound = self.ldap_kerberos(conn, hostname)
+            except ldap3.core.exceptions.LDAPSocketOpenError as exc:
+                logging.debug(traceback.format_exc())
+                if 'Connection reset by peer' in str(exc) or 'ssl wrapping error' in str(exc):
+                    logging.error('TLS handshake failed when connecting to LDAPS. This may be due to:')
+                    logging.error('  - The server requiring a specific TLS version not supported by the client')
+                    logging.error('  - Certificate issues or cipher suite incompatibility')
+                    logging.error('  - LDAPS not being properly configured on the server (port 636)')
+                    logging.error('Consider checking if LDAPS is enabled on the DC and try with --use-ldaps flag')
+                    raise CollectionException('TLS connection to LDAPS failed: %s' % str(exc))
+                raise
             except Exception as exc:
                 if self.auth_method == 'auto':
                     logging.debug(traceback.format_exc())
@@ -151,7 +160,6 @@ class ADAuthentication(object):
                     logging.critical('Kerberos auth to LDAP failed, no authentication methods left')
                     raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
         if not bound and self.auth_method in ('auto','ntlm'):
-            conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
             logging.debug('Authenticating to LDAP server with NTLM')
             if self.ldap_channel_binding:
                 from ldap3 import TLS_CHANNEL_BINDING
@@ -161,7 +169,18 @@ class ADAuthentication(object):
                 conn = Connection(server, user=ldaplogin, password=ldappass, authentication=NTLM, auto_referrals=False, receive_timeout=60, auto_range=True, **channel_binding)
             else:
                 conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
-            bound = conn.bind()
+            try:
+                bound = conn.bind()
+            except ldap3.core.exceptions.LDAPSocketOpenError as exc:
+                logging.debug(traceback.format_exc())
+                if 'Connection reset by peer' in str(exc) or 'ssl wrapping error' in str(exc):
+                    logging.error('TLS handshake failed when connecting to LDAPS. This may be due to:')
+                    logging.error('  - The server requiring a specific TLS version not supported by the client')
+                    logging.error('  - Certificate issues or cipher suite incompatibility')
+                    logging.error('  - LDAPS not being properly configured on the server (port 636)')
+                    logging.error('Consider checking if LDAPS is enabled on the DC and try with --use-ldaps flag')
+                    raise CollectionException('TLS connection to LDAPS failed: %s' % str(exc))
+                raise
 
         if not bound:
             result = conn.result
