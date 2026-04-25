@@ -263,6 +263,12 @@ def main():
     coopts.add_argument('--use-ldaps',
                         action='store_true',
                         help='Use LDAP over TLS on port 636 by default')
+    coopts.add_argument('--start-tls',
+                        action='store_true',
+                        help='Upgrade plain LDAP connection to TLS via StartTLS before binding')
+    coopts.add_argument('--no-tls-verify',
+                        action='store_true',
+                        help='Disable TLS certificate verification (for use with --use-ldaps or --start-tls)')
     coopts.add_argument('-op',
                         '--outputprefix',
                         metavar='PREFIX_NAME',
@@ -275,22 +281,26 @@ def main():
     if args.v is True:
         logger.setLevel(logging.DEBUG)
 
+    if args.start_tls and args.use_ldaps:
+        logging.error('--start-tls cannot be combined with --use-ldaps')
+        sys.exit(1)
+
     if args.username is not None and args.password is not None:
         logging.debug('Authentication: username/password')
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
+        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding, start_tls=args.start_tls, no_tls_verify=args.no_tls_verify)
     elif args.username is not None and args.password is None and args.hashes is None and args.aesKey is None and not args.no_pass:
         args.password = getpass.getpass()
-        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
+        auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding, start_tls=args.start_tls, no_tls_verify=args.no_tls_verify)
     elif args.username is None and (args.password is not None or args.hashes is not None):
         logging.error('Authentication: password or hashes provided without username')
         sys.exit(1)
     elif args.hashes is not None and args.username is not None:
         logging.debug('Authentication: NT hash')
         lm, nt = args.hashes.split(":")
-        auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
+        auth = ADAuthentication(lm_hash=lm, nt_hash=nt, username=args.username, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding, start_tls=args.start_tls, no_tls_verify=args.no_tls_verify)
     elif args.aesKey is not None and args.username is not None:
         logging.debug('Authentication: Kerberos AES')
-        auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
+        auth = ADAuthentication(username=args.username, domain=args.domain, aeskey=args.aesKey, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding, start_tls=args.start_tls, no_tls_verify=args.no_tls_verify)
     else:
         if not args.kerberos:
             parser.print_help()
@@ -301,7 +311,7 @@ def main():
                 sys.exit(1)
             logging.debug('Authentication: Kerberos ccache')
             args.auth_method = 'kerberos'
-            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
+            auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding, start_tls=args.start_tls, no_tls_verify=args.no_tls_verify)
 
     ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
     # Resolve collection methods

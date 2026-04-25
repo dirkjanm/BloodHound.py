@@ -53,7 +53,7 @@ Active Directory authentication helper
 """
 class ADAuthentication(object):
     def __init__(self, username='', password='', domain='',
-                 lm_hash='', nt_hash='', aeskey='', kdc=None, auth_method='auto', ldap_channel_binding=False):
+                 lm_hash='', nt_hash='', aeskey='', kdc=None, auth_method='auto', ldap_channel_binding=False, start_tls=False, no_tls_verify=False):
         self.username = username
         # Assume user domain and enum domain are same
         self.domain = domain.lower()
@@ -71,6 +71,8 @@ class ADAuthentication(object):
         self.userdomain_kdc = self.domain
         self.auth_method = auth_method
         self.ldap_channel_binding = ldap_channel_binding
+        self.start_tls = start_tls
+        self.no_tls_verify = no_tls_verify
 
         # Kerberos
         self.tgt = None
@@ -85,7 +87,29 @@ class ADAuthentication(object):
             # Also set it for user domain if this is equal
             self.userdomain_kdc = kdc
 
+    def _build_tls(self):
+        """Return a Tls object honoring --no-tls-verify, or None for ldap3 defaults."""
+        if self.no_tls_verify:
+            return Tls(validate=ssl.CERT_NONE)
+        return None
+
+    def _maybe_start_tls(self, conn):
+        """Open the connection and run StartTLS if --start-tls was requested."""
+        if not self.start_tls:
+            return
+        if conn.closed:
+            conn.open(read_server_info=False)
+        if not conn.start_tls():
+            raise CollectionException('StartTLS failed: %s' % conn.last_error)
+        logging.debug('StartTLS succeeded, LDAP connection upgraded to TLS')
+
     def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
+        if self.start_tls and protocol == 'ldaps':
+            # StartTLS only makes sense over plain ldap
+            protocol = 'ldap'
+        # Build a Tls object when we may need to influence cert validation
+        # (used by both ldaps and StartTLS paths via Server(tls=...))
+        extra_tls = self._build_tls()
         if gc:
             # Global Catalog connection
             if protocol == 'ldaps' or self.ldap_channel_binding is True:
@@ -104,10 +128,10 @@ class ADAuthentication(object):
                     )
                 else:
                     # Ldap SSL (no channel binding)
-                    server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
+                    server = Server("%s://%s:3269" % (protocol, ip), use_ssl=True, get_info=ALL, tls=extra_tls)
             else:
-                # Plain LDAP
-                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
+                # Plain LDAP (possibly upgraded via StartTLS)
+                server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL, tls=extra_tls)
         else: # no GC specified
             if self.ldap_channel_binding is True:
                 if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
@@ -123,7 +147,8 @@ class ADAuthentication(object):
                     tls=tls
                 )
             else: # No LDAP Channel Binding
-                server = Server("%s://%s" % (protocol, ip), get_info=ALL)
+                use_ssl = protocol == 'ldaps'
+                server = Server("%s://%s" % (protocol, ip), use_ssl=use_ssl, get_info=ALL, tls=extra_tls)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
             if self.lm_hash != '':
@@ -140,6 +165,7 @@ class ADAuthentication(object):
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=SASL, sasl_mechanism=KERBEROS, receive_timeout=60, auto_range=True)
             logging.debug('Authenticating to LDAP server with Kerberos')
             try:
+                self._maybe_start_tls(conn)
                 bound = self.ldap_kerberos(conn, hostname)
             except Exception as exc:
                 if self.auth_method == 'auto':
@@ -161,10 +187,18 @@ class ADAuthentication(object):
                 conn = Connection(server, user=ldaplogin, password=ldappass, authentication=NTLM, auto_referrals=False, receive_timeout=60, auto_range=True, **channel_binding)
             else:
                 conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
+            self._maybe_start_tls(conn)
             bound = conn.bind()
 
         if not bound:
             result = conn.result
+            err_msg = (result.get('message') or '') if isinstance(result, dict) else ''
+            # data 80090346 = SEC_E_BAD_BINDINGS: DC enforces EPA / channel binding
+            if '80090346' in err_msg and not self.ldap_channel_binding:
+                logging.warning('LDAP bind rejected with SEC_E_BAD_BINDINGS (80090346). '
+                                'Retrying with LDAP channel binding')
+                self.ldap_channel_binding = True
+                return self.getLDAPConnection(hostname, ip, baseDN, protocol)
             if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldaps':
                 logging.warning('LDAP Authentication is refused because LDAP Channel Binding is likely enabled. '
                                 'Trying to connect using LDAP Channel Binding')
@@ -182,8 +216,9 @@ class ADAuthentication(object):
     def ldap_kerberos(self, connection, hostname):
         # Hackery to authenticate with ldap3 using impacket Kerberos stack
 
-        # Open ldap3 socket because we need it
-        connection.open(read_server_info=False)
+        # Open ldap3 socket because we need it (may already be open if StartTLS ran)
+        if connection.closed:
+            connection.open(read_server_info=False)
 
         username = Principal(self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
         servername = Principal('ldap/%s' % hostname, type=constants.PrincipalNameType.NT_SRV_INST.value)
