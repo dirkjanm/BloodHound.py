@@ -25,6 +25,7 @@
 import logging
 import ssl
 import os
+import struct
 import traceback
 from hashlib import sha256, md5
 from bloodhound.ad.utils import CollectionException
@@ -43,10 +44,49 @@ from impacket.krb5.asn1 import AP_REQ, AS_REP, TGS_REQ, Authenticator, TGS_REP, 
     Ticket as TicketAsn1, EncTGSRepPart
 from impacket.krb5 import constants
 from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS, sendReceive
-from impacket.krb5.gssapi import CheckSumField, GSS_C_SEQUENCE_FLAG, GSS_C_REPLAY_FLAG, GSS_C_MUTUAL_FLAG
+from impacket.krb5.gssapi import CheckSumField, GSSAPI, GSS_C_SEQUENCE_FLAG, GSS_C_REPLAY_FLAG, GSS_C_MUTUAL_FLAG, GSS_C_CONF_FLAG, GSS_C_INTEG_FLAG
 import datetime
 from pyasn1.type.univ import noValue
 from impacket.spnego import SPNEGO_NegTokenInit, TypesMech
+
+class GSSAPISocketWrapper:
+    def __init__(self, sock, cipher, session_key):
+        self._sock = sock
+        self._gss = GSSAPI(cipher)
+        self._session_key = session_key
+        self._seq_num = 0
+        self._recv_buf = b''
+
+    def sendall(self, data):
+        wrapped, signature = self._gss.GSS_Wrap_LDAP(self._session_key, data, self._seq_num)
+        self._seq_num += 1
+        frame = signature + wrapped
+        self._sock.sendall(struct.pack('!I', len(frame)) + frame)
+
+    def recv(self, size):
+        if self._recv_buf:
+            out, self._recv_buf = self._recv_buf[:size], self._recv_buf[size:]
+            return out
+        hdr = b''
+        while len(hdr) < 4:
+            chunk = self._sock.recv(4 - len(hdr))
+            if not chunk:
+                return b''
+            hdr += chunk
+        frame_len = struct.unpack('!I', hdr)[0]
+        frame = b''
+        while len(frame) < frame_len:
+            chunk = self._sock.recv(min(65536, frame_len - len(frame)))
+            if not chunk:
+                break
+            frame += chunk
+        plain, _ = self._gss.GSS_Unwrap_LDAP(self._session_key, frame, 0, direction='init')
+        out, self._recv_buf = plain[:size], plain[size:]
+        return out
+
+    def __getattr__(self, name):
+        return getattr(self._sock, name)
+
 
 """
 Active Directory authentication helper
@@ -267,7 +307,7 @@ class ADAuthentication(object):
         chkField['Lgth'] = 16
         if bindings:
             chkField['Bnd'] = bindings
-        chkField['Flags'] = 0
+        chkField['Flags'] = GSS_C_SEQUENCE_FLAG | GSS_C_REPLAY_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
         authenticator['cksum']['checksum'] = chkField.getData()
 
         encodedAuthenticator = encoder.encode(authenticator)
@@ -290,6 +330,7 @@ class ADAuthentication(object):
         connection.result = response
         if response['result'] == 0:
             connection.bound = True
+            connection.socket = GSSAPISocketWrapper(connection.socket, cipher, sessionkey)
             connection.refresh_server_info()
         return response['result'] == 0
 
