@@ -68,20 +68,10 @@ class ADDC(ADComputer):
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
         try:
-            q = self.ad.dnsresolver.resolve(self.hostname, 'A', tcp=self.ad.dns_tcp)
-            for rdata in q:
-                logging.debug('LDAP server IPv4: %s', str(rdata.address))
-                logging.debug('Testing resolved hostname connectivity %s', rdata.address)
-                try:
-                    _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
-                    _conn = ldap3.Connection(_tmp_serv)
-                    _bind = _conn.bind()
-                except ldap3.core.exceptions.LDAPSocketOpenError:
-                    continue
-                else:
-                    if _conn:
-                        logging.debug('Successful connection to LDAP server on IP: %s', rdata.address)
-                        ip = rdata.address
+            import socket
+            resolved_ip = socket.gethostbyname(self.hostname)
+            logging.debug('Resolved %s to %s via hosts/dns', self.hostname, resolved_ip)
+            ip = resolved_ip
         except:
             logging.debug('No A records found')
 
@@ -805,13 +795,17 @@ class AD(object):
                 ad_domain = 'unknown'
 
         if self.auth.userdomain.lower() != ad_domain.lower():
-            # Resolve KDC for user auth domain
-            kquery = '_kerberos._tcp.dc._msdcs.%s.' % self.auth.userdomain
-            q = self.dnsresolver.query(kquery, 'SRV', tcp=self.dns_tcp)
-            for r in q:
-                kdc = str(r.target).rstrip('.')
-                logging.debug('Found KDC for user: %s' % str(r.target).rstrip('.'))
-                self.auth.userdomain_kdc = kdc
+            if self.auth.auth_method not in ('ntlm',):
+                # Resolve KDC for user auth domain
+                kquery = '_kerberos._tcp.dc._msdcs.%s.' % self.auth.userdomain
+                try:
+                    q = self.dnsresolver.query(kquery, 'SRV', tcp=self.dns_tcp)
+                    for r in q:
+                        kdc = str(r.target).rstrip('.')
+                        logging.debug('Found KDC for user: %s' % str(r.target).rstrip('.'))
+                        self.auth.userdomain_kdc = kdc
+                except Exception as e:
+                    logging.debug('Could not resolve KDC: %s' % str(e))
         else:
             self.auth.userdomain_kdc = self.auth.kdc
 

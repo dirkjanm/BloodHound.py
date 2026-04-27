@@ -59,7 +59,7 @@ class ADAuthentication(object):
         self.domain = domain.lower()
         self.userdomain = domain.lower()
         # If not, override userdomain
-        if '@' in self.username:
+        if '@' in self.username and not self.username.endswith('@' + domain.lower()):
             self.username, self.userdomain = self.username.lower().rsplit('@', 1)
         self.password = password
         self.lm_hash = lm_hash
