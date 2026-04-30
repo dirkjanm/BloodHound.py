@@ -27,6 +27,7 @@ import codecs
 import json
 import ldap3
 import ipaddress
+import socket
 
 from uuid import UUID
 from dns import resolver
@@ -68,20 +69,49 @@ class ADDC(ADComputer):
         # Convert the hostname to an IP, this prevents ldap3 from doing it
         # which doesn't use our custom nameservers
         try:
+            try:
+                socket_ip = socket.gethostbyname(self.hostname)
+                _tmp_serv = ldap3.Server(socket_ip, connect_timeout=5)
+                _conn = ldap3.Connection(_tmp_serv)
+                _bind = _conn.bind()
+
+            except ldap3.core.exceptions.LDAPSocketOpenError:
+                    logging.debug("Host is not running ldap")
+            except ldap3.core.exceptions.LDAPInvalidServerError:
+                    logging.error('LDAP3 did not like address: %s', socket_ip)
+            except:
+                logging.debug("Couldn't resolve from /etc/hosts")
+
+            else:
+                if _bind:
+                    logging.debug('Successful connection to: %s', socket_ip)
+                    ip = socket_ip
+
+            if ip:
+                ldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip,
+                                              baseDN=self.ad.baseDN, protocol=protocol)
+                if resolver:
+                    self.resolverldap = ldap
+                else:
+                    self.ldap = ldap
+                return ldap is not None
+
             q = self.ad.dnsresolver.resolve(self.hostname, 'A', tcp=self.ad.dns_tcp)
             for rdata in q:
                 logging.debug('LDAP server IPv4: %s', str(rdata.address))
                 logging.debug('Testing resolved hostname connectivity %s', rdata.address)
+
                 try:
                     _tmp_serv = ldap3.Server(rdata.address, connect_timeout=5)
                     _conn = ldap3.Connection(_tmp_serv)
                     _bind = _conn.bind()
                 except ldap3.core.exceptions.LDAPSocketOpenError:
-                    continue
+                    logging.debug("Host is not running ldap")
                 else:
-                    if _conn:
+                    if _bind:
                         logging.debug('Successful connection to LDAP server on IP: %s', rdata.address)
                         ip = rdata.address
+                        break
         except:
             logging.debug('No A records found')
 
@@ -96,14 +126,15 @@ class ADDC(ADComputer):
                     _conn = ldap3.Connection(_tmp_serv)
                     _bind = _conn.bind()
                 except ldap3.core.exceptions.LDAPSocketOpenError:
-                    continue
+                    logging.debug("Host is not running ldap")
                 except ldap3.core.exceptions.LDAPInvalidServerError:
                     logging.error('LDAP3 did not like address: %s', rdata.address)
                     continue
                 else:
-                    if _conn:
+                    if _bind:
                         logging.debug('Successful connection to: %s', rdata.address)
                         ip = f'[{rdata.address}]'
+                        break
         except:
             logging.debug('No AAAA records found')
 
@@ -123,43 +154,50 @@ class ADDC(ADComputer):
         """
         Connect to the global catalog
         """
+        ip = None
         if self.hostname in self.ad.gcs():
-            # This server is a Global Catalog
             initial_server = self.hostname
         else:
-            # Pick the first GC server
-            try:
-                initial_server = self.ad.gcs()[0]
-            except IndexError:
-                logging.error('Could not find a Global Catalog in this domain!'\
-                              ' Resolving will be unreliable in forests with multiple domains')
-                return False
-        try:
-            # Convert the hostname to an IP, this prevents ldap3 from doing it
-            # which doesn't use our custom nameservers
-            logging.info('Connecting to GC LDAP server: %s' % initial_server)
-            q = self.ad.dnsresolver.query(initial_server, tcp=self.ad.dns_tcp)
-            for r in q:
-                ip = r.address
-        except (resolver.NXDOMAIN, resolver.Timeout):
-            for server in self.ad.gcs():
-                # Skip the one we already tried
-                if server == initial_server:
-                    continue
-                try:
-                    # Convert the hostname to an IP, this prevents ldap3 from doing it
-                    # which doesn't use our custom nameservers
-                    logging.info('Connecting to GC LDAP server: %s' % server)
-                    q = self.ad.dnsresolver.query(server, tcp=self.ad.dns_tcp)
-                    for r in q:
-                        ip = r.address
-                        break
-                except (resolver.NXDOMAIN, resolver.Timeout):
-                    continue
+            initial_server = self.ad.gcs()[0]
 
-        self.gcldap = self.ad.auth.getLDAPConnection(hostname=self.hostname, ip=ip, gc=True,
-                                                     baseDN=self.ad.baseDN, protocol=protocol)
-        return self.gcldap is not None
+        servers = [initial_server] + [s for s in self.ad.gcs() if s != initial_server]
+
+        for server in servers:
+            # 1. try /etc/hosts
+            try:
+                candidate_ip = socket.gethostbyname(server)
+
+                conn = ldap3.Connection(ldap3.Server(candidate_ip, connect_timeout=5))
+                if conn.bind():
+                    ip = candidate_ip
+                    break
+            except:
+                pass
+
+            # 2. DNS fallback
+            try:
+                q = self.ad.dnsresolver.query(server, tcp=self.ad.dns_tcp)
+
+                for r in q:
+                    candidate_ip = r.address
+
+                    try:
+                        conn = ldap3.Connection(ldap3.Server(candidate_ip, connect_timeout=5))
+                        if conn.bind():
+                            ip = candidate_ip
+                            break
+                    except ldap3.core.exceptions.LDAPSocketOpenError:
+                        continue
+
+                if ip:
+                    break
+
+            except:
+                continue
+
+        if not ip:
+            logging.error("GC resolution failed")
+            return False
 
     def search(self, search_filter='(objectClass=*)',attributes=None, search_base=None, generator=True, use_gc=False, use_resolver=False, query_sd=False, is_retry=False,  search_scope=SUBTREE,):
         """
@@ -745,7 +783,6 @@ class AD(object):
             query = basequery
 
         try:
-
             q = self.dnsresolver.query(query, 'SRV', tcp=self.dns_tcp)
 
             if str(q.qname).lower().startswith('_ldap._tcp.pdc._msdcs'):
