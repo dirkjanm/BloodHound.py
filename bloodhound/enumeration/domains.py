@@ -121,10 +121,10 @@ class DomainEnumerator(object):
                 "pwdproperties": ADUtils.get_entry_property(domain_object, "pwdProperties"),
                 "pwdhistorylength": ADUtils.get_entry_property(domain_object, "pwdHistoryLength"),
                 "lockoutthreshold": ADUtils.get_entry_property(domain_object, "lockoutThreshold"),
-                "minpwdage": ADUtils.get_entry_property(domain_object, "minPwdAge"),
-                "maxpwdage": ADUtils.get_entry_property(domain_object, "maxPwdAge"),
-                "lockoutduration": ADUtils.get_entry_property(domain_object, "lockoutDuration"),
-                "lockoutobservationwindow": ADUtils.get_entry_property(domain_object, "lockOutObservationWindow"),
+                "minpwdage": str(ADUtils.get_entry_property(domain_object, "minPwdAge")),
+                "maxpwdage": str(ADUtils.get_entry_property(domain_object, "maxPwdAge")),
+                "lockoutduration": str(ADUtils.get_entry_property(domain_object, "lockoutDuration")),
+                "lockoutobservationwindow": str(ADUtils.get_entry_property(domain_object, "lockOutObservationWindow")),
             },
             "Trusts": [],
             "Aces": [],
@@ -181,9 +181,6 @@ class DomainEnumerator(object):
         datastruct['meta']['count'] = 1
         datastruct['data'].append(domain)
 
-        for k, v in domain["Properties"].items():
-            print(k, type(v), v)
-            
         json.dump(datastruct, out, indent=indent_level)
 
         logging.debug('Finished writing domain info')
