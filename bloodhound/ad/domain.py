@@ -337,10 +337,6 @@ class ADDC(ADComputer):
         entriesNum = 0
         for entry in entries:
 
-            print("DEBUG ATTRS START")
-            print(sorted(entry["attributes"].keys()))
-            print("DEBUG ATTRS END")
-
             entriesNum += 1
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions
