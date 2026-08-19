@@ -182,6 +182,5 @@ class DomainEnumerator(object):
         datastruct['data'].append(domain)
 
         json.dump(datastruct, out, indent=indent_level)
-
         logging.debug('Finished writing domain info')
         out.close()
