@@ -180,6 +180,10 @@ class DomainEnumerator(object):
         # Single domain only
         datastruct['meta']['count'] = 1
         datastruct['data'].append(domain)
+
+        for k, v in domain["Properties"].items():
+            print(k, type(v), v)
+            
         json.dump(datastruct, out, indent=indent_level)
 
         logging.debug('Finished writing domain info')
