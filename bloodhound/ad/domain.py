@@ -194,14 +194,14 @@ class ADDC(ADComputer):
                 searcher = self.ldap
 
         hadresults = False
-        sresult = searcher.extend.standard.paged_search(search_base,
-                                                        search_filter,
-                                                        attributes=attributes,
-                                                        paged_size=200,
-                                                        search_scope=search_scope,
-                                                        controls=controls,
-                                                        generator=generator)
         try:
+            sresult = searcher.extend.standard.paged_search(search_base,
+                                                            search_filter,
+                                                            attributes=attributes,
+                                                            paged_size=200,
+                                                            search_scope=search_scope,
+                                                            controls=controls,
+                                                            generator=generator)
             # Use a generator for the result regardless of if the search function uses one
             for e in sresult:
                 if e['type'] != 'searchResEntry':
