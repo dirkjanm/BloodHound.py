@@ -26,27 +26,18 @@ import logging
 import ssl
 import os
 import traceback
-from hashlib import sha256, md5
 from bloodhound.ad.utils import CollectionException
 from binascii import unhexlify
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-import ldap3
 from ldap3 import Server, Connection, NTLM, ALL, SASL, KERBEROS, Tls
+from ldap3.core.exceptions import LDAPCommunicationError
 from ldap3.core.results import RESULT_STRONGER_AUTH_REQUIRED
-from ldap3.operation.bind import bind_operation
 from impacket.krb5.ccache import CCache
-from impacket.krb5.types import Principal, KerberosTime, Ticket
-from pyasn1.codec.der import decoder, encoder
-from impacket.krb5.asn1 import AP_REQ, AS_REP, TGS_REQ, Authenticator, TGS_REP, seq_set, seq_set_iter, PA_FOR_USER_ENC, \
-    Ticket as TicketAsn1, EncTGSRepPart
+from impacket.krb5.types import Principal, Ticket
+from pyasn1.codec.der import decoder
+from impacket.krb5.asn1 import AS_REP, TGS_REP
 from impacket.krb5 import constants
-from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS, sendReceive
-from impacket.krb5.gssapi import CheckSumField, GSS_C_SEQUENCE_FLAG, GSS_C_REPLAY_FLAG, GSS_C_MUTUAL_FLAG
-import datetime
-from pyasn1.type.univ import noValue
-from impacket.spnego import SPNEGO_NegTokenInit, TypesMech
+from impacket.krb5.kerberosv5 import getKerberosTGT, getKerberosTGS
+from ldap3_ad_auth import bind_kerberos, bind_ntlm, ProtectionError
 
 """
 Active Directory authentication helper
@@ -90,8 +81,6 @@ class ADAuthentication(object):
             # Global Catalog connection
             if protocol == 'ldaps' or self.ldap_channel_binding is True:
                 if self.ldap_channel_binding is True:
-                    if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
-                        raise Exception("To use LDAP channel binding, install the patched ldap3 module: pip3 install git+https://github.com/ly4k/ldap3 or pip3 install ldap3-bleeding-edge")
                     logging.debug("Using LDAPS channel binding")
                     protocol = 'ldaps'
                     version=ssl.PROTOCOL_TLSv1_2
@@ -110,8 +99,6 @@ class ADAuthentication(object):
                 server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
         else: # no GC specified
             if self.ldap_channel_binding is True:
-                if not hasattr(ldap3, 'TLS_CHANNEL_BINDING'):
-                    raise Exception("To use LDAP channel binding, install the patched ldap3 module: pip3 install git+https://github.com/ly4k/ldap3 or pip3 install ldap3-bleeding-edge")
                 logging.debug("Using LDAPS channel binding")
                 protocol = 'ldaps'
                 version=ssl.PROTOCOL_TLSv1_2
@@ -136,12 +123,18 @@ class ADAuthentication(object):
         ldaplogin = '%s\\%s' % (self.userdomain, self.username)
 
         bound = False
+        conn = None
+        bind_error = None
         if self.tgt is not None and self.auth_method in ('kerberos', 'auto'):
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=SASL, sasl_mechanism=KERBEROS, receive_timeout=60, auto_range=True)
             logging.debug('Authenticating to LDAP server with Kerberos')
             try:
                 bound = self.ldap_kerberos(conn, hostname)
             except Exception as exc:
+                if isinstance(exc, LDAPCommunicationError) and isinstance(exc, ProtectionError):
+                    logging.error('Protected LDAP connection failed: %s', exc)
+                    raise CollectionException('Could not verify protected LDAP connection.') from exc
+                bind_error = exc
                 if self.auth_method == 'auto':
                     logging.debug(traceback.format_exc())
                     logging.warning('Kerberos auth to LDAP failed, trying NTLM')
@@ -149,149 +142,42 @@ class ADAuthentication(object):
                 else:
                     logging.debug(traceback.format_exc())
                     logging.critical('Kerberos auth to LDAP failed, no authentication methods left')
-                    raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
+                    raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.') from exc
         if not bound and self.auth_method in ('auto','ntlm'):
             conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
             logging.debug('Authenticating to LDAP server with NTLM')
-            if self.ldap_channel_binding:
-                from ldap3 import TLS_CHANNEL_BINDING
-                logging.debug("Using LDAPS channel binding")
-                protocol = 'ldaps'
-                channel_binding = {"channel_binding": TLS_CHANNEL_BINDING}
-                conn = Connection(server, user=ldaplogin, password=ldappass, authentication=NTLM, auto_referrals=False, receive_timeout=60, auto_range=True, **channel_binding)
-            else:
-                conn = Connection(server, user=ldaplogin, auto_referrals=False, password=ldappass, authentication=NTLM, receive_timeout=60, auto_range=True)
-            bound = conn.bind()
+            try:
+                bind_ntlm(conn, domain=self.userdomain, username=self.username,
+                          password=self.password, lm_hash=self.lm_hash,
+                          nt_hash=self.nt_hash)
+                bound = True
+            except Exception as exc:
+                logging.debug(traceback.format_exc())
+                if isinstance(exc, LDAPCommunicationError) and isinstance(exc, ProtectionError):
+                    logging.error('Protected LDAP connection failed: %s', exc)
+                    raise CollectionException('Could not verify protected LDAP connection.') from exc
+                bind_error = exc
 
         if not bound:
-            result = conn.result
-            if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldaps':
-                logging.warning('LDAP Authentication is refused because LDAP Channel Binding is likely enabled. '
-                                'Trying to connect using LDAP Channel Binding')
-                self.ldap_channel_binding = True
-                return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
+            if conn is None and self.auth_method == 'kerberos':
+                raise CollectionException('Kerberos authentication requested without a TGT.')
+            result = conn.result if conn is not None else None
+            result = result or {'result': None, 'message': 'protected bind failed'}
             if result['result'] == RESULT_STRONGER_AUTH_REQUIRED and protocol == 'ldap':
                 logging.warning('LDAP Authentication is refused because LDAP signing is enabled. '
                                 'Trying to connect over LDAPS instead...')
                 return self.getLDAPConnection(hostname, ip, baseDN, 'ldaps')
             else:
-                logging.error('Failure to authenticate with LDAP! Error %s : Code: %s' % (result['message'], result['result']))
-                raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.')
+                message = str(bind_error) if bind_error is not None and result['result'] in (None, 0) else result.get('message')
+                logging.error('Failure to authenticate with LDAP! Error %s : Code: %s' % (message, result['result']))
+                raise CollectionException('Could not authenticate to LDAP. Check your credentials and LDAP server requirements.') from bind_error
         return conn
 
     def ldap_kerberos(self, connection, hostname):
-        # Hackery to authenticate with ldap3 using impacket Kerberos stack
-
-        # Open ldap3 socket because we need it
-        connection.open(read_server_info=False)
-
-        username = Principal(self.username, type=constants.PrincipalNameType.NT_PRINCIPAL.value)
-        servername = Principal('ldap/%s' % hostname, type=constants.PrincipalNameType.NT_SRV_INST.value)
-        tgs, cipher, _, sessionkey = getKerberosTGS(servername, self.domain, self.kdc,
-                                                                self.tgt['KDC_REP'], self.tgt['cipher'], self.tgt['sessionKey'])
-
-        # Let's build a NegTokenInit with a Kerberos AP_REQ
-        blob = SPNEGO_NegTokenInit()
-
-        # Kerberos
-        blob['MechTypes'] = [TypesMech['MS KRB5 - Microsoft Kerberos 5']]
-
-        # Let's extract the ticket from the TGS
-        tgs = decoder.decode(tgs, asn1Spec=TGS_REP())[0]
-        ticket = Ticket()
-        ticket.from_asn1(tgs['ticket'])
-
-        # Now let's build the AP_REQ
-        apReq = AP_REQ()
-        apReq['pvno'] = 5
-        apReq['msg-type'] = int(constants.ApplicationTagNumbers.AP_REQ.value)
-
-        opts = []
-        apReq['ap-options'] = constants.encodeFlags(opts)
-        seq_set(apReq, 'ticket', ticket.to_asn1)
-
-        authenticator = Authenticator()
-        authenticator['authenticator-vno'] = 5
-        authenticator['crealm'] = self.userdomain
-        seq_set(authenticator, 'cname', username.components_to_asn1)
-        now = datetime.datetime.utcnow()
-
-        authenticator['cusec'] = now.microsecond
-        authenticator['ctime'] = KerberosTime.to_asn1(now)
-
-        peercert = None
-        bindings = None
-        try:
-            peercert = connection.socket.getpeercert(binary_form=True)
-        except AttributeError:
-            # No TLS, skip
-            pass
-        if peercert:
-            # Do TLS channel binding
-            # The logic here is heavly inspired by "msldap", "minikerberos" and "asysocks" projects by @skelsec.
-            # Adapted from ldap3 contributions by ThePirateWhoSmellsOfSunflowers
-            peer_certificate = x509.load_der_x509_certificate(peercert, default_backend())
-            peer_certificate_hash_algorithm = peer_certificate.signature_hash_algorithm
-
-            # RFC 5929 section 4.1 hashes list
-            rfc5929_hashes_list = (hashes.MD5, hashes.SHA1)
-
-            # section 4.1 hash function selection
-            if isinstance(peer_certificate_hash_algorithm, rfc5929_hashes_list):
-                digest = hashes.Hash(hashes.SHA256(), default_backend())
-            else:
-                digest = hashes.Hash(peer_certificate_hash_algorithm, default_backend())
-            digest.update(peercert)
-            peer_certificate_digest = digest.finalize()
-
-            # https://datatracker.ietf.org/doc/html/rfc2744#section-3.11
-            channel_binding_struct = bytes()
-            initiator_address = b'\x00'*8
-            acceptor_address = b'\x00'*8
-
-            # https://datatracker.ietf.org/doc/html/rfc5929#section-4
-            application_data_raw = b'tls-server-end-point:' + peer_certificate_digest
-            len_application_data = len(application_data_raw).to_bytes(4, byteorder='little', signed = False)
-            application_data = len_application_data
-            application_data += application_data_raw
-            channel_binding_struct += initiator_address
-            channel_binding_struct += acceptor_address
-            channel_binding_struct += application_data
-            bindings = md5(channel_binding_struct).digest()
-
-        # Add checksum to authenticator
-        authenticator['cksum'] = noValue
-        authenticator['cksum']['cksumtype'] = 0x8003
-
-        chkField = CheckSumField()
-        chkField['Lgth'] = 16
-        if bindings:
-            chkField['Bnd'] = bindings
-        chkField['Flags'] = 0
-        authenticator['cksum']['checksum'] = chkField.getData()
-
-        encodedAuthenticator = encoder.encode(authenticator)
-
-        # Key Usage 11
-        # AP-REQ Authenticator (includes application authenticator
-        # subkey), encrypted with the application session key
-        # (Section 5.5.1)
-        encryptedEncodedAuthenticator = cipher.encrypt(sessionkey, 11, encodedAuthenticator, None)
-
-        apReq['authenticator'] = noValue
-        apReq['authenticator']['etype'] = cipher.enctype
-        apReq['authenticator']['cipher'] = encryptedEncodedAuthenticator
-
-        blob['MechToken'] = encoder.encode(apReq)
-
-        # From here back to ldap3
-        request = bind_operation(connection.version, SASL, None, None, connection.sasl_mechanism, blob.getData())
-        response = connection.post_send_single_response(connection.send('bindRequest', request, None))[0]
-        connection.result = response
-        if response['result'] == 0:
-            connection.bound = True
-            connection.refresh_server_info()
-        return response['result'] == 0
+        bind_kerberos(connection, hostname=hostname, domain=self.domain,
+                      user_domain=self.userdomain, username=self.username,
+                      kdc=self.kdc, tgt=self.tgt)
+        return True
 
     def get_tgt(self):
         """
