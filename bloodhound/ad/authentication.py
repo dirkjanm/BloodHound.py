@@ -44,7 +44,7 @@ Active Directory authentication helper
 """
 class ADAuthentication(object):
     def __init__(self, username='', password='', domain='',
-                 lm_hash='', nt_hash='', aeskey='', kdc=None, auth_method='auto', ldap_channel_binding=False):
+                 lm_hash='', nt_hash='', aeskey='', kdc=None, auth_method='auto', ldap_channel_binding=False, ldaps_legacy_tls=False):
         self.username = username
         # Assume user domain and enum domain are same
         self.domain = domain.lower()
@@ -62,6 +62,7 @@ class ADAuthentication(object):
         self.userdomain_kdc = self.domain
         self.auth_method = auth_method
         self.ldap_channel_binding = ldap_channel_binding
+        self.ldaps_legacy_tls = ldaps_legacy_tls
 
         # Kerberos
         self.tgt = None
@@ -79,10 +80,9 @@ class ADAuthentication(object):
     def getLDAPConnection(self, hostname='', ip='', baseDN='', protocol='ldaps', gc=False):
         if gc:
             # Global Catalog connection
-            if protocol == 'ldaps' or self.ldap_channel_binding is True:
-                if self.ldap_channel_binding is True:
-                    logging.debug("Using LDAPS channel binding")
-                    protocol = 'ldaps'
+            if protocol == 'ldaps':
+                if self.ldaps_legacy_tls is True:
+                    logging.debug("Using legacy LDAPS TLS settings")
                     version=ssl.PROTOCOL_TLSv1_2
                     tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
                     server = Server(
@@ -92,15 +92,14 @@ class ADAuthentication(object):
                         tls=tls
                     )
                 else:
-                    # Ldap SSL (no channel binding)
+                    # LDAPS with default TLS settings
                     server = Server("%s://%s:3269" % (protocol, ip), get_info=ALL)
             else:
                 # Plain LDAP
                 server = Server("%s://%s:3268" % (protocol, ip), get_info=ALL)
         else: # no GC specified
-            if self.ldap_channel_binding is True:
-                logging.debug("Using LDAPS channel binding")
-                protocol = 'ldaps'
+            if protocol == 'ldaps' and self.ldaps_legacy_tls is True:
+                logging.debug("Using legacy LDAPS TLS settings")
                 version=ssl.PROTOCOL_TLSv1_2
                 tls = Tls(validate=ssl.CERT_NONE, version=version, ciphers='ALL:@SECLEVEL=0')
                 server = Server(
@@ -109,7 +108,7 @@ class ADAuthentication(object):
                     get_info=ALL,
                     tls=tls
                 )
-            else: # No LDAP Channel Binding
+            else: # Use requested LDAP or LDAPS
                 server = Server("%s://%s" % (protocol, ip), get_info=ALL)
         # ldap3 supports auth with the NT hash. LM hash is actually ignored since only NTLMv2 is used.
         if self.nt_hash != '':
