@@ -27,6 +27,7 @@ import traceback
 import calendar
 import time
 import re
+import os
 from impacket.dcerpc.v5 import transport, samr, srvs, lsat, lsad, nrpc, wkst, scmr, tsch, rrp
 from impacket.dcerpc.v5.rpcrt import DCERPCException, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
 from impacket.dcerpc.v5.ndr import NULL
@@ -40,6 +41,8 @@ from impacket.smb import SMB
 from impacket.smbconnection import SessionError
 from impacket import smb
 from impacket.smb3structs import SMB2_DIALECT_21
+from smb.SMBConnection import SMBConnection
+import xml.etree.ElementTree as ET
 # Try to import exceptions here, if this does not succeed, then impacket version is too old
 try:
     HostnameValidationExceptions = (SMB3.HostnameValidationException, SMB.HostnameValidationException)
@@ -388,7 +391,7 @@ class ADComputer(object):
                         # Try again!
                         return self.dce_rpc_connect(binding, uuid, integrity)
                 # Else, just log it
-                logging.debug(traceback.format_exc())
+                logging.info(traceback.format_exc())
                 logging.warning('DCE/RPC connection failed: %s', str(exc))
                 return None
 
@@ -466,6 +469,79 @@ class ADComputer(object):
     def rpc_close(self):
         if self.smbconnection:
             self.smbconnection.logoff()
+
+    def get_local_admins_by_gpo(self):
+        local_admins_by_gpo = []
+        
+        domain = self.ad.auth.userdomain
+        username = self.ad.auth.username
+        password = self.ad.auth.password
+        addr = self.ad.dnscache.get(self.addc.hostname)
+        remote_ip = addr
+        share_name = 'SYSVOL'
+
+        try:
+            smb_connection = SMBConnection(username, password, "", domain, use_ntlm_v2=True, is_direct_tcp=True)
+            smb_connection.connect(remote_ip, 445)
+
+            gpos_path = f'/{domain}/Policies'
+            gpos_list = smb_connection.listPath(share_name, gpos_path)
+
+            for gpo in [x for x in gpos_list if x.filename not in ['.', '..']]:
+                gpo_path = gpos_path + '/' + gpo.filename
+                share_path_gpo = smb_connection.listPath(share_name, gpo_path)
+
+                for gpo_file_1 in [x for x in share_path_gpo if x.filename not in ['.', '..'] and 'machine' in x.filename.lower()]: 
+                    path_machine = gpo_path + '/' + gpo_file_1.filename
+                    share_path_machine = smb_connection.listPath(share_name, path_machine)
+                    
+                    for gpo_file_2 in [x for x in share_path_machine if x.filename not in ['.', '..'] and 'preferences' in x.filename.lower()]:
+                        path_preferences = path_machine + '/' + gpo_file_2.filename
+                        share_path_preferences= smb_connection.listPath(share_name, path_preferences)
+                        
+                        for gpo_file_3 in [x for x in share_path_preferences if x.filename not in ['.', '..'] and 'groups' in x.filename.lower()]:
+                            path_groups = path_preferences + '/' + gpo_file_3.filename
+                            share_path_groups= smb_connection.listPath(share_name, path_groups)
+                            
+                            for gpo_file_4 in [x for x in share_path_groups if x.filename not in ['.', '..']]:
+                                path_xml = path_groups+ '/' + gpo_file_4.filename
+
+                                with open("Admin_Groups.xml", "wb") as local_file:
+                                    file_attributes, bytes_written = smb_connection.retrieveFile(share_name, path_xml, local_file)
+                                with open("Admin_Groups.xml", 'r') as file:
+                                    content_xml = ET.fromstring(file.read())
+                                    
+                                properties_tag = content_xml.find(".//Properties")                                                            
+                                if properties_tag is not None:
+                                    properties_group_sid = properties_tag.get("groupSid")
+                                    properties_group_name = properties_tag.get("groupName")
+ 
+                                    if str(properties_group_sid) == "S-1-5-32-544" and "Admin" in str(properties_group_name):
+                                        members_tags = content_xml.findall(".//Member")
+
+                                        for member_tag in members_tags:
+                                            member_tag_sid = member_tag.get("sid")
+                                            member_tag_name = member_tag.get("name")
+                                        
+                                            filter = '(&(objectClass=*)(objectSid={}))'.format(member_tag_sid)                                                                           
+                                            member_tag_object_class = self.addc.search(filter, ['objectClass'])
+                                            
+                                            if member_tag_object_class:
+                                                for types in member_tag_object_class:
+                                                    if 'group' in types.get("attributes").get("objectClass"):
+                                                        member_type = "Group"
+                                                    elif 'user' in types.get("attributes").get("objectClass"):
+                                                        member_type = "User"
+                                                    
+                                                    local_admins_by_gpo.append({'ObjectIdentifier': member_tag_sid,'ObjectType': member_type})
+            smb_connection.close()
+
+            if os.path.exists ("Admin_Groups.xml"):
+                os.remove("Admin_Groups.xml")
+        except Exception as e:
+            print("Erreur lors de la connexion SMB:", e)
+
+        return local_admins_by_gpo
 
     def rpc_get_sessions(self):
         binding = r'ncacn_np:%s[\PIPE\srvsvc]' % self.addr
