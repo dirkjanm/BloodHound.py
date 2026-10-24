@@ -336,6 +336,7 @@ class ADDC(ADComputer):
 
         entriesNum = 0
         for entry in entries:
+
             entriesNum += 1
             # Todo: actually use these objects instead of discarding them
             # means rewriting other functions

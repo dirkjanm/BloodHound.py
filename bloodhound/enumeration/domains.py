@@ -114,7 +114,17 @@ class DomainEnumerator(object):
                 "highvalue": True,
                 "isaclprotected": False,
                 "collected": True,
-                'whencreated': whencreated
+                'whencreated': whencreated,
+                "machineaccountquota": ADUtils.get_entry_property(domain_object, "ms-DS-MachineAccountQuota"),
+                "expirepasswordsonsmartcardonlyaccounts": ADUtils.get_entry_property(domain_object, "msDS-ExpirePasswordsOnSmartCardOnlyAccounts"),
+                "minpwdlength": ADUtils.get_entry_property(domain_object, "minPwdLength"),
+                "pwdproperties": ADUtils.get_entry_property(domain_object, "pwdProperties"),
+                "pwdhistorylength": ADUtils.get_entry_property(domain_object, "pwdHistoryLength"),
+                "lockoutthreshold": ADUtils.get_entry_property(domain_object, "lockoutThreshold"),
+                "minpwdage": str(ADUtils.get_entry_property(domain_object, "minPwdAge")),
+                "maxpwdage": str(ADUtils.get_entry_property(domain_object, "maxPwdAge")),
+                "lockoutduration": str(ADUtils.get_entry_property(domain_object, "lockoutDuration")),
+                "lockoutobservationwindow": str(ADUtils.get_entry_property(domain_object, "lockOutObservationWindow")),
             },
             "Trusts": [],
             "Aces": [],
@@ -170,7 +180,7 @@ class DomainEnumerator(object):
         # Single domain only
         datastruct['meta']['count'] = 1
         datastruct['data'].append(domain)
-        json.dump(datastruct, out, indent=indent_level)
 
+        json.dump(datastruct, out, indent=indent_level)
         logging.debug('Finished writing domain info')
         out.close()
