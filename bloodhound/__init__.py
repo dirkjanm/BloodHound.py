@@ -268,6 +268,14 @@ def main():
                         metavar='PREFIX_NAME',
                         action='store',
                         help='String to prepend to output file names')
+    coopts.add_argument('-o',
+                        '--output',
+                        metavar='PATH',
+                        action='store',
+                        default=None,
+                        help='Full path (and optional filename) for the output zip, e.g. '
+                             '-o ~/pentest/bloodhound.zip. If PATH is a directory, the default '
+                             'timestamped name is used inside it. Implies --zip.')
 
     args = parser.parse_args()
     logging.info('BloodHound.py for BloodHound Community Edition')
@@ -352,32 +360,29 @@ def main():
                    cachefile=args.cachefile,
                    exclude_dcs=args.exclude_dcs,
                    fileNamePrefix=args.outputprefix)
-    #If args --zip is true, the compress output  
-    if args.zip:
-        logging.info("Compressing output into " + timestamp + "bloodhound.zip")
-        # Get a list of files in the current dir
-        list_of_files = os.listdir(os.getcwd())
-        # Create handle to zip file with timestamp prefix
-        if(args.outputprefix!=None):
-            with ZipFile(args.outputprefix + "_" + timestamp + "bloodhound.zip",'w') as zip:
-                # For each of those files we fetched
-                for each_file in list_of_files:
-                    # If the files starts with the current timestamp and ends in json
-                    if each_file.startswith(args.outputprefix) and each_file.endswith("json"):
-                        # Write it to the zip
-                        zip.write(each_file)
-                        # Remove it from disk
-                        os.remove(each_file)
+# If args --zip or --output is set, compress the output
+    if args.zip or args.output:
+        if args.output:
+            out_path = os.path.expanduser(args.output)
+            # If they pointed at a directory, keep the normal naming
+            # convention but write inside that directory instead of cwd.
+            if os.path.isdir(out_path) or out_path.endswith(os.sep):
+                default_name = (args.outputprefix + "_" if args.outputprefix else "") + timestamp + "bloodhound.zip"
+                out_path = os.path.join(out_path, default_name)
+            out_dir = os.path.dirname(out_path)
+            if out_dir and not os.path.isdir(out_dir):
+                os.makedirs(out_dir, exist_ok=True)
         else:
-            with ZipFile(timestamp + "bloodhound.zip",'w') as zip:
-                # For each of those files we fetched
-                for each_file in list_of_files:
-                    # If the files starts with the current timestamp and ends in json
-                    if each_file.startswith(timestamp) and each_file.endswith("json"):
-                        # Write it to the zip
-                        zip.write(each_file)
-                        # Remove it from disk
-                        os.remove(each_file)
+            out_path = (args.outputprefix + "_" if args.outputprefix else "") + timestamp + "bloodhound.zip"
+
+        logging.info("Compressing output into " + out_path)
+        list_of_files = os.listdir(os.getcwd())
+        with ZipFile(out_path, 'w') as zip:
+            for each_file in list_of_files:
+                matches_prefix = each_file.startswith(args.outputprefix) if args.outputprefix else each_file.startswith(timestamp)
+                if matches_prefix and each_file.endswith("json"):
+                    zip.write(each_file)
+                    os.remove(each_file)
 
 
 
