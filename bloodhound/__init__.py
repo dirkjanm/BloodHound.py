@@ -60,7 +60,7 @@ class BloodHound(object):
             logging.debug('Using kerberos realm: %s', self.ad.realm())
 
         # Create a domain controller object
-        self.pdc = ADDC(pdc, self.ad)
+        self.pdc = ADDC(pdc, self.ad, no_gc=self.ad.no_gc)
         # Create an object resolver
         self.ad.create_objectresolver(self.pdc)
 
@@ -268,6 +268,9 @@ def main():
                         metavar='PREFIX_NAME',
                         action='store',
                         help='String to prepend to output file names')
+    coopts.add_argument('--no-gc',
+                        action='store_true',
+                        help='Never use GC to resolve objects')
 
     args = parser.parse_args()
     logging.info('BloodHound.py for BloodHound LEGACY (BloodHound 4.2 and 4.3)')
@@ -303,7 +306,7 @@ def main():
             args.auth_method = 'kerberos'
             auth = ADAuthentication(username=args.username, password=args.password, domain=args.domain, auth_method=args.auth_method, ldap_channel_binding=args.ldap_channel_binding)
 
-    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps)
+    ad = AD(auth=auth, domain=args.domain, nameserver=args.nameserver, dns_tcp=args.dns_tcp, dns_timeout=args.dns_timeout, use_ldaps=args.use_ldaps, no_gc=args.no_gc)
     # Resolve collection methods
     collect = resolve_collection_methods(args.collectionmethod)
     if not collect:
