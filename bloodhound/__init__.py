@@ -29,6 +29,7 @@ from bloodhound.ad.authentication import ADAuthentication
 from bloodhound.enumeration.computers import ComputerEnumerator
 from bloodhound.enumeration.memberships import MembershipEnumerator
 from bloodhound.enumeration.domains import DomainEnumerator
+from bloodhound.enumeration.adcs import ADCSEnumerator
 
 """
 BloodHound.py is a Python port of BloodHound, designed to run on Linux and Windows.
@@ -73,7 +74,7 @@ class BloodHound(object):
         # Check early if we should enumerate computers as well
         do_computer_enum = any(method in collect for method in ['localadmin', 'session', 'loggedon', 'experimental', 'rdp', 'dcom', 'psremote'])
 
-        if 'group' in collect or 'objectprops' in collect or 'acl' in collect:
+        if 'group' in collect or 'objectprops' in collect or 'acl' in collect or 'certservices' in collect:
             # Fetch domains for later, computers if needed
             self.pdc.prefetch_info('objectprops' in collect, 'acl' in collect, cache_computers=do_computer_enum)
             # Initialize enumerator
@@ -95,6 +96,9 @@ class BloodHound(object):
         if 'trusts' in collect or 'acl' in collect or 'objectprops' in collect:
             trusts_enum = DomainEnumerator(self.ad, self.pdc)
             trusts_enum.dump_domain(collect,timestamp=timestamp,fileNamePrefix=fileNamePrefix)
+        if 'certservices' in collect:
+            adcs_enum = ADCSEnumerator(self.ad, self.pdc)
+            adcs_enum.enumerate_adcs(timestamp=timestamp, fileNamePrefix=fileNamePrefix, collect=collect)
         if do_computer_enum:
             # If we don't have a GC server, don't use it for deconflictation
             have_gc = len(self.ad.gcs()) > 0
@@ -110,12 +114,12 @@ def resolve_collection_methods(methods):
     """
     valid_methods = ['group', 'localadmin', 'session', 'trusts', 'default', 'all', 'loggedon',
                      'objectprops', 'experimental', 'acl', 'dcom', 'rdp', 'psremote', 'dconly',
-                     'container']
+                     'container', 'certservices']
     default_methods = ['group', 'localadmin', 'session', 'trusts']
     # Similar to SharpHound, All is not really all, it excludes loggedon
-    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl', 'dcom', 'rdp', 'psremote', 'container']
+    all_methods = ['group', 'localadmin', 'session', 'trusts', 'objectprops', 'acl', 'dcom', 'rdp', 'psremote', 'container', 'certservices']
     # DC only, does not collect to computers
-    dconly_methods = ['group', 'trusts', 'objectprops', 'acl', 'container']
+    dconly_methods = ['group', 'trusts', 'objectprops', 'acl', 'container', 'certservices']
     if ',' in methods:
         method_list = [method.lower() for method in methods.split(',')]
         validated_methods = []
@@ -171,7 +175,7 @@ def main():
                         default='Default',
                         help='Which information to collect. Supported: Group, LocalAdmin, Session, '
                              'Trusts, Default (all previous), DCOnly (no computer connections), DCOM, RDP,'
-                             'PSRemote, LoggedOn, Container, ObjectProps, ACL, All (all except LoggedOn). '
+                             'PSRemote, LoggedOn, Container, ObjectProps, ACL, CertServices, All (all except LoggedOn). '
                              'You can specify more than one by separating them with a comma. (default: Default)')
     parser.add_argument('-d',
                         '--domain',
@@ -270,7 +274,7 @@ def main():
                         help='String to prepend to output file names')
 
     args = parser.parse_args()
-    logging.info('BloodHound.py for BloodHound LEGACY (BloodHound 4.2 and 4.3)')
+    logging.info('BloodHound.py with ADCS support for BloodHound CE')
 
     if args.v is True:
         logger.setLevel(logging.DEBUG)

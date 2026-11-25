@@ -89,7 +89,7 @@ class DomainEnumerator(object):
             "meta": {
                 "type": "domains",
                 "count": 0,
-                "version":5
+                "version":6
             }
         }
         # Get functional level
