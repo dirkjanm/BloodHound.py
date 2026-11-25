@@ -103,15 +103,16 @@ class ADDomainTrust(object):
         else:
             is_transitive = not self.has_flag('NON_TRANSITIVE')
 
-        # Make sure this is an int
+        # BH CE v6 expects TrustDirection and TrustType as strings
         trust_direction = int(self.direction)
-        trusttype_out = self.bh_trust_type.get(trusttype, 4)
+        trust_direction_str = self.direction_map.get(trust_direction, "Unknown")
+        trusttype_out = trusttype  # Already a string: ParentChild/CrossLink/Forest/External/Unknown
 
         out = {
             "TargetDomainName": self.destination_domain.upper(),
             "TargetDomainSid": self.domainsid,
             "IsTransitive": is_transitive,
-            "TrustDirection": trust_direction,
+            "TrustDirection": trust_direction_str,
             "TrustType": trusttype_out,
             "SidFilteringEnabled": sid_filtering
         }

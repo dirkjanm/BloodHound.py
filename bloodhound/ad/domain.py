@@ -626,6 +626,9 @@ class ADDC(ADComputer):
     def get_root_domain(self):
         return ADUtils.ldap2domain(self.ldap.server.info.other['configurationNamingContext'][0])
 
+    def get_config_naming_context(self):
+        return self.ldap.server.info.other['configurationNamingContext'][0]
+
 
 """
 Active Directory data and cache
